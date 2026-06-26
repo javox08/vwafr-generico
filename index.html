@@ -609,8 +609,61 @@ function smoothPath(pts){
   return d;
 }
 
+// Señales on-chain (z: 1=fondo, -1=techo, 0=neutral)
+function mvrvSig(v){
+  return v<0.5?{t:'FONDO EXTREMO',c:'#1FE0A0',z:1}:
+    v<1?{t:'Suelo de ciclo',c:'#1FE0A0',z:1}:
+    v<1.5?{t:'Infravalorado',c:'#26C99E',z:1}:
+    v<2.5?{t:'Neutral',c:'var(--dim)',z:0}:
+    v<3?{t:'Neutral alto',c:'#F3BA2F',z:0}:
+    v<4?{t:'Sobrecompra',c:'#F3BA2F',z:-1}:
+    v<6?{t:'Techo cercano',c:'var(--down)',z:-1}:
+    v<7?{t:'Zona techo',c:'var(--down)',z:-1}:{t:'TECHO EXTREMO',c:'var(--down)',z:-1};
+}
+function nuplSig(v){
+  return v<-0.25?{t:'CAPITULACIÓN',c:'#1FE0A0',z:1}:
+    v<0?{t:'Pérdidas · suelo',c:'#1FE0A0',z:1}:
+    v<0.1?{t:'Saliendo del suelo',c:'#26C99E',z:1}:
+    v<0.25?{t:'Esperanza',c:'var(--dim)',z:0}:
+    v<0.35?{t:'Optimismo',c:'var(--dim)',z:0}:
+    v<0.5?{t:'Creencia',c:'#F3BA2F',z:0}:
+    v<0.6?{t:'Zona 0.5 · reducir',c:'#F3BA2F',z:-1}:
+    v<0.75?{t:'Euforia · vender',c:'var(--down)',z:-1}:{t:'EUFORIA EXTREMA',c:'var(--down)',z:-1};
+}
+function OCMetric({name,val,sig,pct,labels}){
+  return(
+    <div style={{marginBottom:13}}>
+      <div style={{...flx({justifyContent:'space-between'}),marginBottom:6}}>
+        <span style={{fontSize:12.5,fontWeight:700}}>{name} <span className="mono" style={{color:'var(--dim)',fontWeight:400,fontSize:11.5}}>{val}</span></span>
+        <span style={{fontSize:11,fontWeight:700,color:sig.c}}>{sig.t}</span>
+      </div>
+      <div style={{position:'relative',height:6,borderRadius:4,background:'linear-gradient(90deg,#1FE0A0,#F3BA2F 55%,#FF5470)'}}>
+        <div style={{position:'absolute',left:`${Math.min(98,Math.max(2,pct))}%`,top:'50%',transform:'translate(-50%,-50%)',
+          width:12,height:12,borderRadius:'50%',background:sig.c,border:'2px solid var(--bg)',boxShadow:`0 0 6px ${sig.c}`}}/>
+      </div>
+      <div style={{...flx({justifyContent:'space-between'}),marginTop:3,fontSize:8,color:'var(--faint)'}} className="mono">
+        <span>{labels[0]}</span><span>{labels[1]}</span><span>{labels[2]}</span>
+      </div>
+    </div>
+  );
+}
+
 // ── Apartado: Ciclo de Bitcoin (sin anuncios) ──
 function CycleBTC(){
+  const [oc,setOc]=useState(null);
+  useEffect(()=>{
+    let alive=true;
+    const load=async()=>{
+      try{
+        const [m,n]=await Promise.all([
+          fetch('https://bitcoin-data.com/v1/mvrv/last').then(r=>r.json()),
+          fetch('https://bitcoin-data.com/v1/nupl/last').then(r=>r.json()),
+        ]);
+        if(alive)setOc({mvrv:parseFloat(m.mvrv),nupl:parseFloat(n.nupl)});
+      }catch(_){}
+    };
+    load(); const t=setInterval(load,1800000); return()=>{alive=false;clearInterval(t);};
+  },[]);
   const [d,setD]=useState(null);
   useEffect(()=>{
     let alive=true;
@@ -628,10 +681,17 @@ function CycleBTC(){
     load(); const t=setInterval(load,60000); return()=>{alive=false;clearInterval(t);};
   },[]);
 
-  const D=86400000, LAST=new Date('2024-04-20T00:00:00Z'), NEXT=new Date('2028-04-18T00:00:00Z'), now=new Date();
-  const since=Math.max(0,Math.floor((now-LAST)/D));
-  const toNext=Math.max(0,Math.ceil((NEXT-now)/D));
-  const len=Math.round((NEXT-LAST)/D);
+  const D=86400000, now=new Date(), nowMs=now.getTime();
+  const money=v=>(v==null||!Number.isFinite(v))?'—':'$'+v.toLocaleString('es-ES',{maximumFractionDigits:0});
+  // Halvings reales + estimados. El ciclo avanza SOLO al pasar cada halving.
+  const HALVINGS=[Date.UTC(2012,10,28),Date.UTC(2016,6,9),Date.UTC(2020,4,11),Date.UTC(2024,3,20),
+    Date.UTC(2028,3,18),Date.UTC(2032,3,16),Date.UTC(2036,3,14),Date.UTC(2040,3,12),Date.UTC(2044,3,10),Date.UTC(2048,3,8)];
+  let hidx=0; for(let i=0;i<HALVINGS.length;i++) if(nowMs>=HALVINGS[i]) hidx=i;
+  const LAST=new Date(HALVINGS[hidx]), NEXT=new Date(HALVINGS[Math.min(hidx+1,HALVINGS.length-1)]);
+  const cycleNum=hidx+1, halvingYr=LAST.getUTCFullYear(), nextHalvingYr=NEXT.getUTCFullYear();
+  const since=Math.max(0,Math.floor((nowMs-LAST.getTime())/D));
+  const toNext=Math.max(0,Math.ceil((NEXT.getTime()-nowMs)/D));
+  const len=Math.round((NEXT.getTime()-LAST.getTime())/D)||1;
   const prog=Math.min(100,Math.max(0,since/len*100));
   const weeks=Math.floor(since/7);
   // Modelo de fases por semanas desde el halving (indicador BTC Cycle -Javox)
@@ -642,16 +702,24 @@ function CycleBTC(){
     weeks<200?{t:'Acumulación',c:'#3B82F6',next:'Nuevo ciclo',at:200}:
               {t:'Pre-Bull (nuevo ciclo)',c:'#8AA0FF',next:'Bull Market',at:208};
   const weeksToNext=Math.max(0,ph.at-weeks), daysToNextPh=weeksToNext*7;
-  // Proyecciones por rendimientos decrecientes (del modelo)
-  const g23=(69044-19783)/19783*100, g34=(126000-69044)/69044*100;
-  const redAuto=(g23-g34)/g23*100;                  // ~67% reducción por ciclo
-  const athC4=Math.max(126000,(d&&d.ath)||0);       // ATH C4 (real si supera 126k)
-  const gC5=g34*(1-redAuto/100), athC5=athC4*(1+gC5/100);
-  const dd2=(19783-3200)/19783*100, dd3=(69044-15479)/69044*100;
-  const redDd=(dd2-dd3)/dd2*100;                     // ~7% menos drawdown por ciclo
-  const ddC4=dd3*(1-redDd/100), sueloC4=athC4*(1-ddC4/100);
-  const ddC5=ddC4*(1-redDd/100), sueloC5=athC5*(1-ddC5/100);
-  const money=v=>(v==null||!Number.isFinite(v))?'—':'$'+v.toLocaleString('es-ES',{maximumFractionDigits:0});
+  // Cadena ATH/suelo por rendimientos decrecientes — generaliza a cualquier ciclo
+  const gOf=(a,b)=>(b-a)/a*100;
+  const g23=gOf(19783,69044), g34=gOf(69044,126000), redAuto=(g23-g34)/g23*100;
+  const ath=[]; ath[1]=1127; ath[2]=19783; ath[3]=69044; ath[4]=Math.max(126000,(d&&d.ath)||0);
+  let gp=g34; for(let c=5;c<=12;c++){gp=gp*(1-redAuto/100); ath[c]=ath[c-1]*(1+gp/100);}
+  const caida=[]; caida[2]=(19783-3200)/19783*100; caida[3]=(69044-15479)/69044*100;
+  const redDd=(caida[2]-caida[3])/caida[2]*100; caida[4]=caida[3]*(1-redDd/100);
+  for(let c=5;c<=12;c++) caida[c]=caida[c-1]*(1-redDd/100);
+  const suelo=[]; suelo[2]=3200; suelo[3]=15479; for(let c=4;c<=12;c++) suelo[c]=ath[c]*(1-caida[c]/100);
+  const cn=Math.min(Math.max(cycleNum,2),11);
+  const athC4=ath[cn], sueloC4=suelo[cn], athC5=ath[cn+1], sueloC5=suelo[cn+1];
+  const ddC4=caida[cn], gainC=gOf(ath[cn-1],ath[cn]);
+  // Tabla histórica dinámica (últimos ciclos hasta el actual)
+  const histRows=[]; for(let c=Math.max(2,cn-2);c<=cn;c++){
+    const yr=new Date(HALVINGS[c-1]).getUTCFullYear();
+    histRows.push([yr+'→'+String(yr+1).slice(2),
+      money(ath[c]), money(suelo[c])+(c===cn?'?':''), '+'+Math.round(gOf(ath[c-1],ath[c]))+'%']);
+  }
   const up=d&&d.chg24>=0;
 
   // geometría del gráfico en ESCALA DE PRECIO (techo ATH, suelo proyectado)
@@ -701,7 +769,7 @@ function CycleBTC(){
       <div style={panel({marginBottom:14,padding:16})}>
         <div style={{...flx({justifyContent:'space-between'}),marginBottom:12}}>
           <span style={eyebrow}>Fase del ciclo · semana {weeks}</span>
-          <span className="mono" style={{fontSize:9.5,color:'var(--faint)'}}>C4 · halving 2024</span>
+          <span className="mono" style={{fontSize:9.5,color:'var(--faint)'}}>C{cycleNum} · halving {halvingYr}</span>
         </div>
         <div style={{...flx({gap:10}),marginBottom:14}}>
           <div style={{flex:1,textAlign:'center',padding:'14px 8px',borderRadius:11,
@@ -751,9 +819,9 @@ function CycleBTC(){
             fontSize="10" fontWeight="700" fill="var(--txt)" fontFamily="Sora,sans-serif">{money(price)}</text>}
         </svg>
         <div style={{...flx({justifyContent:'space-between'}),marginTop:6,fontSize:9.5,color:'var(--dim)'}} className="mono">
-          <span>Halving 2024</span>
+          <span>Halving {halvingYr}</span>
           <span style={{color:ph.c,fontWeight:700}}>{ph.t}</span>
-          <span>Halving 2028</span>
+          <span>Halving {nextHalvingYr}</span>
         </div>
       </div>
 
@@ -768,7 +836,7 @@ function CycleBTC(){
             background:'linear-gradient(90deg,var(--upDim),#F3BA2F,var(--accent))',transition:'width .6s ease'}}/>
         </div>
         <div style={{...flx({justifyContent:'space-between'}),fontSize:9.5,color:'var(--faint)',marginBottom:16}} className="mono">
-          <span>Halving abr 2024</span><span>{prog.toFixed(0)}% del ciclo</span><span>Halving ~2028</span>
+          <span>Halving {halvingYr}</span><span>{prog.toFixed(0)}% del ciclo</span><span>Halving ~{nextHalvingYr}</span>
         </div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
           <div style={{background:'#0A0D14',borderRadius:10,padding:'12px 14px',textAlign:'center'}}>
@@ -790,18 +858,18 @@ function CycleBTC(){
         </div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
           <div style={{padding:'12px 13px',borderRadius:10,background:'rgba(255,84,112,.06)',border:'1px solid rgba(255,84,112,.22)'}}>
-            <div style={{fontSize:9.5,letterSpacing:1,color:'var(--downDim)',textTransform:'uppercase',fontWeight:700,marginBottom:4}}>▲ Vender · techo C4</div>
+            <div style={{fontSize:9.5,letterSpacing:1,color:'var(--downDim)',textTransform:'uppercase',fontWeight:700,marginBottom:4}}>▲ Vender · techo C{cycleNum}</div>
             <div className="mono" style={{fontSize:18,fontWeight:800,color:'var(--down)'}}>{money(athC4)}</div>
-            <div style={{fontSize:9.5,color:'var(--faint)',marginTop:2}}>+{Math.round(g34)}% vs C3</div>
+            <div style={{fontSize:9.5,color:'var(--faint)',marginTop:2}}>+{Math.round(gainC)}% vs C{cycleNum-1}</div>
           </div>
           <div style={{padding:'12px 13px',borderRadius:10,background:'rgba(110,139,255,.06)',border:'1px solid rgba(110,139,255,.22)'}}>
-            <div style={{fontSize:9.5,letterSpacing:1,color:'#5B9BFF',textTransform:'uppercase',fontWeight:700,marginBottom:4}}>▼ Comprar · suelo C4</div>
+            <div style={{fontSize:9.5,letterSpacing:1,color:'#5B9BFF',textTransform:'uppercase',fontWeight:700,marginBottom:4}}>▼ Comprar · suelo C{cycleNum}</div>
             <div className="mono" style={{fontSize:18,fontWeight:800,color:'#5B9BFF'}}>{money(sueloC4)}</div>
             <div style={{fontSize:9.5,color:'var(--faint)',marginTop:2}}>-{Math.round(ddC4)}% desde ATH</div>
           </div>
         </div>
         <div style={{...flx({justifyContent:'space-between'}),marginTop:12,paddingTop:12,borderTop:'1px solid var(--line2)'}}>
-          <span style={{fontSize:10.5,color:'var(--dim)'}}>Próximo ciclo (C5) <span style={{color:'var(--faint)'}}>· estimado</span></span>
+          <span style={{fontSize:10.5,color:'var(--dim)'}}>Próximo ciclo (C{cycleNum+1}) <span style={{color:'var(--faint)'}}>· estimado</span></span>
           <span className="mono" style={{fontSize:11.5,fontWeight:700}}>
             <span style={{color:'var(--upDim)'}}>ATH ~{money(athC5)}</span> <span style={{color:'var(--faint)'}}>/</span> <span style={{color:'#5B9BFF'}}>suelo ~{money(sueloC5)}</span>
           </span>
@@ -815,7 +883,7 @@ function CycleBTC(){
           letterSpacing:.5,textTransform:'uppercase',fontWeight:600,marginBottom:8}}>
           <span>Ciclo</span><span style={{textAlign:'right'}}>ATH</span><span style={{textAlign:'right'}}>Suelo</span><span style={{textAlign:'right'}}>Subida</span>
         </div>
-        {[['2016→17','$19.783','$3.200','+1.656%'],['2020→21','$69.044','$15.479','+249%'],['2024→?',money(athC4),money(sueloC4)+'?','+'+Math.round(g34)+'%']].map((row,i)=>(
+        {histRows.map((row,i)=>(
           <div key={i} style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:'0 6px',padding:'7px 0',
             borderTop:i?'1px solid #12151F':'none',fontSize:11.5}} className="mono">
             <span style={{color:'var(--txt)',fontWeight:600}}>{row[0]}</span>
@@ -840,6 +908,34 @@ function CycleBTC(){
         <p style={{fontSize:11,color:'var(--faint)',lineHeight:1.6}}>
           La fase mostrada es un <b>patrón histórico orientativo</b> según los días transcurridos desde el último halving.
           No es una predicción ni consejo financiero. Cada ciclo es distinto.
+        </p>
+      </div>
+
+      {/* On-chain MVRV / NUPL — señal de fondo de mercado y techo */}
+      <div style={panel({marginBottom:14,padding:16})}>
+        <div style={{...flx({justifyContent:'space-between'}),marginBottom:12}}>
+          <span style={eyebrow}>On-chain · señal de fondo / techo</span>
+          <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>MVRV · NUPL</span>
+        </div>
+        {oc?(()=>{
+          const ms=mvrvSig(oc.mvrv), ns=nuplSig(oc.nupl), zs=ms.z+ns.z;
+          const combo=zs>=2?{t:'🟢 FONDO DE MERCADO',c:'#1FE0A0'}:zs<=-2?{t:'🔴 TECHO / MÁXIMO',c:'var(--down)'}:
+            zs>0?{t:'🟢 Zona baja · acumulación',c:'#26C99E'}:zs<0?{t:'🟠 Zona alta · precaución',c:'#F3BA2F'}:{t:'⚪ Neutral',c:'var(--dim)'};
+          const mvrvPct=(oc.mvrv-0.5)/(4-0.5)*100, nuplPct=(oc.nupl+0.25)/1*100;
+          return <React.Fragment>
+            <div style={{textAlign:'center',padding:'12px',borderRadius:11,marginBottom:16,
+              background:`${combo.c}14`,border:`1px solid ${combo.c}45`}}>
+              <div style={{fontSize:15,fontWeight:800,color:combo.c}}>{combo.t}</div>
+              <div style={{fontSize:10,color:'var(--dim)',marginTop:3}}>según MVRV y NUPL combinados</div>
+            </div>
+            <OCMetric name="MVRV" val={oc.mvrv.toFixed(2)} sig={ms} pct={mvrvPct} labels={['fondo <1','neutral','techo >4']}/>
+            <OCMetric name="NUPL" val={oc.nupl.toFixed(2)} sig={ns} pct={nuplPct} labels={['capitulación','creencia','euforia']}/>
+          </React.Fragment>;
+        })():(
+          <div style={{textAlign:'center',color:'var(--faint)',fontSize:12,padding:'18px 0'}}>cargando datos on-chain…</div>
+        )}
+        <p style={{fontSize:9.5,color:'var(--faint)',lineHeight:1.5,marginTop:6}}>
+          <b>MVRV</b> &lt;1 = suelo de ciclo · &gt;4 = zona techo. <b>NUPL</b> &lt;0 = capitulación (suelo) · &gt;0.75 = euforia (techo). Datos en vivo de bitcoin-data.com.
         </p>
       </div>
     </div>
