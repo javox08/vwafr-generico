@@ -136,9 +136,11 @@
       background:linear-gradient(100deg,rgba(110,139,255,.12),rgba(31,224,160,.07) 60%,var(--panel));
       transition:transform .15s,border-color .15s}
     .promo:hover{transform:translateY(-1px);border-color:rgba(110,139,255,.6)}
-    .promo .pico{width:38px;height:38px;border-radius:10px;flex-shrink:0;display:flex;
-      align-items:center;justify-content:center;font-size:18px;font-weight:800;color:#07090E;
-      background:linear-gradient(135deg,var(--accent),#1FE0A0)}
+    .promo .pico{width:38px;height:38px;border-radius:10px;flex-shrink:0;overflow:hidden;
+      display:flex;align-items:center;justify-content:center;background:#0A0D14;border:1px solid var(--line2)}
+    .promo .pico img{width:100%;height:100%;object-fit:contain}
+    /* apartado Ciclo BTC: sin banners ni contenido SEO del inicio */
+    body.cycle-view > .ad-wrap, body.cycle-view > .seo{display:none}
     .promo .p1{font-size:13.5px;font-weight:700;color:var(--txt);line-height:1.2}
     .promo .p2{font-size:10.5px;color:var(--dim);margin-top:2px}
     .promo .pcta{margin-left:auto;flex-shrink:0;font-size:11.5px;font-weight:700;color:#07090E;
@@ -149,7 +151,7 @@
 
 <div class="ad-wrap" style="padding-top:14px">
   <a class="promo" href="https://www.bitunix.com/register?inviteCode=ffcczq" target="_blank" rel="noopener nofollow">
-    <span class="pico">B</span>
+    <span class="pico"><img src="https://www.google.com/s2/favicons?domain=bitunix.com&sz=64" alt="Bitunix"/></span>
     <span><span class="p1">Opera futuros en Bitunix</span><span class="p2">Regístrate con código <b>ffcczq</b> · bono de bienvenida</span></span>
     <span class="pcta">Abrir cuenta →</span>
   </a>
@@ -196,7 +198,7 @@
 
 <div class="ad-wrap" style="padding-bottom:26px;margin-top:14px">
   <a class="promo" href="https://www.bitunix.com/register?inviteCode=ffcczq" target="_blank" rel="noopener nofollow">
-    <span class="pico">B</span>
+    <span class="pico"><img src="https://www.google.com/s2/favicons?domain=bitunix.com&sz=64" alt="Bitunix"/></span>
     <span><span class="p1">¿Vas a operar estos funding?</span><span class="p2">Hazlo en Bitunix · código <b>ffcczq</b></span></span>
     <span class="pcta">Registrarme →</span>
   </a>
@@ -245,6 +247,19 @@ function CoinIcon({c,size=26,radius=8}){
     background:'#0A0D14',objectFit:'cover'}}/>;
 }
 
+// Logo de cada exchange (favicon vía Google) con respaldo al punto de color.
+const EX_DOMAIN={Binance:'binance.com',OKX:'okx.com',Bybit:'bybit.com',MEXC:'mexc.com',
+  Hyperliquid:'hyperliquid.xyz',Bitget:'bitget.com',KuCoin:'kucoin.com',BingX:'bingx.com'};
+function ExLogo({name,color,size=16}){
+  const dom=EX_DOMAIN[name];
+  const [err,setErr]=useState(false);
+  if(!dom||err) return <div style={{width:size,height:size,borderRadius:'50%',background:color,
+    flexShrink:0,boxShadow:`0 0 5px ${color}90`}}/>;
+  return <img src={`https://www.google.com/s2/favicons?domain=${dom}&sz=64`} onError={()=>setErr(true)}
+    alt={name} width={size} height={size} loading="lazy"
+    style={{width:size,height:size,borderRadius:4,flexShrink:0,background:'#0A0D14'}}/>;
+}
+
 // Respaldo en el navegador (CORS) para Binance/Bybit, geo-bloqueados en el servidor.
 async function bybitFallback(coins,data){
   const r=await fetch('https://api.bybit.com/v5/market/tickers?category=linear').then(r=>r.json());
@@ -275,14 +290,20 @@ function vwafrOf(coinData){
   }
   return{vwafr:den?num/den:0,oi:den};
 }
+function coinVol(cd){let v=0;for(const ex of Object.values(cd||{}))if(ex&&Number.isFinite(ex.vol)&&ex.vol>0)v+=ex.vol;return v;}
+// Global del top 10: el funding de cada moneda (ya ponderado por OI entre exchanges)
+// se pondera OTRA VEZ por el volumen 24h de esa moneda. Si falta volumen, cae a OI.
 function vwafrGlobal(data){
-  let num=0,den=0;
+  let vnum=0,vden=0,onum=0,oden=0;
   for(const c of Object.keys(data||{})){
-    for(const ex of Object.values(data[c]||{})){
-      if(ex&&Number.isFinite(ex.funding)&&Number.isFinite(ex.oi)&&ex.oi>0){num+=ex.funding*ex.oi;den+=ex.oi;}
-    }
+    const cv=vwafrOf(data[c]);
+    if(!(cv.oi>0))continue;
+    const vol=coinVol(data[c]);
+    onum+=cv.vwafr*cv.oi; oden+=cv.oi;
+    if(vol>0){vnum+=cv.vwafr*vol; vden+=vol;}
   }
-  return{vwafr:den?num/den:0,oi:den};
+  const vwafr=vden?vnum/vden:(oden?onum/oden:0);
+  return{vwafr,oi:oden,vol:vden};
 }
 
 // ── estilos compartidos ──
@@ -299,7 +320,7 @@ const BITUNIX='https://www.bitunix.com/register?inviteCode=ffcczq';
 function Promo({t1,t2,cta}){
   return(
     <a className="promo" href={BITUNIX} target="_blank" rel="noopener nofollow">
-      <span className="pico">B</span>
+      <span className="pico"><img src="https://www.google.com/s2/favicons?domain=bitunix.com&sz=64" alt="Bitunix"/></span>
       <span><span className="p1">{t1}</span><span className="p2">{t2}</span></span>
       <span className="pcta">{cta}</span>
     </a>
@@ -460,8 +481,7 @@ function Calc({coin,data,source,sel}){
               </div>
               <div style={{minWidth:0}}>
                 <div style={{...flx({gap:6}),marginBottom:3}}>
-                  <div style={{width:5,height:5,borderRadius:'50%',background:r.c,flexShrink:0,
-                    boxShadow:`0 0 5px ${r.c}90`}}/>
+                  <ExLogo name={r.id} color={r.c} size={16}/>
                   <span style={{fontSize:12.5,fontWeight:600,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{r.id}</span>
                   {auto&&r.status==='ok'&&<div style={{width:5,height:5,borderRadius:'50%',
                     background:'var(--up)',animation:'breathe 2.4s ease infinite',flexShrink:0}}/>}
@@ -545,7 +565,7 @@ function Calc({coin,data,source,sel}){
           <div key={r.id} style={{...flx({justifyContent:'space-between'}),
             padding:'8px 0',borderTop:i?'1px solid #12151F':'none'}}>
             <div style={{...flx({gap:7}),minWidth:78}}>
-              <div style={{width:5,height:5,borderRadius:'50%',background:r.c}}/>
+              <ExLogo name={r.id} color={r.c} size={15}/>
               <span style={{fontSize:12,fontWeight:600}}>{r.id}</span>
             </div>
             <span className="mono" style={{fontSize:10,color:'var(--dim)',flex:1,textAlign:'center'}}>
@@ -564,6 +584,109 @@ function Calc({coin,data,source,sel}){
           </span>
           <span className="mono" style={{fontSize:14,fontWeight:700,color:SC}}>= {fmt(vwafr)}</span>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Apartado: Ciclo de Bitcoin (sin anuncios) ──
+function CycleBTC(){
+  const [d,setD]=useState(null);
+  useEffect(()=>{
+    let alive=true;
+    const load=async()=>{
+      try{
+        const r=await fetch('https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=bitcoin&price_change_percentage=24h').then(x=>x.json());
+        const b=r&&r[0];
+        if(alive&&b){setD({price:b.current_price,ath:b.ath,athPct:b.ath_change_percentage,chg24:b.price_change_percentage_24h,mcap:b.market_cap});return;}
+      }catch(_){}
+      try{
+        const t=await fetch('https://www.okx.com/api/v5/market/ticker?instId=BTC-USDT-SWAP').then(x=>x.json());
+        const o=t.data[0]; if(alive)setD({price:parseFloat(o.last),chg24:(parseFloat(o.last)/parseFloat(o.open24h)-1)*100});
+      }catch(e){}
+    };
+    load(); const t=setInterval(load,60000); return()=>{alive=false;clearInterval(t);};
+  },[]);
+
+  const D=86400000, LAST=new Date('2024-04-20T00:00:00Z'), NEXT=new Date('2028-04-20T00:00:00Z'), now=new Date();
+  const since=Math.max(0,Math.floor((now-LAST)/D));
+  const toNext=Math.max(0,Math.ceil((NEXT-now)/D));
+  const len=Math.round((NEXT-LAST)/D);
+  const prog=Math.min(100,Math.max(0,since/len*100));
+  const ph=since<150?{t:'Acumulación post-halving',c:'var(--upDim)'}
+    :since<400?{t:'Tendencia alcista',c:'var(--up)'}
+    :since<560?{t:'Zona de techo / euforia',c:'#F3BA2F'}
+    :since<900?{t:'Corrección / distribución',c:'var(--down)'}
+    :{t:'Acumulación / suelo pre-halving',c:'var(--upDim)'};
+  const money=v=>(v==null||!Number.isFinite(v))?'—':'$'+v.toLocaleString('es-ES',{maximumFractionDigits:0});
+  const up=d&&d.chg24>=0;
+
+  return(
+    <div>
+      <div style={{...flx({gap:10}),margin:'2px 2px 14px'}}>
+        <CoinIcon c="BTC" size={32} radius={10}/>
+        <div>
+          <div style={{fontSize:17,fontWeight:800,letterSpacing:-.3,lineHeight:1}}>Ciclo de Bitcoin</div>
+          <div style={{...eyebrow,fontSize:9}}>halving · precio · máximo histórico</div>
+        </div>
+      </div>
+
+      {/* Precio */}
+      <div style={panel({marginBottom:14,padding:'20px'})}>
+        <div style={{...eyebrow,marginBottom:10,textAlign:'center'}}>Precio de Bitcoin (BTC)</div>
+        <div className="mono" style={{fontSize:38,fontWeight:800,textAlign:'center',lineHeight:1,letterSpacing:-1}}>
+          {d?money(d.price):'…'}
+        </div>
+        {d&&Number.isFinite(d.chg24)&&(
+          <div style={{textAlign:'center',marginTop:8,fontSize:13,fontWeight:700,color:up?'var(--up)':'var(--down)'}} className="mono">
+            {up?'▲ +':'▼ '}{d.chg24.toFixed(2)}% <span style={{color:'var(--faint)',fontWeight:400}}>· 24h</span>
+          </div>
+        )}
+        {d&&Number.isFinite(d.athPct)&&(
+          <div style={{...flx({justifyContent:'space-between'}),marginTop:16,paddingTop:14,borderTop:'1px solid var(--line2)'}}>
+            <span style={{fontSize:11,color:'var(--dim)'}}>Máximo histórico (ATH)<br/><span className="mono" style={{color:'var(--txt)',fontSize:13}}>{money(d.ath)}</span></span>
+            <span style={{textAlign:'right',fontSize:11,color:'var(--dim)'}}>Desde el ATH<br/><span className="mono" style={{color:d.athPct>=-1?'var(--up)':'var(--down)',fontSize:13}}>{d.athPct.toFixed(1)}%</span></span>
+          </div>
+        )}
+      </div>
+
+      {/* Ciclo del halving */}
+      <div style={panel({marginBottom:14,padding:16})}>
+        <div style={{...flx({justifyContent:'space-between'}),marginBottom:14}}>
+          <span style={eyebrow}>Ciclo del halving</span>
+          <span className="mono" style={{fontSize:10.5,fontWeight:700,color:ph.c}}>{ph.t}</span>
+        </div>
+        <div style={{position:'relative',height:8,borderRadius:5,background:'#0A0D14',overflow:'hidden',marginBottom:6}}>
+          <div style={{height:'100%',width:`${prog}%`,borderRadius:5,
+            background:'linear-gradient(90deg,var(--upDim),#F3BA2F,var(--accent))',transition:'width .6s ease'}}/>
+        </div>
+        <div style={{...flx({justifyContent:'space-between'}),fontSize:9.5,color:'var(--faint)',marginBottom:16}} className="mono">
+          <span>Halving abr 2024</span><span>{prog.toFixed(0)}% del ciclo</span><span>Halving ~2028</span>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+          <div style={{background:'#0A0D14',borderRadius:10,padding:'12px 14px',textAlign:'center'}}>
+            <div className="mono" style={{fontSize:22,fontWeight:800,color:'var(--accent)'}}>{since}</div>
+            <div style={{fontSize:10,color:'var(--dim)',marginTop:2}}>días desde el halving</div>
+          </div>
+          <div style={{background:'#0A0D14',borderRadius:10,padding:'12px 14px',textAlign:'center'}}>
+            <div className="mono" style={{fontSize:22,fontWeight:800,color:'var(--txt)'}}>{toNext}</div>
+            <div style={{fontSize:10,color:'var(--dim)',marginTop:2}}>días al próximo halving</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Explicación */}
+      <div style={panel({marginBottom:14,padding:'16px 18px'})}>
+        <div style={{...eyebrow,marginBottom:10}}>El ciclo de 4 años de Bitcoin</div>
+        <p style={{fontSize:12.5,color:'var(--dim)',lineHeight:1.65,marginBottom:10}}>
+          Cada ~4 años (210.000 bloques) ocurre el <b style={{color:'var(--txt)'}}>halving</b>: la recompensa por bloque se reduce a la mitad,
+          cortando la emisión de nuevos BTC. Históricamente, el mercado ha seguido un patrón ligado a este evento:
+          acumulación, tendencia alcista, euforia con máximo histórico y luego corrección.
+        </p>
+        <p style={{fontSize:11,color:'var(--faint)',lineHeight:1.6}}>
+          La fase mostrada es un <b>patrón histórico orientativo</b> según los días transcurridos desde el último halving.
+          No es una predicción ni consejo financiero. Cada ciclo es distinto.
+        </p>
       </div>
     </div>
   );
@@ -611,32 +734,53 @@ function App(){
   const data=(payload&&payload.data)||{};
   const g=useMemo(()=>vwafrGlobal(data),[payload]);
   const [showCta,setShowCta]=useState(true);
+  const [view,setView]=useState('home');
+  useEffect(()=>{document.body.classList.toggle('cycle-view',view==='cycle');},[view]);
+  const home=view==='home';
 
   return(
     <>
     <div style={{...wrap,paddingBottom:8}}>
 
       {/* TOPBAR */}
-      <div style={{...flx({justifyContent:'space-between'}),padding:'4px 2px 14px'}}>
+      <div style={{...flx({justifyContent:'space-between'}),padding:'4px 2px 12px'}}>
         <div>
           <div style={{...flx({gap:7}),marginBottom:5}}>
             <div style={{width:7,height:7,borderRadius:2,background:'var(--accent)',
               boxShadow:'0 0 8px var(--accent)',animation:'breathe 2.4s ease infinite'}}/>
-            <span style={eyebrow}>Funding cripto · top 10 · en vivo</span>
+            <span style={eyebrow}>{home?'Funding cripto · top 10 · en vivo':'Bitcoin · ciclo de mercado'}</span>
           </div>
           <h1 style={{fontSize:21,fontWeight:800,letterSpacing:-.5,lineHeight:1}}>
-            Sentimiento del Mercado
+            {home?'Sentimiento del Mercado':'Ciclo de Bitcoin'}
           </h1>
         </div>
-        <button onClick={fetchAll} disabled={busy}
-          style={{...flx({gap:6,justifyContent:'center'}),background:'var(--panel2)',
-            border:'1px solid var(--line2)',borderRadius:9,color:'var(--accent)',
-            fontSize:12,fontWeight:600,padding:'8px 13px',cursor:busy?'default':'pointer',opacity:busy?.5:1}}>
-          <span style={{display:'inline-block',animation:busy?'spin .8s linear infinite':'none',fontSize:13}}>↻</span>
-          {busy?'':'Actualizar'}
-        </button>
+        {home&&(
+          <button onClick={fetchAll} disabled={busy}
+            style={{...flx({gap:6,justifyContent:'center'}),background:'var(--panel2)',
+              border:'1px solid var(--line2)',borderRadius:9,color:'var(--accent)',
+              fontSize:12,fontWeight:600,padding:'8px 13px',cursor:busy?'default':'pointer',opacity:busy?.5:1}}>
+            <span style={{display:'inline-block',animation:busy?'spin .8s linear infinite':'none',fontSize:13}}>↻</span>
+            {busy?'':'Actualizar'}
+          </button>
+        )}
       </div>
 
+      {/* NAV apartados */}
+      <div style={{...flx({gap:8}),marginBottom:16}}>
+        {[['home','Inicio'],['cycle','Ciclo BTC']].map(([k,label])=>{
+          const on=view===k;
+          return(
+            <button key={k} onClick={()=>setView(k)} style={{flex:1,padding:'9px 0',borderRadius:10,
+              fontSize:12.5,fontWeight:700,cursor:'pointer',transition:'all .15s',
+              border:`1px solid ${on?'var(--accent)':'var(--line)'}`,
+              background:on?'rgba(110,139,255,.12)':'transparent',color:on?'var(--txt)':'var(--dim)'}}>{label}</button>
+          );
+        })}
+      </div>
+
+      {view==='cycle'&&<CycleBTC/>}
+
+      {home&&<>
       {/* status strip */}
       <div style={{...flx({justifyContent:'space-between'}),padding:'0 4px',marginBottom:16}}>
         <div style={{...flx({gap:6}),fontSize:10.5,color:'var(--dim)'}} className="mono">
@@ -651,7 +795,7 @@ function App(){
       {/* ── FUNDING GLOBAL (gran indicador, todas las monedas) ── */}
       <Hero big vwafr={g.vwafr} label="Funding GLOBAL · top 10 ponderado por OI"/>
       <div style={{...flx({justifyContent:'center',gap:6}),marginTop:-4,marginBottom:14}}>
-        <span className="mono" style={{fontSize:10.5,color:'var(--faint)'}}>OI agregado ${g.oi.toFixed(1)}B · {coins.length} monedas × {META.length} exchanges</span>
+        <span className="mono" style={{fontSize:10.5,color:'var(--faint)'}}>ponderado por volumen 24h{g.vol?` · vol $${g.vol.toFixed(0)}B`:''} · {coins.length} monedas × {META.length} exchanges</span>
       </div>
 
       {/* ── Referido Bitunix (central) ── */}
@@ -730,11 +874,15 @@ function App(){
           Datos de exchanges públicos, solo informativo. No es consejo financiero.
         </p>
       </div>
+      </>}
 
     </div>
-    {showCta&&(
+    {showCta&&home&&(
       <div className="cta-bar"><div className="row">
-        <a href={BITUNIX} target="_blank" rel="noopener nofollow">⚡ Abrir cuenta en Bitunix · código ffcczq</a>
+        <a href={BITUNIX} target="_blank" rel="noopener nofollow">
+          <img src="https://www.google.com/s2/favicons?domain=bitunix.com&sz=64" alt="" width="18" height="18" style={{borderRadius:4}}/>
+          Abrir cuenta en Bitunix · código ffcczq
+        </a>
         <span className="xc" onClick={()=>setShowCta(false)} title="Cerrar">✕</span>
       </div></div>
     )}

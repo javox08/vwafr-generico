@@ -89,10 +89,10 @@ async function mexcBulk() {
   const csMap = {}; for (const d of dt.data) csMap[d.symbol] = d.contractSize;
   for (const c of COINS) {
     const s = sym.MEXC(c), t = tkMap[s], cs = csMap[s];
-    if (!t) { out[c] = { funding: null, oi: null }; continue; }
+    if (!t) { out[c] = { funding: null, oi: null, vol: null }; continue; }
     const oi = (Number.isFinite(+t.holdVol) && Number.isFinite(+cs) && Number.isFinite(+t.lastPrice))
       ? bil(+t.holdVol * +cs * +t.lastPrice) : null;
-    out[c] = { funding: pct(t.fundingRate), oi };
+    out[c] = { funding: pct(t.fundingRate), oi, vol: bil(t.amount24) };
   }
   return out;
 }
@@ -111,6 +111,7 @@ async function hyperliquidBulk() {
     out[c] = {
       funding: Number.isFinite(f) ? f * 8 * 100 : null,
       oi: bil(parseFloat(x.openInterest) * parseFloat(x.markPx)),
+      vol: bil(x.dayNtlVlm),
     };
   }
   return out;
@@ -122,8 +123,8 @@ async function bitgetBulk() {
   const m = {}; for (const t of r.data) m[t.symbol] = t;
   for (const c of COINS) {
     const t = m[sym.Bitget(c)];
-    if (!t) { out[c] = { funding: null, oi: null }; continue; }
-    out[c] = { funding: pct(t.fundingRate), oi: bil(parseFloat(t.holdingAmount) * parseFloat(t.markPrice)) };
+    if (!t) { out[c] = { funding: null, oi: null, vol: null }; continue; }
+    out[c] = { funding: pct(t.fundingRate), oi: bil(parseFloat(t.holdingAmount) * parseFloat(t.markPrice)), vol: bil(t.usdtVolume) };
   }
   return out;
 }
@@ -134,9 +135,9 @@ async function kucoinBulk() {
   const m = {}; for (const t of r.data) m[t.symbol] = t;
   for (const c of COINS) {
     const t = m[sym.KuCoin(c)];
-    if (!t) { out[c] = { funding: null, oi: null }; continue; }
+    if (!t) { out[c] = { funding: null, oi: null, vol: null }; continue; }
     const oi = bil(parseFloat(t.openInterest) * parseFloat(t.multiplier) * parseFloat(t.markPrice));
-    out[c] = { funding: pct(t.fundingFeeRate), oi };
+    out[c] = { funding: pct(t.fundingFeeRate), oi, vol: bil(t.turnoverOf24h) };
   }
   return out;
 }
@@ -197,9 +198,11 @@ export default async () => {
       const e = map[c];
       const f = e ? Number(e.funding) : NaN;
       const o = e ? Number(e.oi) : NaN;
+      const v = e ? Number(e.vol) : NaN;
       data[c][name] = {
         funding: Number.isFinite(f) ? f : null,
         oi: Number.isFinite(o) && o > 0 ? o : null,
+        vol: Number.isFinite(v) && v > 0 ? v : null,
         ok: Number.isFinite(f),
       };
     }
