@@ -628,26 +628,45 @@ function CycleBTC(){
     load(); const t=setInterval(load,60000); return()=>{alive=false;clearInterval(t);};
   },[]);
 
-  const D=86400000, LAST=new Date('2024-04-20T00:00:00Z'), NEXT=new Date('2028-04-20T00:00:00Z'), now=new Date();
+  const D=86400000, LAST=new Date('2024-04-20T00:00:00Z'), NEXT=new Date('2028-04-18T00:00:00Z'), now=new Date();
   const since=Math.max(0,Math.floor((now-LAST)/D));
   const toNext=Math.max(0,Math.ceil((NEXT-now)/D));
   const len=Math.round((NEXT-LAST)/D);
   const prog=Math.min(100,Math.max(0,since/len*100));
-  const ph=since<150?{t:'Acumulación post-halving',c:'var(--upDim)'}
-    :since<400?{t:'Tendencia alcista',c:'var(--up)'}
-    :since<560?{t:'Zona de techo / euforia',c:'#F3BA2F'}
-    :since<900?{t:'Corrección / distribución',c:'var(--down)'}
-    :{t:'Acumulación / suelo pre-halving',c:'var(--upDim)'};
+  const weeks=Math.floor(since/7);
+  // Modelo de fases por semanas desde el halving (indicador BTC Cycle -Javox)
+  const ph =
+    weeks<40 ?{t:'Pre-Bull',c:'#8AA0FF',next:'Bull Market',at:40}:
+    weeks<77 ?{t:'Bull Market',c:'var(--up)',next:'Bear Market',at:77}:
+    weeks<135?{t:'Bear Market',c:'var(--down)',next:'Acumulación',at:135}:
+    weeks<200?{t:'Acumulación',c:'#3B82F6',next:'Nuevo ciclo',at:200}:
+              {t:'Pre-Bull (nuevo ciclo)',c:'#8AA0FF',next:'Bull Market',at:208};
+  const weeksToNext=Math.max(0,ph.at-weeks), daysToNextPh=weeksToNext*7;
+  // Proyecciones por rendimientos decrecientes (del modelo)
+  const g23=(69044-19783)/19783*100, g34=(126000-69044)/69044*100;
+  const redAuto=(g23-g34)/g23*100;                  // ~67% reducción por ciclo
+  const athC4=Math.max(126000,(d&&d.ath)||0);       // ATH C4 (real si supera 126k)
+  const gC5=g34*(1-redAuto/100), athC5=athC4*(1+gC5/100);
+  const dd2=(19783-3200)/19783*100, dd3=(69044-15479)/69044*100;
+  const redDd=(dd2-dd3)/dd2*100;                     // ~7% menos drawdown por ciclo
+  const ddC4=dd3*(1-redDd/100), sueloC4=athC4*(1-ddC4/100);
+  const ddC5=ddC4*(1-redDd/100), sueloC5=athC5*(1-ddC5/100);
   const money=v=>(v==null||!Number.isFinite(v))?'—':'$'+v.toLocaleString('es-ES',{maximumFractionDigits:0});
   const up=d&&d.chg24>=0;
 
-  // geometría del gráfico del ciclo
-  const CW=320,CH=140,CP=12;
-  const cpts=CYC.map(([x,h])=>[x*CW, CH-CP-(h*(CH-2*CP))]);
+  // geometría del gráfico en ESCALA DE PRECIO (techo ATH, suelo proyectado)
+  const CW=320,CH=150,CP=12;
+  const price=(d&&Number.isFinite(d.price))?d.price:null;
+  const yMax=Math.max(athC4*1.08, price?price*1.05:0);
+  const yMin=Math.min(sueloC4*0.82, price?price*0.92:sueloC4*0.82);
+  const yOf=p=>CH-CP-Math.max(0,Math.min(1,(p-yMin)/((yMax-yMin)||1)))*(CH-2*CP);
+  // la curva del ciclo mapea heat(0..1) -> precio entre suelo y techo
+  const cpts=CYC.map(([x,h])=>[x*CW, yOf(sueloC4 + h*(athC4-sueloC4))]);
   const cLine=smoothPath(cpts);
   const cArea=cLine+` L ${CW},${CH} L 0,${CH} Z`;
-  const mp=prog/100;
-  const mx=mp*CW, my=CH-CP-(heatAt(mp)*(CH-2*CP));
+  const yTecho=yOf(athC4), ySuelo=yOf(sueloC4);
+  const mx=Math.min(CW,Math.max(0,prog/100*CW));
+  const my=price?yOf(price):CH-CP-(heatAt(prog/100)*(CH-2*CP));
 
   return(
     <div>
@@ -678,25 +697,58 @@ function CycleBTC(){
         )}
       </div>
 
-      {/* Gráfico del ciclo de 4 años */}
+      {/* Fase del ciclo + cuenta atrás */}
       <div style={panel({marginBottom:14,padding:16})}>
-        <div style={{...flx({justifyContent:'space-between'}),marginBottom:14}}>
-          <span style={eyebrow}>Ciclo de 4 años · gráfico</span>
-          <span className="mono" style={{fontSize:9.5,color:ph.c,fontWeight:700}}>● estás aquí</span>
+        <div style={{...flx({justifyContent:'space-between'}),marginBottom:12}}>
+          <span style={eyebrow}>Fase del ciclo · semana {weeks}</span>
+          <span className="mono" style={{fontSize:9.5,color:'var(--faint)'}}>C4 · halving 2024</span>
+        </div>
+        <div style={{...flx({gap:10}),marginBottom:14}}>
+          <div style={{flex:1,textAlign:'center',padding:'14px 8px',borderRadius:11,
+            background:`${ph.c}12`,border:`1px solid ${ph.c}40`}}>
+            <div style={{fontSize:17,fontWeight:800,color:ph.c,lineHeight:1.1}}>{ph.t}</div>
+            <div style={{fontSize:10,color:'var(--dim)',marginTop:4}}>fase actual</div>
+          </div>
+          <div style={{flex:1,textAlign:'center',padding:'14px 8px',borderRadius:11,background:'#0A0D14',border:'1px solid var(--line2)'}}>
+            <div className="mono" style={{fontSize:17,fontWeight:800,color:'var(--txt)',lineHeight:1.1}}>{weeksToNext} sem</div>
+            <div style={{fontSize:10,color:'var(--dim)',marginTop:4}}>→ {ph.next} (≈{daysToNextPh}d)</div>
+          </div>
+        </div>
+        {/* timeline de fases */}
+        <div style={{display:'flex',height:7,borderRadius:5,overflow:'hidden',gap:2}}>
+          {[['Pre',0,40,'#8AA0FF'],['Bull',40,77,'var(--up)'],['Bear',77,135,'var(--down)'],['Acum',135,200,'#3B82F6']].map(([nm,a,b,c])=>{
+            const active=weeks>=a&&weeks<b;
+            return <div key={nm} style={{flex:b-a,background:active?c:`${c}33`,opacity:active?1:.5}} title={nm}/>;
+          })}
+        </div>
+        <div style={{...flx({justifyContent:'space-between'}),marginTop:5,fontSize:8.5,color:'var(--faint)'}} className="mono">
+          <span>Pre-Bull</span><span>Bull</span><span>Bear</span><span>Acum.</span>
+        </div>
+      </div>
+
+      {/* Gráfico en escala de precio · se actualiza con el precio en vivo */}
+      <div style={panel({marginBottom:14,padding:16})}>
+        <div style={{...flx({justifyContent:'space-between'}),marginBottom:12}}>
+          <span style={eyebrow}>Ciclo · proyección techo / suelo</span>
+          <span className="mono" style={{fontSize:9.5,color:ph.c,fontWeight:700}}>● precio en vivo</span>
         </div>
         <svg viewBox={`0 0 ${CW} ${CH}`} width="100%" style={{display:'block',overflow:'visible'}}>
           <defs>
             <linearGradient id="cycgrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="rgba(110,139,255,.38)"/>
+              <stop offset="0%" stopColor="rgba(110,139,255,.30)"/>
               <stop offset="100%" stopColor="rgba(110,139,255,0)"/>
             </linearGradient>
           </defs>
+          <line x1="0" y1={yTecho} x2={CW} y2={yTecho} stroke="#F3BA2F" strokeWidth="1" strokeDasharray="4 3" opacity="0.85"/>
+          <text x="2" y={yTecho-3} fontSize="8.5" fill="#F3BA2F" fontFamily="JetBrains Mono,monospace">Techo ≈ {money(athC4)}</text>
+          <line x1="0" y1={ySuelo} x2={CW} y2={ySuelo} stroke="#3B82F6" strokeWidth="1" strokeDasharray="4 3" opacity="0.85"/>
+          <text x="2" y={ySuelo+10} fontSize="8.5" fill="#5B9BFF" fontFamily="JetBrains Mono,monospace">Suelo ≈ {money(sueloC4)}</text>
           <path d={cArea} fill="url(#cycgrad)"/>
           <path d={cLine} fill="none" stroke="var(--accent)" strokeWidth="2.5" strokeLinecap="round"/>
           <line x1={mx} y1="2" x2={mx} y2={CH} stroke="var(--faint)" strokeWidth="1" strokeDasharray="3 3"/>
           <circle cx={mx} cy={my} r="5.5" fill={ph.c} stroke="var(--bg)" strokeWidth="3"/>
-          <text x={Math.min(CW-26,Math.max(26,mx))} y={Math.max(11,my-12)} textAnchor="middle"
-            fontSize="9.5" fontWeight="700" fill="var(--txt)" fontFamily="Sora,sans-serif">tú</text>
+          {price&&<text x={Math.min(CW-32,Math.max(32,mx))} y={Math.max(11,my-11)} textAnchor="middle"
+            fontSize="10" fontWeight="700" fill="var(--txt)" fontFamily="Sora,sans-serif">{money(price)}</text>}
         </svg>
         <div style={{...flx({justifyContent:'space-between'}),marginTop:6,fontSize:9.5,color:'var(--dim)'}} className="mono">
           <span>Halving 2024</span>
@@ -728,6 +780,53 @@ function CycleBTC(){
             <div style={{fontSize:10,color:'var(--dim)',marginTop:2}}>días al próximo halving</div>
           </div>
         </div>
+      </div>
+
+      {/* Niveles clave del modelo (compra/venta) */}
+      <div style={panel({marginBottom:14,padding:16})}>
+        <div style={{...flx({justifyContent:'space-between'}),marginBottom:12}}>
+          <span style={eyebrow}>Niveles clave · proyección</span>
+          <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>rend. decrec. -{Math.round(redAuto)}%/ciclo</span>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+          <div style={{padding:'12px 13px',borderRadius:10,background:'rgba(255,84,112,.06)',border:'1px solid rgba(255,84,112,.22)'}}>
+            <div style={{fontSize:9.5,letterSpacing:1,color:'var(--downDim)',textTransform:'uppercase',fontWeight:700,marginBottom:4}}>▲ Vender · techo C4</div>
+            <div className="mono" style={{fontSize:18,fontWeight:800,color:'var(--down)'}}>{money(athC4)}</div>
+            <div style={{fontSize:9.5,color:'var(--faint)',marginTop:2}}>+{Math.round(g34)}% vs C3</div>
+          </div>
+          <div style={{padding:'12px 13px',borderRadius:10,background:'rgba(110,139,255,.06)',border:'1px solid rgba(110,139,255,.22)'}}>
+            <div style={{fontSize:9.5,letterSpacing:1,color:'#5B9BFF',textTransform:'uppercase',fontWeight:700,marginBottom:4}}>▼ Comprar · suelo C4</div>
+            <div className="mono" style={{fontSize:18,fontWeight:800,color:'#5B9BFF'}}>{money(sueloC4)}</div>
+            <div style={{fontSize:9.5,color:'var(--faint)',marginTop:2}}>-{Math.round(ddC4)}% desde ATH</div>
+          </div>
+        </div>
+        <div style={{...flx({justifyContent:'space-between'}),marginTop:12,paddingTop:12,borderTop:'1px solid var(--line2)'}}>
+          <span style={{fontSize:10.5,color:'var(--dim)'}}>Próximo ciclo (C5) <span style={{color:'var(--faint)'}}>· estimado</span></span>
+          <span className="mono" style={{fontSize:11.5,fontWeight:700}}>
+            <span style={{color:'var(--upDim)'}}>ATH ~{money(athC5)}</span> <span style={{color:'var(--faint)'}}>/</span> <span style={{color:'#5B9BFF'}}>suelo ~{money(sueloC5)}</span>
+          </span>
+        </div>
+      </div>
+
+      {/* Ciclos históricos */}
+      <div style={panel({marginBottom:14,padding:16})}>
+        <div style={{...eyebrow,marginBottom:12}}>Ciclos históricos</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:'0 6px',fontSize:9,color:'var(--faint)',
+          letterSpacing:.5,textTransform:'uppercase',fontWeight:600,marginBottom:8}}>
+          <span>Ciclo</span><span style={{textAlign:'right'}}>ATH</span><span style={{textAlign:'right'}}>Suelo</span><span style={{textAlign:'right'}}>Subida</span>
+        </div>
+        {[['2016→17','$19.783','$3.200','+1.656%'],['2020→21','$69.044','$15.479','+249%'],['2024→?',money(athC4),money(sueloC4)+'?','+'+Math.round(g34)+'%']].map((row,i)=>(
+          <div key={i} style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:'0 6px',padding:'7px 0',
+            borderTop:i?'1px solid #12151F':'none',fontSize:11.5}} className="mono">
+            <span style={{color:'var(--txt)',fontWeight:600}}>{row[0]}</span>
+            <span style={{textAlign:'right',color:'var(--upDim)'}}>{row[1]}</span>
+            <span style={{textAlign:'right',color:'#5B9BFF'}}>{row[2]}</span>
+            <span style={{textAlign:'right',color:'var(--dim)'}}>{row[3]}</span>
+          </div>
+        ))}
+        <p style={{fontSize:9.5,color:'var(--faint)',lineHeight:1.5,marginTop:10}}>
+          Cada ciclo sube menos que el anterior (rendimientos decrecientes ~-{Math.round(redAuto)}%). Proyecciones del modelo, no son predicción.
+        </p>
       </div>
 
       {/* Explicación */}
