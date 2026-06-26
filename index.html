@@ -45,36 +45,41 @@
     @keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
     .rise{animation:rise .5s ease both}
 
-    /* ── ADSENSE ──────────────────────────────────────────
-       Cuando tengas cuenta aprobada:
-       1. Añade en <head>:
-          <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-XXXX" crossorigin="anonymous"></script>
-       2. Sustituye cada .ad-box por:
-          <ins class="adsbygoogle" style="display:block"
-               data-ad-client="ca-pub-XXXX" data-ad-slot="XXXX"
-               data-ad-format="auto" data-full-width-responsive="true"></ins>
-          <script>(adsbygoogle=window.adsbygoogle||[]).push({});</script>
-       Hay 3 huecos: banner superior, central (bajo el funding global) e inferior.
-       ────────────────────────────────────────────────── */
+    /* ── BANNER REFERIDO (Bitunix) ──────────────────────── */
     .ad-wrap{max-width:540px;margin:0 auto;padding:0 16px}
-    .ad-box{width:100%;min-height:90px;margin-bottom:14px;border:1px solid var(--line);
-      border-radius:12px;background:linear-gradient(90deg,var(--panel),var(--panel2),var(--panel));
-      background-size:200% 100%;animation:shimmer 8s linear infinite;
-      display:flex;align-items:center;justify-content:center;flex-direction:column;gap:4px}
-    .ad-box .a1{font-size:9px;letter-spacing:3px;color:var(--faint);text-transform:uppercase}
-    .ad-box .a2{font-size:10px;color:#222838}
+    .promo{width:100%;display:flex;align-items:center;gap:12px;margin-bottom:14px;
+      padding:13px 15px;border-radius:13px;text-decoration:none;cursor:pointer;
+      border:1px solid rgba(110,139,255,.30);
+      background:linear-gradient(100deg,rgba(110,139,255,.12),rgba(31,224,160,.07) 60%,var(--panel));
+      transition:transform .15s,border-color .15s}
+    .promo:hover{transform:translateY(-1px);border-color:rgba(110,139,255,.6)}
+    .promo .pico{width:38px;height:38px;border-radius:10px;flex-shrink:0;display:flex;
+      align-items:center;justify-content:center;font-size:18px;font-weight:800;color:#07090E;
+      background:linear-gradient(135deg,var(--accent),#1FE0A0)}
+    .promo .p1{font-size:13.5px;font-weight:700;color:var(--txt);line-height:1.2}
+    .promo .p2{font-size:10.5px;color:var(--dim);margin-top:2px}
+    .promo .pcta{margin-left:auto;flex-shrink:0;font-size:11.5px;font-weight:700;color:#07090E;
+      background:var(--accent);border-radius:8px;padding:8px 12px;white-space:nowrap}
   </style>
 </head>
 <body>
 
 <div class="ad-wrap" style="padding-top:14px">
-  <div class="ad-box"><span class="a1">Publicidad</span><span class="a2">Google AdSense · banner superior</span></div>
+  <a class="promo" href="https://www.bitunix.com/register?inviteCode=ffcczq" target="_blank" rel="noopener nofollow">
+    <span class="pico">B</span>
+    <span><span class="p1">Opera futuros en Bitunix</span><span class="p2">Regístrate con código <b>ffcczq</b> · bono de bienvenida</span></span>
+    <span class="pcta">Abrir cuenta →</span>
+  </a>
 </div>
 
 <div id="root" style="position:relative;z-index:1"></div>
 
 <div class="ad-wrap" style="padding-bottom:26px;margin-top:14px">
-  <div class="ad-box"><span class="a1">Publicidad</span><span class="a2">Google AdSense · banner inferior</span></div>
+  <a class="promo" href="https://www.bitunix.com/register?inviteCode=ffcczq" target="_blank" rel="noopener nofollow">
+    <span class="pico">B</span>
+    <span><span class="p1">¿Vas a operar estos funding?</span><span class="p2">Hazlo en Bitunix · código <b>ffcczq</b></span></span>
+    <span class="pcta">Registrarme →</span>
+  </a>
 </div>
 
 <script type="text/babel">
@@ -150,6 +155,17 @@ const inp=(c='var(--txt)')=>({background:'#080A10',border:'1px solid var(--line)
   boxSizing:'border-box',fontVariantNumeric:'tabular-nums'});
 const flx=(ex={})=>({display:'flex',alignItems:'center',...ex});
 const fmt=(v,d=4)=>{const n=Number.isFinite(v)?v:0;return(n>=0?'+':'')+n.toFixed(d)+'%';};
+
+const BITUNIX='https://www.bitunix.com/register?inviteCode=ffcczq';
+function Promo({t1,t2,cta}){
+  return(
+    <a className="promo" href={BITUNIX} target="_blank" rel="noopener nofollow">
+      <span className="pico">B</span>
+      <span><span className="p1">{t1}</span><span className="p2">{t2}</span></span>
+      <span className="pcta">{cta}</span>
+    </a>
+  );
+}
 
 function verdict(v){
   return v>0.015 ?{t:'ALCISTA FUERTE',    s:'Longs pagan fuerte a shorts',     up:1}:
@@ -231,6 +247,19 @@ function Calc({coin,data,source,sel}){
   const setMode=(id,mode)=>setRows(p=>p.map(r=>r.id===id?{...r,mode,status:mode==='auto'?'idle':r.status}:r));
   const setField=(id,k,v)=>setRows(p=>p.map(r=>r.id===id?{...r,[k]:parseFloat(v)||0}:r));
   const toggle=(id)=>setRows(p=>p.map(r=>r.id===id?{...r,on:!r.on}:r));
+  const removeRow=(id)=>setRows(p=>p.filter(r=>r.id!==id));
+
+  // alta manual de un exchange (nombre + datos)
+  const [adding,setAdding]=useState(false);
+  const [nf,setNf]=useState({name:'',funding:'',oi:''});
+  const addCustom=()=>{
+    const name=(nf.name||'').trim();
+    if(!name)return;
+    setRows(p=>[...p,{id:name,c:'#8A93A8',funding:parseFloat(nf.funding)||0,oi:parseFloat(nf.oi)||0,
+      mode:'manual',on:true,status:'manual',custom:true}]);
+    setNf({name:'',funding:'',oi:''});
+    setAdding(false);
+  };
 
   const active=rows.filter(r=>r.on&&!(r.mode==='auto'&&r.status!=='ok')&&Number.isFinite(r.funding)&&Number.isFinite(r.oi)&&r.oi>0);
   const totalOI=active.reduce((s,r)=>s+r.oi,0);
@@ -314,15 +343,22 @@ function Calc({coin,data,source,sel}){
               <div className="mono" style={{fontSize:11.5,color:'var(--accent)',textAlign:'right'}}>
                 {r.on&&wP?`${wP}%`:'—'}
               </div>
-              <div style={{...flx({justifyContent:'center'}),background:'#080A10',
-                border:'1px solid var(--line)',borderRadius:7,padding:2,gap:1}}>
-                <button onClick={()=>setMode(r.id,'auto')} title="Automático"
-                  style={{flex:1,fontSize:9,fontWeight:700,padding:'3px 0',borderRadius:5,cursor:'pointer',border:'none',
-                    background:auto?'var(--accent)':'transparent',color:auto?'#07090E':'var(--faint)'}}>A</button>
-                <button onClick={()=>setMode(r.id,'manual')} title="Manual"
-                  style={{flex:1,fontSize:9,fontWeight:700,padding:'3px 0',borderRadius:5,cursor:'pointer',border:'none',
-                    background:!auto?'#F3BA2F':'transparent',color:!auto?'#07090E':'var(--faint)'}}>M</button>
-              </div>
+              {r.custom?(
+                <button onClick={()=>removeRow(r.id)} title="Quitar"
+                  style={{...flx({justifyContent:'center'}),background:'rgba(255,84,112,.1)',
+                    border:'1px solid rgba(255,84,112,.3)',borderRadius:7,padding:'5px 0',
+                    color:'var(--down)',fontSize:11,fontWeight:700,cursor:'pointer'}}>✕</button>
+              ):(
+                <div style={{...flx({justifyContent:'center'}),background:'#080A10',
+                  border:'1px solid var(--line)',borderRadius:7,padding:2,gap:1}}>
+                  <button onClick={()=>setMode(r.id,'auto')} title="Automático"
+                    style={{flex:1,fontSize:9,fontWeight:700,padding:'3px 0',borderRadius:5,cursor:'pointer',border:'none',
+                      background:auto?'var(--accent)':'transparent',color:auto?'#07090E':'var(--faint)'}}>A</button>
+                  <button onClick={()=>setMode(r.id,'manual')} title="Manual"
+                    style={{flex:1,fontSize:9,fontWeight:700,padding:'3px 0',borderRadius:5,cursor:'pointer',border:'none',
+                      background:!auto?'#F3BA2F':'transparent',color:!auto?'#07090E':'var(--faint)'}}>M</button>
+                </div>
+              )}
             </div>
           );
         })}
@@ -332,6 +368,34 @@ function Calc({coin,data,source,sel}){
             fontSize:10.5,color:'var(--downDim)',lineHeight:1.5}}>
             ⚠ {errCount} exchange{errCount>1?'s':''} sin respuesta para {coin}. Cambia a <b style={{color:'#F3BA2F'}}>M</b> y mete el valor de Coinglass a mano.
           </div>
+        )}
+
+        {/* alta manual de exchange */}
+        {adding?(
+          <div style={{marginTop:12,padding:'12px',borderRadius:10,background:'#080A10',border:'1px solid var(--line2)'}}>
+            <div style={{...eyebrow,marginBottom:9}}>Nuevo exchange manual</div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 76px 64px',gap:7,marginBottom:9}}>
+              <input placeholder="Nombre" value={nf.name} onChange={e=>setNf({...nf,name:e.target.value})}
+                style={{...inp(),fontFamily:"'Sora',sans-serif"}}/>
+              <input type="number" step="0.0001" placeholder="Funding%" value={nf.funding}
+                onChange={e=>setNf({...nf,funding:e.target.value})} style={inp('var(--up)')}/>
+              <input type="number" step="0.01" min="0" placeholder="OI $B" value={nf.oi}
+                onChange={e=>setNf({...nf,oi:e.target.value})} style={inp('var(--dim)')}/>
+            </div>
+            <div style={{...flx({gap:7})}}>
+              <button onClick={addCustom} style={{flex:1,background:'var(--accent)',border:'none',borderRadius:8,
+                color:'#07090E',fontSize:12,fontWeight:700,padding:'9px 0',cursor:'pointer'}}>Añadir</button>
+              <button onClick={()=>{setAdding(false);setNf({name:'',funding:'',oi:''});}}
+                style={{background:'transparent',border:'1px solid var(--line2)',borderRadius:8,
+                color:'var(--dim)',fontSize:12,fontWeight:600,padding:'9px 14px',cursor:'pointer'}}>Cancelar</button>
+            </div>
+          </div>
+        ):(
+          <button onClick={()=>setAdding(true)} style={{...flx({gap:6,justifyContent:'center'}),width:'100%',
+            marginTop:12,background:'transparent',border:'1px dashed var(--line2)',borderRadius:9,
+            color:'var(--accent)',fontSize:12,fontWeight:600,padding:'10px 0',cursor:'pointer'}}>
+            + Añadir exchange manual
+          </button>
         )}
       </div>
 
@@ -448,9 +512,9 @@ function App(){
         <span className="mono" style={{fontSize:10.5,color:'var(--faint)'}}>OI agregado ${g.oi.toFixed(1)}B · {coins.length} monedas × {META.length} exchanges</span>
       </div>
 
-      {/* ── ADSENSE central ── */}
-      <div className="ad-box" style={{marginBottom:16}}>
-        <span className="a1">Publicidad</span><span className="a2">Google AdSense · banner central</span>
+      {/* ── Referido Bitunix (central) ── */}
+      <div style={{marginBottom:16}}>
+        <Promo t1="Pasa del análisis a la acción" t2="Abre cuenta en Bitunix con el código ffcczq" cta="Empezar →"/>
       </div>
 
       {/* ── RESUMEN · todas las monedas (formato lista, estilo boceto) ── */}
@@ -487,9 +551,9 @@ function App(){
         })}
       </div>
 
-      {/* ── ADSENSE 3 (antes del detalle) ── */}
-      <div className="ad-box" style={{marginBottom:16}}>
-        <span className="a1">Publicidad</span><span className="a2">Google AdSense · in-content</span>
+      {/* ── Referido Bitunix (antes del detalle) ── */}
+      <div style={{marginBottom:16}}>
+        <Promo t1="Opera BTC, ETH y +200 pares" t2="Futuros perpetuos en Bitunix · código ffcczq" cta="Registrarme →"/>
       </div>
 
       {/* ── Detalle de TODAS las monedas, apiladas (BTC, ETH, SOL, ...) ── */}
@@ -499,8 +563,8 @@ function App(){
             <Calc coin={c} data={data[c]} source={source} sel={c===tab}/>
           </div>
           {(idx===0||idx===4)&&(
-            <div className="ad-box" style={{marginBottom:16}}>
-              <span className="a1">Publicidad</span><span className="a2">Google AdSense · in-content</span>
+            <div style={{marginBottom:16}}>
+              <Promo t1="Trada estos funding en Bitunix" t2="Comisiones bajas · código ffcczq" cta="Abrir cuenta →"/>
             </div>
           )}
         </React.Fragment>
