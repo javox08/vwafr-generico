@@ -589,6 +589,26 @@ function Calc({coin,data,source,sel}){
   );
 }
 
+// Curva estilizada del ciclo de 4 años de BTC (heat: 0 = suelo, 1 = techo histórico)
+const CYC=[[0,.34],[.10,.46],[.22,.67],[.34,1],[.45,.72],[.55,.50],[.68,.13],[.82,.26],[1,.42]];
+function heatAt(p){
+  p=Math.min(1,Math.max(0,p));
+  for(let i=0;i<CYC.length-1;i++){const[x0,h0]=CYC[i],[x1,h1]=CYC[i+1];
+    if(p>=x0&&p<=x1){const t=(p-x0)/((x1-x0)||1);return h0+(h1-h0)*t;}}
+  return CYC[CYC.length-1][1];
+}
+function smoothPath(pts){
+  if(pts.length<2)return'';
+  let d=`M ${pts[0][0].toFixed(1)},${pts[0][1].toFixed(1)}`;
+  for(let i=0;i<pts.length-1;i++){
+    const p0=pts[i-1]||pts[i],p1=pts[i],p2=pts[i+1],p3=pts[i+2]||p2;
+    const c1x=p1[0]+(p2[0]-p0[0])/6,c1y=p1[1]+(p2[1]-p0[1])/6;
+    const c2x=p2[0]-(p3[0]-p1[0])/6,c2y=p2[1]-(p3[1]-p1[1])/6;
+    d+=` C ${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${p2[0].toFixed(1)},${p2[1].toFixed(1)}`;
+  }
+  return d;
+}
+
 // ── Apartado: Ciclo de Bitcoin (sin anuncios) ──
 function CycleBTC(){
   const [d,setD]=useState(null);
@@ -621,6 +641,14 @@ function CycleBTC(){
   const money=v=>(v==null||!Number.isFinite(v))?'—':'$'+v.toLocaleString('es-ES',{maximumFractionDigits:0});
   const up=d&&d.chg24>=0;
 
+  // geometría del gráfico del ciclo
+  const CW=320,CH=140,CP=12;
+  const cpts=CYC.map(([x,h])=>[x*CW, CH-CP-(h*(CH-2*CP))]);
+  const cLine=smoothPath(cpts);
+  const cArea=cLine+` L ${CW},${CH} L 0,${CH} Z`;
+  const mp=prog/100;
+  const mx=mp*CW, my=CH-CP-(heatAt(mp)*(CH-2*CP));
+
   return(
     <div>
       <div style={{...flx({gap:10}),margin:'2px 2px 14px'}}>
@@ -648,6 +676,33 @@ function CycleBTC(){
             <span style={{textAlign:'right',fontSize:11,color:'var(--dim)'}}>Desde el ATH<br/><span className="mono" style={{color:d.athPct>=-1?'var(--up)':'var(--down)',fontSize:13}}>{d.athPct.toFixed(1)}%</span></span>
           </div>
         )}
+      </div>
+
+      {/* Gráfico del ciclo de 4 años */}
+      <div style={panel({marginBottom:14,padding:16})}>
+        <div style={{...flx({justifyContent:'space-between'}),marginBottom:14}}>
+          <span style={eyebrow}>Ciclo de 4 años · gráfico</span>
+          <span className="mono" style={{fontSize:9.5,color:ph.c,fontWeight:700}}>● estás aquí</span>
+        </div>
+        <svg viewBox={`0 0 ${CW} ${CH}`} width="100%" style={{display:'block',overflow:'visible'}}>
+          <defs>
+            <linearGradient id="cycgrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="rgba(110,139,255,.38)"/>
+              <stop offset="100%" stopColor="rgba(110,139,255,0)"/>
+            </linearGradient>
+          </defs>
+          <path d={cArea} fill="url(#cycgrad)"/>
+          <path d={cLine} fill="none" stroke="var(--accent)" strokeWidth="2.5" strokeLinecap="round"/>
+          <line x1={mx} y1="2" x2={mx} y2={CH} stroke="var(--faint)" strokeWidth="1" strokeDasharray="3 3"/>
+          <circle cx={mx} cy={my} r="5.5" fill={ph.c} stroke="var(--bg)" strokeWidth="3"/>
+          <text x={Math.min(CW-26,Math.max(26,mx))} y={Math.max(11,my-12)} textAnchor="middle"
+            fontSize="9.5" fontWeight="700" fill="var(--txt)" fontFamily="Sora,sans-serif">tú</text>
+        </svg>
+        <div style={{...flx({justifyContent:'space-between'}),marginTop:6,fontSize:9.5,color:'var(--dim)'}} className="mono">
+          <span>Halving 2024</span>
+          <span style={{color:ph.c,fontWeight:700}}>{ph.t}</span>
+          <span>Halving 2028</span>
+        </div>
       </div>
 
       {/* Ciclo del halving */}
