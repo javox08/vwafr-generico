@@ -226,6 +226,25 @@ const COIN_UI={
 };
 const colOf=c=>(COIN_UI[c]&&COIN_UI[c].col)||'var(--accent)';
 
+// Logo real de cada moneda (CDN), con respaldos y, en último caso, el ticker.
+function CoinIcon({c,size=26,radius=8}){
+  const sym=(c||'').toLowerCase();
+  const srcs=[
+    `https://assets.coincap.io/assets/icons/${sym}@2x.png`,
+    `https://cdn.jsdelivr.net/npm/cryptocurrency-icons@0.18.1/svg/color/${sym}.svg`,
+  ];
+  const [i,setI]=useState(0);
+  if(i>=srcs.length){
+    return <div style={{width:size,height:size,borderRadius:radius,flexShrink:0,
+      background:`${colOf(c)}1F`,border:`1px solid ${colOf(c)}55`,display:'flex',
+      alignItems:'center',justifyContent:'center',fontSize:size*0.34,fontWeight:800,
+      color:colOf(c)}}>{(c||'').slice(0,3)}</div>;
+  }
+  return <img src={srcs[i]} onError={()=>setI(v=>v+1)} alt={c} width={size} height={size}
+    loading="lazy" style={{width:size,height:size,borderRadius:radius,flexShrink:0,
+    background:'#0A0D14',objectFit:'cover'}}/>;
+}
+
 // Respaldo en el navegador (CORS) para Binance/Bybit, geo-bloqueados en el servidor.
 async function bybitFallback(coins,data){
   const r=await fetch('https://api.bybit.com/v5/market/tickers?category=linear').then(r=>r.json());
@@ -400,11 +419,9 @@ function Calc({coin,data,source,sel}){
     <div style={{display:'block',padding:sel?'8px 10px':'0',margin:sel?'0 -10px 4px':'0',borderRadius:14,
       background:sel?`${colOf(coin)}0A`:'transparent',transition:'background .2s'}}>
       <div style={{...flx({gap:10}),margin:'2px 2px 12px'}}>
-        <div style={{width:30,height:30,borderRadius:9,flexShrink:0,
-          background:`${colOf(coin)}1F`,border:`1px solid ${colOf(coin)}${sel?'99':'55'}`,
-          boxShadow:sel?`0 0 12px ${colOf(coin)}55`:'none',
-          display:'flex',alignItems:'center',justifyContent:'center',
-          fontSize:12,fontWeight:800,color:colOf(coin)}}>{coin}</div>
+        <div style={{flexShrink:0,borderRadius:10,boxShadow:sel?`0 0 12px ${colOf(coin)}66`:'none'}}>
+          <CoinIcon c={coin} size={30} radius={9}/>
+        </div>
         <div>
           <div style={{fontSize:15,fontWeight:800,letterSpacing:-.3,lineHeight:1.05}}>{coin} · funding por exchange</div>
           <div style={{...eyebrow,fontSize:9}}>perpetuos USDT · ponderado por OI</div>
@@ -658,10 +675,7 @@ function App(){
               borderTop:i?'1px solid #12151F':'none',
               background:sel?'rgba(110,139,255,.06)':'transparent',borderRadius:8,transition:'background .15s'}}>
               <span className="mono" style={{fontSize:10,color:'var(--faint)',width:12,flexShrink:0}}>{i+1}</span>
-              <div style={{width:26,height:26,borderRadius:7,flexShrink:0,
-                background:`${colOf(c)}1F`,border:`1px solid ${colOf(c)}44`,
-                display:'flex',alignItems:'center',justifyContent:'center',
-                fontSize:9,fontWeight:800,color:colOf(c)}}>{c.slice(0,3)}</div>
+              <CoinIcon c={c} size={26} radius={7}/>
               <span style={{fontSize:13,fontWeight:700,minWidth:40,flexShrink:0}}>{c}</span>
               <div style={{flex:1,position:'relative',height:5,borderRadius:4,minWidth:40,
                 background:'linear-gradient(90deg,var(--downDim) 0%,#161A26 47%,#161A26 53%,var(--upDim) 100%)',opacity:.55}}>
