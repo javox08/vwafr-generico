@@ -589,8 +589,11 @@ function Calc({coin,data,source,sel}){
   );
 }
 
-// Curva estilizada del ciclo de 4 años de BTC (heat: 0 = suelo, 1 = techo histórico)
-const CYC=[[0,.34],[.10,.46],[.22,.67],[.34,1],[.45,.72],[.55,.50],[.68,.13],[.82,.26],[1,.42]];
+// Plantilla normalizada del ciclo anterior (heat: 0 = suelo, 1 = techo).
+// Se escala al techo/suelo proyectado del ciclo actual para trazar la ruta.
+const CYC=[[0,.30],[.06,.40],[.12,.54],[.19,.63],[.26,.74],[.31,.87],[.345,1.0],
+  [.38,.88],[.43,.72],[.48,.55],[.53,.42],[.59,.28],[.64,.18],[.68,.13],[.72,.17],
+  [.80,.24],[.88,.31],[1,.40]];
 function heatAt(p){
   p=Math.min(1,Math.max(0,p));
   for(let i=0;i<CYC.length-1;i++){const[x0,h0]=CYC[i],[x1,h1]=CYC[i+1];
@@ -735,6 +738,29 @@ function CycleBTC(){
   const yTecho=yOf(athC4), ySuelo=yOf(sueloC4);
   const mx=Math.min(CW,Math.max(0,prog/100*CW));
   const my=price?yOf(price):CH-CP-(heatAt(prog/100)*(CH-2*CP));
+  // suelo proyectado de la plantilla (punto más bajo de la ruta)
+  let minH=1,minX=0; for(const a of CYC) if(a[1]<minH){minH=a[1];minX=a[0];}
+  const bx=minX*CW, by=yOf(sueloC4+minH*(athC4-sueloC4)), bottomFuture=minX>prog/100;
+
+  // ── Ruta BTC del mes (análisis automático del modelo, fechado el día 1) ──
+  const monthLabel=now.toLocaleDateString('es-ES',{month:'long',year:'numeric'});
+  const route =
+    ph.t.indexOf('Bull')===0 ? {h:'Impulso alcista',
+      b:`Tendencia alcista del ciclo. Mientras aguanten los soportes, la ruta apunta a la zona de techo ~${money(athC4)}. Tomar beneficios por tramos al acercarse al objetivo.`,
+      w:`Objetivo techo ${money(athC4)}`} :
+    ph.t.indexOf('Bear')===0 ? {h:'Corrección bajista',
+      b:`Fase bajista del ciclo. La ruta más probable es lateral-bajista buscando la zona de compra ~${money(sueloC4)} (suelo proyectado hacia la semana ~130 del ciclo). Acumular por tramos, no de golpe.`,
+      w:`Zona de compra ${money(sueloC4)} · invalida si recupera el ATH ${money(athC4)}`} :
+    ph.t.indexOf('Acum')===0 ? {h:'Acumulación / suelo',
+      b:`El suelo del ciclo suele formarse en esta fase. Ruta de acumulación de cara al próximo impulso post-halving. Paciencia y compras escalonadas.`,
+      w:`Suelo ~${money(sueloC4)} · base del próximo ciclo`} :
+    {h:'Base pre-bull',
+      b:`Base previa al impulso post-halving. Acumulación tardía antes del arranque alcista (suele empezar hacia la semana 40).`,
+      w:`Arranque alcista esperado hacia la semana 40`};
+  const ocNote = oc ? (()=>{const z=mvrvSig(oc.mvrv).z+nuplSig(oc.nupl).z;
+    return z>=2?'On-chain en zona de FONDO (MVRV/NUPL bajos) — históricamente acumulación.':
+      z<=-2?'On-chain en zona de TECHO (MVRV/NUPL altos) — históricamente distribución.':
+      z>0?'On-chain en zona baja — sesgo de acumulación.':z<0?'On-chain en zona alta — precaución.':'On-chain neutral.';})() : null;
 
   return(
     <div>
@@ -776,6 +802,22 @@ function CycleBTC(){
             </div>
           </div>
         )}
+      </div>
+
+      {/* Ruta BTC del mes — análisis fechado el día 1 */}
+      <div style={panel({position:'relative',overflow:'hidden',marginBottom:14,padding:16,
+        background:`linear-gradient(135deg, ${ph.c}10, var(--panel) 62%)`,borderColor:`${ph.c}30`})}>
+        <div style={{...flx({justifyContent:'space-between'}),marginBottom:10}}>
+          <span style={eyebrow}>🧭 Ruta BTC del mes</span>
+          <span className="mono" style={{fontSize:9.5,color:ph.c,fontWeight:700}}>📅 1 de {monthLabel}</span>
+        </div>
+        <div style={{fontSize:15,fontWeight:800,color:ph.c,marginBottom:6}}>{route.h}</div>
+        <p style={{fontSize:12.5,color:'var(--dim)',lineHeight:1.6,marginBottom:ocNote?8:10}}>{route.b}</p>
+        {ocNote&&<p style={{fontSize:11.5,color:'var(--dim)',lineHeight:1.55,marginBottom:10}}>📊 {ocNote}</p>}
+        <div style={{...flx({gap:8}),padding:'9px 11px',borderRadius:9,background:'#0A0D14',border:'1px solid var(--line)'}}>
+          <span style={{fontSize:11.5,color:'var(--txt)',lineHeight:1.4}}>🎯 {route.w}</span>
+        </div>
+        <p style={{fontSize:9,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Análisis del modelo, se actualiza cada mes (día 1). No es consejo financiero.</p>
       </div>
 
       {/* Fase del ciclo + progreso del halving (fusionado) */}
@@ -821,29 +863,37 @@ function CycleBTC(){
         </div>
       </div>
 
-      {/* Gráfico en escala de precio · se actualiza con el precio en vivo */}
+      {/* Gráfico: ruta proyectada escalando el ciclo anterior */}
       <div style={panel({marginBottom:14,padding:16})}>
-        <div style={{...flx({justifyContent:'space-between'}),marginBottom:12}}>
-          <span style={eyebrow}>Ciclo · proyección techo / suelo</span>
-          <span className="mono" style={{fontSize:9.5,color:ph.c,fontWeight:700}}>● precio en vivo</span>
+        <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
+          <span style={eyebrow}>Ruta proyectada · ciclo anterior</span>
+          <span className="mono" style={{fontSize:9.5,color:ph.c,fontWeight:700}}>● {price?money(price):'…'}</span>
         </div>
+        <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:10}}>sólida = recorrido · punteada = ruta proyectada hacia el suelo</div>
         <svg viewBox={`0 0 ${CW} ${CH}`} width="100%" style={{display:'block',overflow:'visible'}}>
           <defs>
             <linearGradient id="cycgrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="rgba(110,139,255,.30)"/>
+              <stop offset="0%" stopColor="rgba(110,139,255,.28)"/>
               <stop offset="100%" stopColor="rgba(110,139,255,0)"/>
             </linearGradient>
+            <clipPath id="cpast"><rect x="0" y="0" width={mx.toFixed(1)} height={CH}/></clipPath>
+            <clipPath id="cfut"><rect x={(mx-0.5).toFixed(1)} y="0" width={(CW-mx+1).toFixed(1)} height={CH}/></clipPath>
           </defs>
           {[[0,40,'#8AA0FF'],[40,77,'#1FE0A0'],[77,135,'#FF5470'],[135,200,'#3B82F6']].map(([a,b,c],i)=>{
             const wt=(len/7)||208, x1=a/wt*CW, x2=Math.min(CW,b/wt*CW), act=weeks>=a&&weeks<b;
-            return <rect key={i} x={x1.toFixed(1)} y="0" width={Math.max(0,x2-x1).toFixed(1)} height={CH} fill={c} opacity={act?0.13:0.045}/>;
+            return <rect key={i} x={x1.toFixed(1)} y="0" width={Math.max(0,x2-x1).toFixed(1)} height={CH} fill={c} opacity={act?0.12:0.04}/>;
           })}
-          <line x1="0" y1={yTecho} x2={CW} y2={yTecho} stroke="#F3BA2F" strokeWidth="1" strokeDasharray="4 3" opacity="0.85"/>
+          <line x1="0" y1={yTecho} x2={CW} y2={yTecho} stroke="#F3BA2F" strokeWidth="1" strokeDasharray="4 3" opacity="0.8"/>
           <text x="2" y={yTecho-3} fontSize="8.5" fill="#F3BA2F" fontFamily="JetBrains Mono,monospace">Techo ≈ {money(athC4)}</text>
-          <line x1="0" y1={ySuelo} x2={CW} y2={ySuelo} stroke="#3B82F6" strokeWidth="1" strokeDasharray="4 3" opacity="0.85"/>
+          <line x1="0" y1={ySuelo} x2={CW} y2={ySuelo} stroke="#3B82F6" strokeWidth="1" strokeDasharray="4 3" opacity="0.8"/>
           <text x="2" y={ySuelo+10} fontSize="8.5" fill="#5B9BFF" fontFamily="JetBrains Mono,monospace">Suelo ≈ {money(sueloC4)}</text>
-          <path d={cArea} fill="url(#cycgrad)"/>
-          <path d={cLine} fill="none" stroke="var(--accent)" strokeWidth="2.5" strokeLinecap="round"/>
+          <path d={cArea} fill="url(#cycgrad)" clipPath="url(#cpast)"/>
+          <path d={cLine} fill="none" stroke="var(--accent)" strokeWidth="2.6" strokeLinecap="round" clipPath="url(#cpast)"/>
+          <path d={cLine} fill="none" stroke={ph.c} strokeWidth="2.2" strokeLinecap="round" strokeDasharray="5 4" opacity="0.9" clipPath="url(#cfut)"/>
+          {bottomFuture&&<g>
+            <circle cx={bx} cy={by} r="4" fill="#3B82F6" stroke="var(--bg)" strokeWidth="2"/>
+            <text x={Math.min(CW-40,bx)} y={by+15} textAnchor="middle" fontSize="8" fill="#5B9BFF" fontFamily="JetBrains Mono,monospace">suelo proy.</text>
+          </g>}
           <line x1={mx} y1="2" x2={mx} y2={CH} stroke="var(--faint)" strokeWidth="1" strokeDasharray="3 3"/>
           <circle cx={mx} cy={my} r="10" fill={ph.c} opacity="0.22"/>
           <circle cx={mx} cy={my} r="5.5" fill={ph.c} stroke="var(--bg)" strokeWidth="3"/>
@@ -852,7 +902,7 @@ function CycleBTC(){
         </svg>
         <div style={{...flx({justifyContent:'space-between'}),marginTop:6,fontSize:9.5,color:'var(--dim)'}} className="mono">
           <span>Halving {halvingYr}</span>
-          <span style={{color:ph.c,fontWeight:700}}>{ph.t}</span>
+          <span style={{color:ph.c,fontWeight:700}}>hoy · {ph.t}</span>
           <span>Halving {nextHalvingYr}</span>
         </div>
       </div>
