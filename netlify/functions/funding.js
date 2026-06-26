@@ -1,18 +1,16 @@
 // netlify/functions/funding.js
-// Proxy serverless: hace las llamadas a los exchanges DESDE EL SERVIDOR.
-// El navegador nunca habla con estos exchanges, así que no hay problema de CORS.
-// Devuelve un único JSON con funding (%) + OI (en miles de millones de $, "B")
-// de todos los exchanges. Cada uno es independiente: si uno falla devuelve null
-// y NO rompe a los demás.
+// Proxy serverless: hace las llamadas a los exchanges DESDE EL SERVIDOR (sin CORS).
+// Devuelve funding (%) + OI (en miles de millones de $, "B") para el TOP 10 de
+// monedas en los 8 exchanges, usando endpoints "bulk" (1 llamada = todas las
+// monedas) para no disparar invocaciones ni latencia.
 //
-// NOTA: Binance y Bybit bloquean IPs de centros de datos US (donde corren las
-// funciones de Netlify), así que normalmente devolverán null desde aquí. El
+// Estructura: { updated, coins:[...], data: { BTC:{Binance:{funding,oi,ok},...}, ... } }
+//
+// NOTA: Binance y Bybit bloquean IPs de datacenter (donde corre Netlify); el
 // frontend los pide directamente al navegador (soportan CORS) como respaldo.
 
-// fetch con timeout para que un exchange lento no cuelgue toda la respuesta
-// Cabeceras de navegador: algunos exchanges (p.ej. MEXC) rechazan con 403 las
-// peticiones que no parecen venir de un navegador. Enviar User-Agent + Accept +
-// Accept-Language es suficiente y es seguro para todos.
+const COINS = ['BTC', 'ETH', 'SOL', 'XRP', 'BNB', 'DOGE', 'ADA', 'AVAX', 'LINK', 'LTC'];
+
 const BROWSER_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
   'Accept': 'application/json, text/plain, */*',
@@ -30,117 +28,171 @@ async function once(url, ms) {
     clearTimeout(t);
   }
 }
-
-// 1 reintento ante bloqueos/cortes transitorios (algunos exchanges rate-limitean a ráfagas)
-async function jfetch(url, ms = 8000) {
-  try {
-    return await once(url, ms);
-  } catch (e) {
-    await new Promise(s => setTimeout(s, 400));
-    return await once(url, ms);
-  }
+// 1 reintento ante bloqueos/cortes transitorios. Timeout corto para no superar
+// el límite de 10s de las funciones de Netlify (todas las llamadas van en paralelo).
+async function jfetch(url, ms = 3800) {
+  try { return await once(url, ms); }
+  catch { await new Promise(s => setTimeout(s, 400)); return await once(url, ms); }
 }
 
-// devuelve OI con tolerancia a fallo: si el cálculo de OI peta, deja funding y oi=null
-async function safeOi(promise) {
-  try { const v = await promise; return Number.isFinite(v) && v > 0 ? v : null; }
-  catch { return null; }
+const pct = (x) => { const n = parseFloat(x); return Number.isFinite(n) ? n * 100 : null; };
+const bil = (x) => { const n = parseFloat(x); return Number.isFinite(n) && n > 0 ? n / 1e9 : null; };
+
+// Símbolos por exchange
+const sym = {
+  Binance: c => c + 'USDT',
+  OKX: c => c + '-USDT-SWAP',
+  Bybit: c => c + 'USDT',
+  MEXC: c => c + '_USDT',
+  'Gate.io': c => c + '_USDT',
+  Bitget: c => c + 'USDT',
+  KuCoin: c => (c === 'BTC' ? 'XBT' : c) + 'USDTM',
+  BingX: c => c + '-USDT',
+};
+
+// ── Fetchers "bulk": cada uno devuelve { COIN: {funding, oi} } ──────────
+
+async function okxBulk() {
+  const out = {};
+  const oiMap = {};
+  const oiResp = await jfetch('https://www.okx.com/api/v5/public/open-interest?instType=SWAP').catch(() => null);
+  if (oiResp?.data) for (const d of oiResp.data) oiMap[d.instId] = d.oiUsd;
+  await Promise.all(COINS.map(async c => {
+    const inst = sym.OKX(c);
+    try {
+      const fr = await jfetch(`https://www.okx.com/api/v5/public/funding-rate?instId=${inst}`);
+      out[c] = { funding: pct(fr.data[0].fundingRate), oi: bil(oiMap[inst]) };
+    } catch { out[c] = { funding: null, oi: null }; }
+  }));
+  return out;
+}
+
+async function mexcBulk() {
+  const out = {};
+  const [tk, dt] = await Promise.all([
+    jfetch('https://contract.mexc.com/api/v1/contract/ticker'),
+    jfetch('https://contract.mexc.com/api/v1/contract/detail'),
+  ]);
+  const tkMap = {}; for (const t of tk.data) tkMap[t.symbol] = t;
+  const csMap = {}; for (const d of dt.data) csMap[d.symbol] = d.contractSize;
+  for (const c of COINS) {
+    const s = sym.MEXC(c), t = tkMap[s], cs = csMap[s];
+    if (!t) { out[c] = { funding: null, oi: null }; continue; }
+    const oi = (Number.isFinite(+t.holdVol) && Number.isFinite(+cs) && Number.isFinite(+t.lastPrice))
+      ? bil(+t.holdVol * +cs * +t.lastPrice) : null;
+    out[c] = { funding: pct(t.fundingRate), oi };
+  }
+  return out;
+}
+
+async function gateBulk() {
+  const out = {};
+  let arr;
+  try { arr = await jfetch('https://fx-api.gateio.ws/api/v4/futures/usdt/contracts'); }
+  catch { arr = await jfetch('https://api.gateio.ws/api/v4/futures/usdt/contracts'); }
+  const m = {}; for (const x of arr) m[x.name] = x;
+  for (const c of COINS) {
+    const x = m[sym['Gate.io'](c)];
+    if (!x) { out[c] = { funding: null, oi: null }; continue; }
+    const oi = bil(parseFloat(x.position_size) * (parseFloat(x.quanto_multiplier) || 0) * parseFloat(x.index_price));
+    out[c] = { funding: pct(x.funding_rate), oi };
+  }
+  return out;
+}
+
+async function bitgetBulk() {
+  const out = {};
+  const r = await jfetch('https://api.bitget.com/api/v2/mix/market/tickers?productType=usdt-futures');
+  const m = {}; for (const t of r.data) m[t.symbol] = t;
+  for (const c of COINS) {
+    const t = m[sym.Bitget(c)];
+    if (!t) { out[c] = { funding: null, oi: null }; continue; }
+    out[c] = { funding: pct(t.fundingRate), oi: bil(parseFloat(t.holdingAmount) * parseFloat(t.markPrice)) };
+  }
+  return out;
+}
+
+async function kucoinBulk() {
+  const out = {};
+  const r = await jfetch('https://api-futures.kucoin.com/api/v1/contracts/active');
+  const m = {}; for (const t of r.data) m[t.symbol] = t;
+  for (const c of COINS) {
+    const t = m[sym.KuCoin(c)];
+    if (!t) { out[c] = { funding: null, oi: null }; continue; }
+    const oi = bil(parseFloat(t.openInterest) * parseFloat(t.multiplier) * parseFloat(t.markPrice));
+    out[c] = { funding: pct(t.fundingFeeRate), oi };
+  }
+  return out;
+}
+
+async function bingxBulk() {
+  const out = {};
+  const fr = await jfetch('https://open-api.bingx.com/openApi/swap/v2/quote/premiumIndex');
+  const m = {}; for (const t of fr.data) m[t.symbol] = t;
+  // OI por moneda (BingX no tiene OI bulk); en paralelo
+  const oiMap = {};
+  await Promise.all(COINS.map(async c => {
+    try {
+      const o = await jfetch(`https://open-api.bingx.com/openApi/swap/v2/quote/openInterest?symbol=${sym.BingX(c)}`);
+      oiMap[c] = o.data.openInterest;
+    } catch { oiMap[c] = null; }
+  }));
+  for (const c of COINS) {
+    const t = m[sym.BingX(c)];
+    out[c] = { funding: t ? pct(t.lastFundingRate) : null, oi: bil(oiMap[c]) };
+  }
+  return out;
+}
+
+// Binance/Bybit: se intentan (1 llamada bulk) pero suelen geo-bloquearse → null → fallback en cliente
+async function binanceBulk() {
+  const out = {};
+  try {
+    const arr = await jfetch('https://fapi.binance.com/fapi/v1/premiumIndex');
+    const m = {}; for (const t of arr) m[t.symbol] = t;
+    for (const c of COINS) { const t = m[sym.Binance(c)]; if (t) out[c] = { funding: pct(t.lastFundingRate), oi: null }; }
+  } catch { /* geo-bloqueado */ }
+  return out;
+}
+async function bybitBulk() {
+  const out = {};
+  try {
+    const r = await jfetch('https://api.bybit.com/v5/market/tickers?category=linear');
+    const m = {}; for (const t of r.result.list) m[t.symbol] = t;
+    for (const c of COINS) { const t = m[sym.Bybit(c)]; if (t) out[c] = { funding: pct(t.fundingRate), oi: bil(t.openInterestValue) }; }
+  } catch { /* geo-bloqueado */ }
+  return out;
 }
 
 const EX = {
-  // ── Binance (suele estar geo-bloqueado en Lambda US → fallback en cliente) ──
-  Binance: async () => {
-    const [pf, oi, px] = await Promise.all([
-      jfetch('https://fapi.binance.com/fapi/v1/premiumIndex?symbol=BTCUSDT'),
-      jfetch('https://fapi.binance.com/fapi/v1/openInterest?symbol=BTCUSDT').catch(() => null),
-      jfetch('https://fapi.binance.com/fapi/v1/ticker/price?symbol=BTCUSDT').catch(() => null),
-    ]);
-    const oiB = (oi && px) ? parseFloat(oi.openInterest) * parseFloat(px.price) / 1e9 : null;
-    return { funding: parseFloat(pf.lastFundingRate) * 100, oi: oiB };
-  },
-
-  // ── OKX (CORS + accesible desde server; OI en USD directo: oiUsd) ──
-  OKX: async () => {
-    const [fr, oi] = await Promise.all([
-      jfetch('https://www.okx.com/api/v5/public/funding-rate?instId=BTC-USDT-SWAP'),
-      jfetch('https://www.okx.com/api/v5/public/open-interest?instType=SWAP&instId=BTC-USDT-SWAP').catch(() => null),
-    ]);
-    const oiB = oi?.data?.[0]?.oiUsd ? parseFloat(oi.data[0].oiUsd) / 1e9 : null;
-    return { funding: parseFloat(fr.data[0].fundingRate) * 100, oi: oiB };
-  },
-
-  // ── Bybit (suele estar geo-bloqueado en Lambda US → fallback en cliente) ──
-  Bybit: async () => {
-    const r = await jfetch('https://api.bybit.com/v5/market/tickers?category=linear&symbol=BTCUSDT');
-    const t = r.result.list[0];
-    return { funding: parseFloat(t.fundingRate) * 100, oi: parseFloat(t.openInterestValue) / 1e9 };
-  },
-
-  // ── MEXC (OI = holdVol[contratos] × contractSize[0.0001 BTC] × lastPrice) ──
-  MEXC: async () => {
-    const fr = await jfetch('https://contract.mexc.com/api/v1/contract/funding_rate/BTC_USDT');
-    const oi = await safeOi(jfetch('https://contract.mexc.com/api/v1/contract/ticker?symbol=BTC_USDT')
-      .then(t => parseFloat(t.data.holdVol) * 0.0001 * parseFloat(t.data.lastPrice) / 1e9));
-    return { funding: parseFloat(fr.data.fundingRate) * 100, oi };
-  },
-
-  // ── Gate.io (OI = position_size[contratos] × quanto_multiplier × index_price) ──
-  'Gate.io': async () => {
-    const r = await jfetch('https://api.gateio.ws/api/v4/futures/usdt/contracts/BTC_USDT');
-    const mult = parseFloat(r.quanto_multiplier) || 0.0001;
-    const oi = parseFloat(r.position_size) * mult * parseFloat(r.index_price) / 1e9;
-    return { funding: parseFloat(r.funding_rate) * 100, oi: Number.isFinite(oi) && oi > 0 ? oi : null };
-  },
-
-  // ── Bitget (OI = holdingAmount[BTC] × markPrice) ──
-  Bitget: async () => {
-    const fr = await jfetch('https://api.bitget.com/api/v2/mix/market/current-fund-rate?symbol=BTCUSDT&productType=usdt-futures');
-    const oi = await safeOi(jfetch('https://api.bitget.com/api/v2/mix/market/ticker?symbol=BTCUSDT&productType=usdt-futures')
-      .then(t => parseFloat(t.data[0].holdingAmount) * parseFloat(t.data[0].markPrice) / 1e9));
-    return { funding: parseFloat(fr.data[0].fundingRate) * 100, oi };
-  },
-
-  // ── KuCoin (OI = openInterest[contratos] × multiplier[0.001 BTC] × markPrice) ──
-  KuCoin: async () => {
-    const fr = await jfetch('https://api-futures.kucoin.com/api/v1/funding-rate/XBTUSDTM/current');
-    const oi = await safeOi(jfetch('https://api-futures.kucoin.com/api/v1/contracts/XBTUSDTM')
-      .then(c => parseFloat(c.data.openInterest) * parseFloat(c.data.multiplier) * parseFloat(c.data.markPrice) / 1e9));
-    return { funding: parseFloat(fr.data.value) * 100, oi };
-  },
-
-  // ── BingX (OI ya viene en USD en el endpoint openInterest) ──
-  BingX: async () => {
-    const fr = await jfetch('https://open-api.bingx.com/openApi/swap/v2/quote/premiumIndex?symbol=BTC-USDT');
-    const oi = await safeOi(jfetch('https://open-api.bingx.com/openApi/swap/v2/quote/openInterest?symbol=BTC-USDT')
-      .then(o => parseFloat(o.data.openInterest) / 1e9));
-    return { funding: parseFloat(fr.data.lastFundingRate) * 100, oi };
-  },
+  Binance: binanceBulk, OKX: okxBulk, Bybit: bybitBulk, MEXC: mexcBulk,
+  'Gate.io': gateBulk, Bitget: bitgetBulk, KuCoin: kucoinBulk, BingX: bingxBulk,
 };
 
 export default async () => {
-  const results = {};
-  await Promise.all(
-    Object.entries(EX).map(async ([name, fn]) => {
-      try {
-        const d = await fn();
-        const f = Number(d.funding);
-        const o = Number(d.oi);
-        results[name] = {
-          funding: Number.isFinite(f) ? f : null,
-          oi: Number.isFinite(o) && o > 0 ? o : null,
-          ok: Number.isFinite(f),
-        };
-      } catch (e) {
-        results[name] = { funding: null, oi: null, ok: false, error: String(e.message || e) };
-      }
-    })
+  const settled = await Promise.all(
+    Object.entries(EX).map(async ([name, fn]) => [name, await fn().catch(() => ({}))])
   );
 
-  return new Response(JSON.stringify({ updated: Date.now(), data: results }), {
+  const data = {};
+  for (const c of COINS) {
+    data[c] = {};
+    for (const [name, map] of settled) {
+      const e = map[c];
+      const f = e ? Number(e.funding) : NaN;
+      const o = e ? Number(e.oi) : NaN;
+      data[c][name] = {
+        funding: Number.isFinite(f) ? f : null,
+        oi: Number.isFinite(o) && o > 0 ? o : null,
+        ok: Number.isFinite(f),
+      };
+    }
+  }
+
+  return new Response(JSON.stringify({ updated: Date.now(), coins: COINS, data }), {
     headers: {
       'Content-Type': 'application/json',
       'Access-Control-Allow-Origin': '*',
-      // cachea 30s en el CDN de Netlify para no gastar invocaciones (plan free: 125k/mes)
       'Cache-Control': 'public, max-age=30',
       'Netlify-CDN-Cache-Control': 'public, max-age=30, durable',
     },

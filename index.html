@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-  <title>BTC Funding · Sentimiento de Mercado en Vivo</title>
+  <title>Cripto Funding · Sentimiento de Mercado en Vivo (Top 10)</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -29,7 +29,6 @@
     *{margin:0;padding:0;box-sizing:border-box}
     body{background:var(--bg);font-family:'Sora',system-ui,sans-serif;color:var(--txt);
       -webkit-font-smoothing:antialiased}
-    /* subtle grid texture background */
     body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
       background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);
       background-size:44px 44px;opacity:.025}
@@ -39,6 +38,7 @@
     button{font-family:inherit}
     ::-webkit-scrollbar{width:5px;height:5px}
     ::-webkit-scrollbar-thumb{background:var(--line2);border-radius:3px}
+    .tabs::-webkit-scrollbar{height:0}
     @keyframes breathe{0%,100%{opacity:.45;transform:scale(1)}50%{opacity:1;transform:scale(1.15)}}
     @keyframes spin{to{transform:rotate(360deg)}}
     @keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
@@ -49,11 +49,12 @@
        Cuando tengas cuenta aprobada:
        1. Añade en <head>:
           <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-XXXX" crossorigin="anonymous"></script>
-       2. Sustituye .ad-box por:
+       2. Sustituye cada .ad-box por:
           <ins class="adsbygoogle" style="display:block"
                data-ad-client="ca-pub-XXXX" data-ad-slot="XXXX"
                data-ad-format="auto" data-full-width-responsive="true"></ins>
           <script>(adsbygoogle=window.adsbygoogle||[]).push({});</script>
+       Hay 3 huecos: banner superior, central (bajo el funding global) e inferior.
        ────────────────────────────────────────────────── */
     .ad-wrap{max-width:540px;margin:0 auto;padding:0 16px}
     .ad-box{width:100%;min-height:90px;margin-bottom:14px;border:1px solid var(--line);
@@ -77,262 +78,215 @@
 </div>
 
 <script type="text/babel">
-const {useState,useEffect,useCallback,useMemo,useRef}=React;
+const {useState,useEffect,useCallback,useMemo}=React;
 
-// Exchanges base (defaults + color). OI manual para los que no lo dan.
+const FALLBACK_COINS=['BTC','ETH','SOL','XRP','BNB','DOGE','ADA','AVAX','LINK','LTC'];
+
+// Exchanges base (color)
 const META=[
-  {id:'Binance', c:'#F3BA2F', oi:8.52},
-  {id:'OKX',    c:'#BFC6D4', oi:2.55},
-  {id:'Bybit',  c:'#F7A600', oi:3.99},
-  {id:'MEXC',   c:'#2EC4F3', oi:4.81},
-  {id:'Gate.io',c:'#17E6A0', oi:3.61},
-  {id:'Bitget', c:'#00E0D3', oi:1.63},
-  {id:'KuCoin', c:'#26C99E', oi:1.67},
-  {id:'BingX',  c:'#3B7BFF', oi:1.53},
+  {id:'Binance', c:'#F3BA2F'},
+  {id:'OKX',     c:'#BFC6D4'},
+  {id:'Bybit',   c:'#F7A600'},
+  {id:'MEXC',    c:'#2EC4F3'},
+  {id:'Gate.io', c:'#17E6A0'},
+  {id:'Bitget',  c:'#00E0D3'},
+  {id:'KuCoin',  c:'#26C99E'},
+  {id:'BingX',   c:'#3B7BFF'},
 ];
-const SEED_FUNDING={Binance:0.0044,OKX:-0.0001,Bybit:-0.0038,MEXC:0.0100,'Gate.io':-0.0049,Bitget:0.0033,KuCoin:-0.0020,BingX:-0.0012};
-
-// Respaldo en el navegador para los exchanges que SÍ permiten CORS.
-// Binance y Bybit bloquean IPs de datacenter (donde corre la función serverless),
-// así que si el servidor no los alcanza, los pedimos directamente desde aquí.
-const CLIENT_FETCH={
-  Binance:async()=>{
-    const [pf,oi,px]=await Promise.all([
-      fetch('https://fapi.binance.com/fapi/v1/premiumIndex?symbol=BTCUSDT').then(r=>r.json()),
-      fetch('https://fapi.binance.com/fapi/v1/openInterest?symbol=BTCUSDT').then(r=>r.json()),
-      fetch('https://fapi.binance.com/fapi/v1/ticker/price?symbol=BTCUSDT').then(r=>r.json()),
-    ]);
-    return{funding:parseFloat(pf.lastFundingRate)*100,oi:parseFloat(oi.openInterest)*parseFloat(px.price)/1e9};
-  },
-  OKX:async()=>{
-    const [fr,oi]=await Promise.all([
-      fetch('https://www.okx.com/api/v5/public/funding-rate?instId=BTC-USDT-SWAP').then(r=>r.json()),
-      fetch('https://www.okx.com/api/v5/public/open-interest?instType=SWAP&instId=BTC-USDT-SWAP').then(r=>r.json()),
-    ]);
-    return{funding:parseFloat(fr.data[0].fundingRate)*100,oi:parseFloat(oi.data[0].oiUsd)/1e9};
-  },
-  Bybit:async()=>{
-    const r=await fetch('https://api.bybit.com/v5/market/tickers?category=linear&symbol=BTCUSDT').then(r=>r.json());
-    const t=r.result.list[0];
-    return{funding:parseFloat(t.fundingRate)*100,oi:parseFloat(t.openInterestValue)/1e9};
-  },
+// Colores/símbolo por moneda (para el menú y cabeceras)
+const COIN_UI={
+  BTC:{col:'#F7931A'}, ETH:{col:'#627EEA'}, SOL:{col:'#14F195'}, XRP:{col:'#C8CCD0'},
+  BNB:{col:'#F3BA2F'}, DOGE:{col:'#C2A633'}, ADA:{col:'#3468D1'}, AVAX:{col:'#E84142'},
+  LINK:{col:'#2A5ADA'}, LTC:{col:'#A6A9AA'},
 };
+const colOf=c=>(COIN_UI[c]&&COIN_UI[c].col)||'var(--accent)';
 
-function App(){
-  const [rows,setRows]=useState(
-    META.map(m=>({...m,funding:SEED_FUNDING[m.id],mode:'auto',on:true,status:'idle'}))
-  );
-  const [updated,setUpdated]=useState(null);
-  const [busy,setBusy]=useState(false);
-  const [source,setSource]=useState(null); // 'server' | 'proxy' | null
+// Respaldo en el navegador (CORS) para Binance/Bybit, geo-bloqueados en el servidor.
+async function bybitFallback(coins,data){
+  const r=await fetch('https://api.bybit.com/v5/market/tickers?category=linear').then(r=>r.json());
+  const m={}; for(const t of r.result.list) m[t.symbol]=t;
+  for(const c of coins){ const t=m[c+'USDT'];
+    if(t&&(!data[c].Bybit||!data[c].Bybit.ok))
+      data[c].Bybit={funding:parseFloat(t.fundingRate)*100,oi:parseFloat(t.openInterestValue)/1e9,ok:true};
+  }
+}
+async function binanceFallback(coins,data){
+  const arr=await fetch('https://fapi.binance.com/fapi/v1/premiumIndex').then(r=>r.json());
+  const m={}; for(const t of arr) m[t.symbol]=t;
+  await Promise.all(coins.map(async c=>{
+    const s=c+'USDT', pf=m[s]; if(!pf)return;
+    let oi=null;
+    try{const o=await fetch(`https://fapi.binance.com/fapi/v1/openInterest?symbol=${s}`).then(r=>r.json());
+      oi=parseFloat(o.openInterest)*parseFloat(pf.markPrice)/1e9;}catch(_){}
+    if(!data[c].Binance||!data[c].Binance.ok)
+      data[c].Binance={funding:parseFloat(pf.lastFundingRate)*100,oi:(Number.isFinite(oi)&&oi>0)?oi:null,ok:true};
+  }));
+}
 
-  // ── FETCH via Netlify function (1 sola llamada, todos a la vez) ──
-  const fetchAll=useCallback(async()=>{
-    setBusy(true);
-    setRows(p=>p.map(r=>r.mode==='auto'?{...r,status:'loading'}:r));
-    try{
-      const res=await fetch('/api/funding');
-      if(!res.ok)throw new Error('no server fn');
-      const json=await res.json();
-      const d=json.data||{};
-      // Respaldo: para los exchanges CORS que el servidor no haya podido
-      // alcanzar (típicamente Binance/Bybit por geo-bloqueo), los pedimos
-      // directamente desde el navegador.
-      await Promise.all(Object.keys(CLIENT_FETCH).map(async id=>{
-        if(d[id]&&d[id].ok&&Number.isFinite(Number(d[id].funding)))return;
-        try{const fb=await CLIENT_FETCH[id]();d[id]={...fb,ok:true};}catch(_){}
-      }));
-      setRows(p=>p.map(r=>{
-        if(r.mode!=='auto')return r;
-        const ex=d[r.id];
-        if(!ex)return{...r,status:'error'};
-        const f=Number(ex.funding), o=Number(ex.oi);
-        return{
-          ...r,
-          funding:Number.isFinite(f)?f:r.funding,
-          oi:(Number.isFinite(o)&&o>0)?o:r.oi,
-          status:ex.ok?'ok':'error',
-        };
-      }));
-      setSource('server');
-      setUpdated(new Date());
-      setBusy(false);
-      return;
-    }catch(e){
-      // sin función serverless → no rompe, deja datos y marca
-      setRows(p=>p.map(r=>r.mode==='auto'?{...r,status:'error'}:r));
-      setSource('seed');
-      setUpdated(new Date());
-      setBusy(false);
+// ── VWAFR helpers ──
+function vwafrOf(coinData){
+  let num=0,den=0;
+  for(const ex of Object.values(coinData||{})){
+    if(ex&&Number.isFinite(ex.funding)&&Number.isFinite(ex.oi)&&ex.oi>0){num+=ex.funding*ex.oi;den+=ex.oi;}
+  }
+  return{vwafr:den?num/den:0,oi:den};
+}
+function vwafrGlobal(data){
+  let num=0,den=0;
+  for(const c of Object.keys(data||{})){
+    for(const ex of Object.values(data[c]||{})){
+      if(ex&&Number.isFinite(ex.funding)&&Number.isFinite(ex.oi)&&ex.oi>0){num+=ex.funding*ex.oi;den+=ex.oi;}
     }
-  },[]);
+  }
+  return{vwafr:den?num/den:0,oi:den};
+}
+
+// ── estilos compartidos ──
+const wrap={maxWidth:540,margin:'0 auto',padding:'0 16px'};
+const eyebrow={fontSize:10,letterSpacing:3,color:'var(--dim)',textTransform:'uppercase',fontWeight:600};
+const panel=(ex={})=>({background:'var(--panel)',border:'1px solid var(--line)',borderRadius:16,...ex});
+const inp=(c='var(--txt)')=>({background:'#080A10',border:'1px solid var(--line)',borderRadius:7,
+  color:c,fontFamily:"'JetBrains Mono',monospace",fontSize:12.5,padding:'6px 8px',width:'100%',
+  boxSizing:'border-box',fontVariantNumeric:'tabular-nums'});
+const flx=(ex={})=>({display:'flex',alignItems:'center',...ex});
+const fmt=(v,d=4)=>{const n=Number.isFinite(v)?v:0;return(n>=0?'+':'')+n.toFixed(d)+'%';};
+
+function verdict(v){
+  return v>0.015 ?{t:'ALCISTA FUERTE',    s:'Longs pagan fuerte a shorts',     up:1}:
+         v>0     ?{t:'LEVEMENTE ALCISTA', s:'Leve presión long en el mercado',  up:1}:
+         v<-0.015?{t:'BAJISTA FUERTE',    s:'Shorts pagan fuerte a longs',      up:0}:
+         v<0     ?{t:'LEVEMENTE BAJISTA', s:'Leve presión short en el mercado', up:0}:
+                  {t:'NEUTRAL',           s:'Mercado equilibrado, sin sesgo',   up:1};
+}
+
+// ── Hero reutilizable (global o por moneda) ──
+function Hero({vwafr,label,big}){
+  const annual=vwafr*3*365;
+  const gauge=Math.min(Math.max(50+(vwafr/0.02)*50,1.5),98.5);
+  const S=verdict(vwafr);
+  const SC=S.up?'var(--up)':'var(--down)';
+  const SCdim=S.up?'var(--upDim)':'var(--downDim)';
+  return(
+    <div key={S.t} className="rise" style={panel({
+      position:'relative',overflow:'hidden',marginBottom:14,
+      padding:big?'28px 20px 24px':'24px 20px 22px',
+      background:`radial-gradient(120% 90% at 50% -10%, ${S.up?'rgba(31,224,160,.10)':'rgba(255,84,112,.10)'} 0%, var(--panel) 55%)`,
+      borderColor:S.up?'rgba(31,224,160,.18)':'rgba(255,84,112,.18)',
+    })}>
+      <div style={{position:'absolute',top:0,left:'15%',right:'15%',height:1,
+        background:`linear-gradient(90deg,transparent,${SC},transparent)`,opacity:.6}}/>
+      <div style={{textAlign:'center'}}>
+        <div style={{...eyebrow,color:`${SCdim}`,marginBottom:14}}>{label}</div>
+        <div style={{fontSize:S.t.length>14?(big?32:30):(big?40:36),fontWeight:800,letterSpacing:-.5,
+          color:SC,lineHeight:1,marginBottom:7,
+          textShadow:`0 0 40px ${S.up?'rgba(31,224,160,.4)':'rgba(255,84,112,.4)'}`}}>{S.t}</div>
+        <div style={{fontSize:12.5,color:'var(--dim)',marginBottom:22}}>{S.s}</div>
+        <div style={{...flx({justifyContent:'center'}),marginBottom:20}}>
+          <div style={{flex:1,textAlign:'center'}}>
+            <div style={{fontSize:9.5,letterSpacing:2,color:'var(--faint)',textTransform:'uppercase',marginBottom:6}}>VWAFR · 8h</div>
+            <div className="mono" style={{fontSize:big?34:30,fontWeight:700,color:SC,lineHeight:1}}>{fmt(vwafr)}</div>
+          </div>
+          <div style={{width:1,alignSelf:'stretch',background:'var(--line2)',margin:'4px 0'}}/>
+          <div style={{flex:1,textAlign:'center'}}>
+            <div style={{fontSize:9.5,letterSpacing:2,color:'var(--faint)',textTransform:'uppercase',marginBottom:6}}>Anualizado</div>
+            <div className="mono" style={{fontSize:big?34:30,fontWeight:700,color:SCdim,lineHeight:1}}>{fmt(annual,2)}</div>
+          </div>
+        </div>
+        <div style={{position:'relative',height:7,borderRadius:5,margin:'0 6px',
+          background:'linear-gradient(90deg,var(--down) 0%,#1A1E2B 48%,#1A1E2B 52%,var(--up) 100%)'}}>
+          <div style={{position:'absolute',left:'50%',top:-3,bottom:-3,width:1,background:'var(--faint)',opacity:.6}}/>
+          <div style={{position:'absolute',left:`${gauge}%`,top:'50%',
+            transform:'translate(-50%,-50%)',width:18,height:18,borderRadius:'50%',
+            background:SC,border:'3px solid var(--bg)',
+            boxShadow:`0 0 14px ${SC}, 0 2px 6px rgba(0,0,0,.5)`,transition:'left .6s cubic-bezier(.4,0,.2,1)'}}/>
+        </div>
+        <div style={{...flx({justifyContent:'space-between'}),marginTop:7,padding:'0 2px'}}>
+          <span style={{fontSize:9,color:'var(--downDim)',fontWeight:600,letterSpacing:.5}}>SHORTS ▼</span>
+          <span style={{fontSize:9,color:'var(--faint)',letterSpacing:.5}}>NEUTRAL</span>
+          <span style={{fontSize:9,color:'var(--upDim)',fontWeight:600,letterSpacing:.5}}>▲ LONGS</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Bloque calculador por moneda ──
+function Calc({coin,data,source,hidden}){
+  const [rows,setRows]=useState(META.map(m=>({...m,funding:0,oi:1,mode:'auto',on:true,status:'idle'})));
 
   useEffect(()=>{
-    fetchAll();
-    const t=setInterval(fetchAll,60000);
-    return()=>clearInterval(t);
-  },[]);
+    if(!data)return;
+    setRows(p=>p.map(r=>{
+      if(r.mode!=='auto')return r;
+      const ex=data[r.id];
+      if(!ex)return{...r,status:'idle'};
+      const f=Number(ex.funding),o=Number(ex.oi);
+      return{...r,
+        funding:Number.isFinite(f)?f:r.funding,
+        oi:(Number.isFinite(o)&&o>0)?o:r.oi,
+        status:ex.ok?'ok':'error'};
+    }));
+  },[data]);
 
   const setMode=(id,mode)=>setRows(p=>p.map(r=>r.id===id?{...r,mode,status:mode==='auto'?'idle':r.status}:r));
   const setField=(id,k,v)=>setRows(p=>p.map(r=>r.id===id?{...r,[k]:parseFloat(v)||0}:r));
   const toggle=(id)=>setRows(p=>p.map(r=>r.id===id?{...r,on:!r.on}:r));
 
-  // ── VWAFR ──────────────────────────────────────────────────────
-  const active=rows.filter(r=>r.on&&Number.isFinite(r.funding)&&Number.isFinite(r.oi)&&r.oi>0);
+  const active=rows.filter(r=>r.on&&!(r.mode==='auto'&&r.status!=='ok')&&Number.isFinite(r.funding)&&Number.isFinite(r.oi)&&r.oi>0);
   const totalOI=active.reduce((s,r)=>s+r.oi,0);
-  const {vwafr,annual,enr}=useMemo(()=>{
-    if(!totalOI||!active.length)return{vwafr:0,annual:0,enr:[]};
+  const {vwafr,enr}=useMemo(()=>{
+    if(!totalOI||!active.length)return{vwafr:0,enr:[]};
     const e=active.map(r=>({...r,w:r.oi/totalOI,k:(r.oi/totalOI)*r.funding}));
     const v=e.reduce((s,r)=>s+r.k,0);
-    const sv=Number.isFinite(v)?v:0;
-    return{vwafr:sv,annual:sv*3*365,enr:e};
+    return{vwafr:Number.isFinite(v)?v:0,enr:e};
   },[rows]);
 
-  const fmt=(v,d=4)=>{const n=Number.isFinite(v)?v:0;return(n>=0?'+':'')+n.toFixed(d)+'%';};
-  const gauge=Math.min(Math.max(50+(vwafr/0.02)*50,1.5,),98.5);
-
-  const S=
-    vwafr>0.015 ?{t:'ALCISTA FUERTE',    s:'Longs pagan fuerte a shorts',     up:1,strong:1}:
-    vwafr>0     ?{t:'LEVEMENTE ALCISTA', s:'Leve presión long en el mercado',  up:1,strong:0}:
-    vwafr<-0.015?{t:'BAJISTA FUERTE',    s:'Shorts pagan fuerte a longs',      up:0,strong:1}:
-    vwafr<0     ?{t:'LEVEMENTE BAJISTA', s:'Leve presión short en el mercado', up:0,strong:0}:
-                {t:'NEUTRAL',            s:'Mercado equilibrado, sin sesgo',   up:1,strong:0};
-  const SC=S.up?'var(--up)':'var(--down)';
-  const SCdim=S.up?'var(--upDim)':'var(--downDim)';
-
+  const SC=vwafr>=0?'var(--up)':'var(--down)';
   const errCount=rows.filter(r=>r.mode==='auto'&&r.status==='error'&&r.on).length;
 
-  // ── reusable styles ─────────────────────────────────────────────
-  const wrap={maxWidth:540,margin:'0 auto',padding:'0 16px'};
-  const eyebrow={fontSize:10,letterSpacing:3,color:'var(--dim)',textTransform:'uppercase',fontWeight:600};
-  const panel=(ex={})=>({background:'var(--panel)',border:'1px solid var(--line)',borderRadius:16,...ex});
-  const inp=(c='var(--txt)')=>({background:'#080A10',border:'1px solid var(--line)',borderRadius:7,
-    color:c,fontFamily:"'JetBrains Mono',monospace",fontSize:12.5,padding:'6px 8px',width:'100%',
-    boxSizing:'border-box',fontVariantNumeric:'tabular-nums'});
-  const flx=(ex={})=>({display:'flex',alignItems:'center',...ex});
-
   return(
-    <div style={{...wrap,paddingBottom:8}}>
-
-      {/* ── TOPBAR ─────────────────────────────────────────── */}
-      <div style={{...flx({justifyContent:'space-between'}),padding:'4px 2px 16px'}}>
+    <div style={{display:hidden?'none':'block'}}>
+      <div style={{...flx({gap:10}),margin:'2px 2px 12px'}}>
+        <div style={{width:30,height:30,borderRadius:9,flexShrink:0,
+          background:`${colOf(coin)}1F`,border:`1px solid ${colOf(coin)}55`,
+          display:'flex',alignItems:'center',justifyContent:'center',
+          fontSize:12,fontWeight:800,color:colOf(coin)}}>{coin}</div>
         <div>
-          <div style={{...flx({gap:7}),marginBottom:5}}>
-            <div style={{width:7,height:7,borderRadius:2,background:SC,
-              boxShadow:`0 0 8px ${SC}`,animation:'breathe 2.4s ease infinite'}}/>
-            <span style={eyebrow}>Funding de BTC · en vivo</span>
-          </div>
-          <h1 style={{fontSize:21,fontWeight:800,letterSpacing:-.5,lineHeight:1}}>
-            Sentimiento del Mercado
-          </h1>
+          <div style={{fontSize:15,fontWeight:800,letterSpacing:-.3,lineHeight:1.05}}>{coin} · funding por exchange</div>
+          <div style={{...eyebrow,fontSize:9}}>perpetuos USDT · ponderado por OI</div>
         </div>
-        <button onClick={fetchAll} disabled={busy}
-          style={{...flx({gap:6,justifyContent:'center'}),background:'var(--panel2)',
-            border:'1px solid var(--line2)',borderRadius:9,color:'var(--accent)',
-            fontSize:12,fontWeight:600,padding:'8px 13px',cursor:busy?'default':'pointer',opacity:busy?.5:1}}>
-          <span style={{display:'inline-block',animation:busy?'spin .8s linear infinite':'none',fontSize:13}}>↻</span>
-          {busy?'':'Actualizar'}
-        </button>
+        <div className="mono" style={{marginLeft:'auto',fontSize:13,fontWeight:700,color:SC}}>{fmt(vwafr)}</div>
       </div>
 
-      {/* ── HERO: SENTIMIENTO ──────────────────────────────── */}
-      <div key={S.t} className="rise" style={panel({
-        position:'relative',overflow:'hidden',marginBottom:14,
-        padding:'26px 20px 22px',
-        background:`radial-gradient(120% 90% at 50% -10%, ${S.up?'rgba(31,224,160,.10)':'rgba(255,84,112,.10)'} 0%, var(--panel) 55%)`,
-        borderColor:S.up?'rgba(31,224,160,.18)':'rgba(255,84,112,.18)',
-      })}>
-        {/* glow line top */}
-        <div style={{position:'absolute',top:0,left:'15%',right:'15%',height:1,
-          background:`linear-gradient(90deg,transparent,${SC},transparent)`,opacity:.6}}/>
+      <Hero vwafr={vwafr} label={`Veredicto del funding · ${coin}`}/>
 
-        <div style={{textAlign:'center'}}>
-          <div style={{...eyebrow,color:`${SCdim}`,marginBottom:14}}>Veredicto del funding ponderado</div>
-
-          <div style={{fontSize:S.t.length>14?30:36,fontWeight:800,letterSpacing:-.5,
-            color:SC,lineHeight:1,marginBottom:7,
-            textShadow:`0 0 40px ${S.up?'rgba(31,224,160,.4)':'rgba(255,84,112,.4)'}`}}>
-            {S.t}
-          </div>
-          <div style={{fontSize:12.5,color:'var(--dim)',marginBottom:22}}>{S.s}</div>
-
-          {/* Twin metrics */}
-          <div style={{...flx({justifyContent:'center'}),gap:0,marginBottom:20}}>
-            <div style={{flex:1,textAlign:'center'}}>
-              <div style={{fontSize:9.5,letterSpacing:2,color:'var(--faint)',textTransform:'uppercase',marginBottom:6}}>VWAFR · 8h</div>
-              <div className="mono" style={{fontSize:30,fontWeight:700,color:SC,lineHeight:1}}>{fmt(vwafr)}</div>
-            </div>
-            <div style={{width:1,alignSelf:'stretch',background:'var(--line2)',margin:'4px 0'}}/>
-            <div style={{flex:1,textAlign:'center'}}>
-              <div style={{fontSize:9.5,letterSpacing:2,color:'var(--faint)',textTransform:'uppercase',marginBottom:6}}>Anualizado</div>
-              <div className="mono" style={{fontSize:30,fontWeight:700,color:SCdim,lineHeight:1}}>{fmt(annual,2)}</div>
-            </div>
-          </div>
-
-          {/* Gauge */}
-          <div style={{position:'relative',height:7,borderRadius:5,margin:'0 6px',
-            background:'linear-gradient(90deg,var(--down) 0%,#1A1E2B 48%,#1A1E2B 52%,var(--up) 100%)'}}>
-            {/* center tick */}
-            <div style={{position:'absolute',left:'50%',top:-3,bottom:-3,width:1,background:'var(--faint)',opacity:.6}}/>
-            <div style={{position:'absolute',left:`${gauge}%`,top:'50%',
-              transform:'translate(-50%,-50%)',width:18,height:18,borderRadius:'50%',
-              background:SC,border:'3px solid var(--bg)',
-              boxShadow:`0 0 14px ${SC}, 0 2px 6px rgba(0,0,0,.5)`,transition:'left .6s cubic-bezier(.4,0,.2,1)'}}/>
-          </div>
-          <div style={{...flx({justifyContent:'space-between'}),marginTop:7,padding:'0 2px'}}>
-            <span style={{fontSize:9,color:'var(--downDim)',fontWeight:600,letterSpacing:.5}}>SHORTS ▼</span>
-            <span style={{fontSize:9,color:'var(--faint)',letterSpacing:.5}}>NEUTRAL</span>
-            <span style={{fontSize:9,color:'var(--upDim)',fontWeight:600,letterSpacing:.5}}>▲ LONGS</span>
-          </div>
-        </div>
-      </div>
-
-      {/* status strip */}
-      <div style={{...flx({justifyContent:'space-between'}),padding:'0 4px',marginBottom:14}}>
-        <div style={{...flx({gap:6}),fontSize:10.5,color:'var(--dim)'}} className="mono">
-          {source==='server'
-            ? <><span style={{color:'var(--up)'}}>●</span> Datos en vivo</>
-            : <><span style={{color:'var(--down)'}}>●</span> Modo local</>}
-          {updated&&<span style={{color:'var(--faint)'}}>· {updated.toLocaleTimeString('es-ES')}</span>}
-        </div>
-        <span style={{fontSize:10.5,color:'var(--faint)'}} className="mono">auto · 60s</span>
-      </div>
-
-      {/* ── EXCHANGES ──────────────────────────────────────── */}
       <div style={panel({marginBottom:14,padding:16})}>
         <div style={{...flx({justifyContent:'space-between'}),marginBottom:14}}>
           <span style={eyebrow}>Exchanges</span>
           <span style={{fontSize:10,color:'var(--faint)'}} className="mono">{active.length}/{rows.length} activos</span>
         </div>
-
-        {/* header */}
         <div style={{display:'grid',gridTemplateColumns:'13px 1fr 76px 64px 50px 56px',gap:'0 7px',
           marginBottom:10,fontSize:9,color:'var(--faint)',letterSpacing:1.2,textTransform:'uppercase',fontWeight:600}}>
           <span/><span>Exchange</span><span>Funding%</span><span>OI $B</span>
           <span style={{textAlign:'right'}}>Peso</span><span style={{textAlign:'center'}}>Fuente</span>
         </div>
-
         {rows.map((r,i)=>{
           const e=enr.find(x=>x.id===r.id);
           const wP=e?+(e.w*100).toFixed(1):0;
           const auto=r.mode==='auto';
           const fc=r.funding>=0?'var(--up)':'var(--down)';
-          const oiLocked=auto&&['Binance','OKX','Bybit','MEXC'].includes(r.id)&&r.status==='ok';
-          const fLocked=auto&&r.status!=='error';
+          const oiLocked=auto&&r.status==='ok';
+          const fLocked=auto&&r.status==='ok';
           return(
             <div key={r.id} style={{display:'grid',gridTemplateColumns:'13px 1fr 76px 64px 50px 56px',
               gap:'0 7px',alignItems:'center',padding:'7px 0',
               borderTop:i?'1px solid #12151F':'none',opacity:r.on?1:.3,transition:'opacity .2s'}}>
-
-              {/* checkbox */}
               <div onClick={()=>toggle(r.id)} style={{width:13,height:13,borderRadius:4,cursor:'pointer',
                 flexShrink:0,background:r.on?'var(--accent)':'transparent',
                 border:`1px solid ${r.on?'var(--accent)':'#2E3548'}`,
                 display:'flex',alignItems:'center',justifyContent:'center'}}>
                 {r.on&&<span style={{fontSize:9,color:'#07090E',lineHeight:1,fontWeight:700}}>✓</span>}
               </div>
-
-              {/* name + bar */}
               <div style={{minWidth:0}}>
                 <div style={{...flx({gap:6}),marginBottom:3}}>
                   <div style={{width:5,height:5,borderRadius:'50%',background:r.c,flexShrink:0,
@@ -340,7 +294,6 @@ function App(){
                   <span style={{fontSize:12.5,fontWeight:600,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{r.id}</span>
                   {auto&&r.status==='ok'&&<div style={{width:5,height:5,borderRadius:'50%',
                     background:'var(--up)',animation:'breathe 2.4s ease infinite',flexShrink:0}}/>}
-                  {auto&&r.status==='loading'&&<span style={{fontSize:9,color:'var(--accent)',animation:'spin .8s linear infinite',display:'inline-block'}}>◌</span>}
                   {auto&&r.status==='error'&&<span style={{fontSize:9,color:'var(--downDim)'}} title="Sin datos — usa MAN">⚠</span>}
                 </div>
                 {r.on&&e&&(
@@ -350,23 +303,15 @@ function App(){
                   </div>
                 )}
               </div>
-
-              {/* funding */}
               <input type="number" step="0.0001" value={Number.isFinite(r.funding)?r.funding:0}
                 disabled={fLocked} onChange={ev=>setField(r.id,'funding',ev.target.value)}
                 style={{...inp(fc),opacity:fLocked?.65:1,cursor:fLocked?'default':'text'}}/>
-
-              {/* oi */}
               <input type="number" step="0.01" min="0" value={(Number.isFinite(r.oi)?r.oi:0).toFixed(2)}
                 disabled={oiLocked} onChange={ev=>setField(r.id,'oi',ev.target.value)}
                 style={{...inp('var(--dim)'),opacity:oiLocked?.65:1}}/>
-
-              {/* weight */}
               <div className="mono" style={{fontSize:11.5,color:'var(--accent)',textAlign:'right'}}>
                 {r.on&&wP?`${wP}%`:'—'}
               </div>
-
-              {/* mode toggle pills */}
               <div style={{...flx({justifyContent:'center'}),background:'#080A10',
                 border:'1px solid var(--line)',borderRadius:7,padding:2,gap:1}}>
                 <button onClick={()=>setMode(r.id,'auto')} title="Automático"
@@ -379,17 +324,15 @@ function App(){
             </div>
           );
         })}
-
         {errCount>0&&source==='server'&&(
           <div style={{marginTop:12,padding:'9px 11px',borderRadius:9,
             background:'rgba(255,84,112,.06)',border:'1px solid rgba(255,84,112,.15)',
             fontSize:10.5,color:'var(--downDim)',lineHeight:1.5}}>
-            ⚠ {errCount} exchange{errCount>1?'s':''} sin respuesta. Cambia a <b style={{color:'#F3BA2F'}}>M</b> y mete el valor de Coinglass a mano.
+            ⚠ {errCount} exchange{errCount>1?'s':''} sin respuesta para {coin}. Cambia a <b style={{color:'#F3BA2F'}}>M</b> y mete el valor de Coinglass a mano.
           </div>
         )}
       </div>
 
-      {/* ── DESGLOSE ───────────────────────────────────────── */}
       <div style={panel({marginBottom:14,padding:16})}>
         <div style={{...eyebrow,marginBottom:14}}>Desglose · contribución al VWAFR</div>
         {enr.map((r,i)=>(
@@ -416,19 +359,154 @@ function App(){
           <span className="mono" style={{fontSize:14,fontWeight:700,color:SC}}>= {fmt(vwafr)}</span>
         </div>
       </div>
+    </div>
+  );
+}
 
-      {/* ── EXPLICACIÓN (ayuda para AdSense + usuarios) ────── */}
+function App(){
+  const [payload,setPayload]=useState(null);
+  const [source,setSource]=useState(null);
+  const [updated,setUpdated]=useState(null);
+  const [busy,setBusy]=useState(false);
+  const [tab,setTab]=useState('BTC');
+
+  const fetchAll=useCallback(async()=>{
+    setBusy(true);
+    try{
+      const res=await fetch('/api/funding');
+      if(!res.ok)throw new Error('no server fn');
+      const json=await res.json();
+      const coins=json.coins||FALLBACK_COINS;
+      const data=json.data||{};
+      for(const c of coins) if(!data[c])data[c]={};
+      // respaldo navegador (Binance/Bybit) para todas las monedas
+      await Promise.all([
+        bybitFallback(coins,data).catch(()=>{}),
+        binanceFallback(coins,data).catch(()=>{}),
+      ]);
+      setPayload({coins,data});
+      setSource('server');
+      setUpdated(new Date());
+    }catch(e){
+      setSource('seed');
+      setUpdated(new Date());
+    }finally{
+      setBusy(false);
+    }
+  },[]);
+
+  useEffect(()=>{
+    fetchAll();
+    const t=setInterval(fetchAll,60000);
+    return()=>clearInterval(t);
+  },[]);
+
+  const coins=(payload&&payload.coins)||FALLBACK_COINS;
+  const data=(payload&&payload.data)||{};
+  const g=useMemo(()=>vwafrGlobal(data),[payload]);
+
+  return(
+    <div style={{...wrap,paddingBottom:8}}>
+
+      {/* TOPBAR */}
+      <div style={{...flx({justifyContent:'space-between'}),padding:'4px 2px 14px'}}>
+        <div>
+          <div style={{...flx({gap:7}),marginBottom:5}}>
+            <div style={{width:7,height:7,borderRadius:2,background:'var(--accent)',
+              boxShadow:'0 0 8px var(--accent)',animation:'breathe 2.4s ease infinite'}}/>
+            <span style={eyebrow}>Funding cripto · top 10 · en vivo</span>
+          </div>
+          <h1 style={{fontSize:21,fontWeight:800,letterSpacing:-.5,lineHeight:1}}>
+            Sentimiento del Mercado
+          </h1>
+        </div>
+        <button onClick={fetchAll} disabled={busy}
+          style={{...flx({gap:6,justifyContent:'center'}),background:'var(--panel2)',
+            border:'1px solid var(--line2)',borderRadius:9,color:'var(--accent)',
+            fontSize:12,fontWeight:600,padding:'8px 13px',cursor:busy?'default':'pointer',opacity:busy?.5:1}}>
+          <span style={{display:'inline-block',animation:busy?'spin .8s linear infinite':'none',fontSize:13}}>↻</span>
+          {busy?'':'Actualizar'}
+        </button>
+      </div>
+
+      {/* status strip */}
+      <div style={{...flx({justifyContent:'space-between'}),padding:'0 4px',marginBottom:16}}>
+        <div style={{...flx({gap:6}),fontSize:10.5,color:'var(--dim)'}} className="mono">
+          {source==='server'
+            ? <><span style={{color:'var(--up)'}}>●</span> Datos en vivo</>
+            : <><span style={{color:'var(--down)'}}>●</span> Modo local</>}
+          {updated&&<span style={{color:'var(--faint)'}}>· {updated.toLocaleTimeString('es-ES')}</span>}
+        </div>
+        <span style={{fontSize:10.5,color:'var(--faint)'}} className="mono">auto · 60s</span>
+      </div>
+
+      {/* ── FUNDING GLOBAL (gran indicador, todas las monedas) ── */}
+      <Hero big vwafr={g.vwafr} label="Funding GLOBAL · top 10 ponderado por OI"/>
+      <div style={{...flx({justifyContent:'center',gap:6}),marginTop:-4,marginBottom:14}}>
+        <span className="mono" style={{fontSize:10.5,color:'var(--faint)'}}>OI agregado ${g.oi.toFixed(1)}B · {coins.length} monedas × {META.length} exchanges</span>
+      </div>
+
+      {/* ── ADSENSE central ── */}
+      <div className="ad-box" style={{marginBottom:16}}>
+        <span className="a1">Publicidad</span><span className="a2">Google AdSense · banner central</span>
+      </div>
+
+      {/* ── RESUMEN · todas las monedas (formato lista, estilo boceto) ── */}
+      <div style={panel({marginBottom:16,padding:'12px 14px 6px'})}>
+        <div style={{...flx({justifyContent:'space-between'}),marginBottom:8}}>
+          <span style={eyebrow}>Resumen · top 10 por OI</span>
+          <span style={{fontSize:9,color:'var(--faint)'}} className="mono">toca para ver detalle</span>
+        </div>
+        {coins.map((c,i)=>{
+          const cv=vwafrOf(data[c]);
+          const sel=c===tab;
+          const cc=cv.vwafr>=0?'var(--up)':'var(--down)';
+          const gp=Math.min(Math.max(50+(cv.vwafr/0.02)*50,4),96);
+          return(
+            <div key={c} onClick={()=>setTab(c)} style={{...flx({gap:9}),padding:'9px 6px',cursor:'pointer',
+              borderTop:i?'1px solid #12151F':'none',
+              background:sel?'rgba(110,139,255,.06)':'transparent',borderRadius:8,transition:'background .15s'}}>
+              <span className="mono" style={{fontSize:10,color:'var(--faint)',width:12,flexShrink:0}}>{i+1}</span>
+              <div style={{width:26,height:26,borderRadius:7,flexShrink:0,
+                background:`${colOf(c)}1F`,border:`1px solid ${colOf(c)}44`,
+                display:'flex',alignItems:'center',justifyContent:'center',
+                fontSize:9,fontWeight:800,color:colOf(c)}}>{c.slice(0,3)}</div>
+              <span style={{fontSize:13,fontWeight:700,minWidth:40,flexShrink:0}}>{c}</span>
+              <div style={{flex:1,position:'relative',height:5,borderRadius:4,minWidth:40,
+                background:'linear-gradient(90deg,var(--downDim) 0%,#161A26 47%,#161A26 53%,var(--upDim) 100%)',opacity:.55}}>
+                <div style={{position:'absolute',left:`${gp}%`,top:'50%',transform:'translate(-50%,-50%)',
+                  width:9,height:9,borderRadius:'50%',background:cc,border:'2px solid var(--bg)',
+                  boxShadow:`0 0 6px ${cc}`,transition:'left .5s ease'}}/>
+              </div>
+              <span className="mono" style={{fontSize:12,fontWeight:700,color:cc,minWidth:64,textAlign:'right'}}>{fmt(cv.vwafr)}</span>
+              <span style={{color:sel?colOf(c):'var(--faint)',fontSize:13,width:10,textAlign:'center',flexShrink:0}}>{sel?'▾':'›'}</span>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ── ADSENSE 3 (antes del detalle) ── */}
+      <div className="ad-box" style={{marginBottom:16}}>
+        <span className="a1">Publicidad</span><span className="a2">Google AdSense · in-content</span>
+      </div>
+
+      {/* ── Detalle de la moneda seleccionada ── */}
+      {coins.map(c=>(
+        <Calc key={c} coin={c} data={data[c]} source={source} hidden={c!==tab}/>
+      ))}
+
+      {/* ── EXPLICACIÓN ── */}
       <div style={panel({marginBottom:14,padding:'16px 18px'})}>
         <div style={{...eyebrow,marginBottom:10}}>¿Qué es esto?</div>
         <p style={{fontSize:12.5,color:'var(--dim)',lineHeight:1.65,marginBottom:10}}>
           El <b style={{color:'var(--txt)'}}>VWAFR</b> (Volume-Weighted Average Funding Rate) une el funding rate de
-          los principales exchanges de futuros perpetuos de Bitcoin, ponderando cada uno por su interés abierto (OI).
-          Un exchange con más OI pesa más en el resultado final.
+          los principales exchanges de futuros perpetuos, ponderando cada uno por su interés abierto (OI).
+          Arriba ves el <b style={{color:'var(--txt)'}}>funding global</b> (todas las monedas del top 10 juntas) y, con el menú,
+          el desglose de cada moneda exchange por exchange.
         </p>
         <p style={{fontSize:12.5,color:'var(--dim)',lineHeight:1.65,marginBottom:10}}>
           Funding <span style={{color:'var(--up)'}}>positivo</span> = los longs pagan a los shorts (presión alcista).
           Funding <span style={{color:'var(--down)'}}>negativo</span> = los shorts pagan a los longs (presión bajista).
-          Cuanto más extremo, mayor el apalancamiento direccional acumulado en el mercado.
         </p>
         <div style={{...flx({gap:8}),marginTop:12,padding:'9px 11px',borderRadius:9,
           background:'#0A0D14',border:'1px solid var(--line)'}}>
