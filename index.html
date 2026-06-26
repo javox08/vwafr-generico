@@ -1046,7 +1046,36 @@ const ECON=[
   ['2026-11-12','CPI','Inflación EE.UU. (IPC)'],['2026-12-09','FOMC','Decisión de tipos de la Fed'],
   ['2026-12-10','CPI','Inflación EE.UU. (IPC)'],['2027-01-13','CPI','Inflación EE.UU. (IPC)'],
 ];
-function QuantView(){
+// Exponente de Hurst (R/S): >0.5 tendencial, <0.5 media-reversivo, ~0.5 aleatorio
+function hurst(s){
+  const lags=[8,16,32,64],pts=[];
+  for(const lag of lags){ if(s.length<lag*2)continue; let acc=0,cnt=0;
+    for(let st=0;st+lag<=s.length;st+=lag){const w=s.slice(st,st+lag),m=qMean(w);
+      let cum=0,mn=0,mx=0;for(const x of w){cum+=x-m;mn=Math.min(mn,cum);mx=Math.max(mx,cum);}
+      const S=qStd(w);if(S>0){acc+=(mx-mn)/S;cnt++;}}
+    if(cnt)pts.push([Math.log(lag),Math.log(acc/cnt)]);}
+  if(pts.length<2)return 0.5;
+  const xs=pts.map(p=>p[0]),ys=pts.map(p=>p[1]),mx=qMean(xs),my=qMean(ys);
+  let num=0,den=0;for(let i=0;i<pts.length;i++){num+=(xs[i]-mx)*(ys[i]-my);den+=(xs[i]-mx)*(xs[i]-mx);}
+  return den?num/den:0.5;
+}
+// Modelo de ciclo (halving) reutilizable: fase, semana y techo/suelo proyectados
+function cycleModel(athLive){
+  const HALV=[Date.UTC(2012,10,28),Date.UTC(2016,6,9),Date.UTC(2020,4,11),Date.UTC(2024,3,20),Date.UTC(2028,3,18),Date.UTC(2032,3,16)];
+  const now=Date.now(); let hi=0; for(let i=0;i<HALV.length;i++) if(now>=HALV[i]) hi=i;
+  const last=HALV[hi], next=HALV[Math.min(hi+1,HALV.length-1)];
+  const weeks=Math.floor((now-last)/(7*864e5)), prog=Math.min(100,Math.max(0,(now-last)/((next-last)||1)*100));
+  const phase=weeks<40?{t:'Pre-Bull',c:'#8AA0FF',bias:0.3}:weeks<77?{t:'Bull Market',c:'var(--up)',bias:1}:
+    weeks<135?{t:'Bear Market',c:'var(--down)',bias:-1}:weeks<200?{t:'Acumulación',c:'#3B82F6',bias:0.6}:{t:'Pre-Bull',c:'#8AA0FF',bias:0.3};
+  const g23=(69044-19783)/19783*100,g34=(126000-69044)/69044*100,redAuto=(g23-g34)/g23*100;
+  const ath=[]; ath[2]=19783; ath[3]=69044; ath[4]=Math.max(126000,athLive||0);
+  let gp=g34; for(let cc=5;cc<=12;cc++){gp*=(1-redAuto/100); ath[cc]=ath[cc-1]*(1+gp/100);}
+  const dd3=(69044-15479)/69044*100, redDd=((19783-3200)/19783*100-dd3)/((19783-3200)/19783*100)*100;
+  const caida=[]; caida[4]=dd3*(1-redDd/100); for(let cc=5;cc<=12;cc++) caida[cc]=(caida[cc-1]||dd3)*(1-redDd/100);
+  const cn=Math.min(Math.max(hi+1,4),11), athC=ath[cn], sueloC=athC*(1-(caida[cn]||dd3)/100);
+  return {cycleNum:cn,weeks,prog,phase,athC,sueloC};
+}
+function QuantView({gFunding}){
   const [q,setQ]=useState(null);
   useEffect(()=>{
     let alive=true;
@@ -1055,6 +1084,8 @@ function QuantView(){
       try{const cg=await fetch('https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=365&interval=daily').then(r=>r.json());out.closes=cg.prices.map(p=>p[1]);}catch(_){}
       try{const[m,n]=await Promise.all([fetch('https://bitcoin-data.com/v1/mvrv/last').then(r=>r.json()),fetch('https://bitcoin-data.com/v1/nupl/last').then(r=>r.json())]);out.mvrv=parseFloat(m.mvrv);out.nupl=parseFloat(n.nupl);}catch(_){}
       try{const f=await fetch('https://api.alternative.me/fng/?limit=1').then(r=>r.json());out.fng=parseInt(f.data[0].value);out.fngTxt=f.data[0].value_classification;}catch(_){}
+      try{const dr=await fetch('https://www.deribit.com/api/v2/public/get_book_summary_by_currency?currency=BTC&kind=option').then(r=>r.json());out.opts=dr.result;}catch(_){}
+      try{const k=await fetch('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1w&limit=300').then(r=>r.json());out.weekly=k.map(x=>parseFloat(x[4]));}catch(_){}
       if(alive)setQ(out);
     })();
   },[]);
@@ -1065,18 +1096,44 @@ function QuantView(){
     for(let i=1;i<cl.length;i++)rets.push(Math.log(cl[i]/cl[i-1]));
     const annVol=qStd(rets)*Math.sqrt(365)*100, rsi=qRSI(cl,14);
     const ma=n=>qMean(cl.slice(-n)), ma200=ma(Math.min(200,cl.length)), ma50=ma(50);
+    const ma200w=(q.weekly&&q.weekly.length>=10)?qMean(q.weekly.slice(-Math.min(200,q.weekly.length))):null;
     const mc=monteCarlo(rets,price,30,700), fin=mc.finals;
     const probUp=fin.filter(v=>v>price).length/fin.length*100;
     const probUp15=fin.filter(v=>v>price*1.15).length/fin.length*100;
     const probDn15=fin.filter(v=>v<price*0.85).length/fin.length*100;
     const r10=mc.finals10.map(v=>(v-price)/price*100), var99=qPct(r10,1);
     const tail=r10.filter(x=>x<=var99), cvar99=tail.length?qMean(tail):var99;
-    const realized=q.mvrv?price/q.mvrv:price, fairMVRV=realized*1.8;
-    const targets=[fairMVRV,ma200*1.15,mc.bands[30].p50].filter(x=>Number.isFinite(x)&&x>0);
-    const fair=qMean(targets), valPct=(fair-price)/price*100;
-    return {price,annVol,rsi,ma200,ma50,mc,probUp,probUp15,probDn15,var99,cvar99,fair,
-      lo:Math.min(ma200,realized*1.2),hi:fairMVRV*1.3,valPct,realized};
-  },[q]);
+    // ── Modelos de valoración (precio objetivo) ──
+    const days=(Date.now()-Date.UTC(2009,0,3))/864e5, ld=Math.log10(days);
+    const plFair=Math.pow(10,5.8*ld-17.01), plSup=Math.pow(10,5.8*ld-17.32), plRes=Math.pow(10,5.8*ld-16.70);
+    const realized=q.mvrv?price/q.mvrv:price;
+    const cyc=cycleModel(Math.max(price,...cl));
+    const models=[{n:'Power-Law',v:plFair},{n:'Realized·MVRV',v:realized*1.8},{n:'Mayer (MA200d)',v:ma200*1.4},
+      {n:'Ciclo BTC',v:Math.sqrt(cyc.athC*cyc.sueloC)}];
+    if(ma200w)models.push({n:'MA 200 sem',v:ma200w*2.2});
+    const fair=qMean(models.map(m=>m.v)), valPct=(fair-price)/price*100;
+    const lo=Math.min(plSup,realized*1.2), hi=Math.max(plRes,...models.map(m=>m.v));
+    // ── Régimen (Hurst + tendencia) ──
+    const H=hurst(rets), tUp=price>ma50&&ma50>ma200, tDn=price<ma50&&ma50<ma200;
+    const regime=H>0.55?(tUp?{t:'Tendencia alcista',c:'var(--up)',trend:1}:tDn?{t:'Tendencia bajista',c:'var(--down)',trend:1}:{t:'Tendencial',c:'#F3BA2F',trend:1}):
+      H<0.45?{t:'Rango · media-reversión',c:'#3B82F6',trend:0}:{t:'Aleatorio / indefinido',c:'var(--dim)',trend:0};
+    // ── Funding (squeeze risk) ──
+    const gf=Number.isFinite(gFunding)?gFunding:0;
+    const fund=gf>0.012?{t:'Riesgo long-squeeze',c:'var(--down)',risk:1}:gf<-0.012?{t:'Posible short-squeeze',c:'var(--up)',risk:0}:{t:'Funding equilibrado',c:'var(--dim)',risk:0};
+    // ── Opciones (Deribit) ──
+    let opt=null;
+    if(q.opts&&q.opts.length){let poi=0,coi=0;const sk={};
+      for(const o of q.opts){const m=o.instrument_name.match(/-(\d+)-([CP])$/);if(!m)continue;const k=+m[1],t=m[2],oi=o.open_interest||0;
+        if(t==='P')poi+=oi;else coi+=oi;sk[k]=sk[k]||{c:0,p:0};sk[k][t==='P'?'p':'c']+=oi;}
+      let mp=null,minp=Infinity;const ks=Object.keys(sk).map(Number).sort((a,b)=>a-b);
+      for(const S of ks){let pay=0;for(const K of ks){const o=sk[K];pay+=o.c*Math.max(0,S-K)+o.p*Math.max(0,K-S);}if(pay<minp){minp=pay;mp=S;}}
+      opt={pcr:coi>0?poi/coi:null,oi:poi+coi,maxPain:mp};}
+    // ── Tabla de probabilidad de objetivos (Monte Carlo 30d) ──
+    const levels=[1.30,1.15,0.85,0.70].map(mul=>{const lv=price*mul,up=mul>=1;
+      return {lv,pct:(mul-1)*100,p:(up?fin.filter(v=>v>=lv).length:fin.filter(v=>v<=lv).length)/fin.length*100,up};});
+    return {price,annVol,rsi,ma200,ma50,ma200w,mc,probUp,probUp15,probDn15,var99,cvar99,
+      fair,lo,hi,valPct,realized,models,plSup,plRes,H,regime,fund,gf,opt,levels,cyc};
+  },[q,gFunding]);
 
   const D=86400000, now=Date.now();
   const evNext=ECON.map(e=>({d:new Date(e[0]+'T13:00:00Z').getTime(),t:e[1],n:e[2]})).filter(e=>e.d>now-D).sort((a,b)=>a.d-b.d).slice(0,4);
@@ -1092,8 +1149,8 @@ function QuantView(){
   );
 
   // veredicto scorecard
-  const go = c.probUp>55 && !macroWindow && c.rsi<78 && c.cvar99>-12;
-  const goReason = macroWindow?'Ventana de evento macro (riesgo)':c.rsi>=78?'RSI sobrecomprado':c.probUp<=55?'Probabilidad alcista baja':c.cvar99<=-12?'Riesgo de cola elevado':'Estadística favorable';
+  const go = c.probUp>55 && !macroWindow && c.rsi<78 && c.cvar99>-12 && !c.fund.risk && c.cyc.phase.bias>=0;
+  const goReason = macroWindow?'Ventana de evento macro (riesgo)':c.fund.risk?'Funding alto: riesgo long-squeeze':c.cyc.phase.bias<0?'Ciclo en fase bajista (Bear)':c.rsi>=78?'RSI sobrecomprado':c.probUp<=55?'Probabilidad alcista baja':c.cvar99<=-12?'Riesgo de cola elevado':'Estadística + ciclo favorables';
   const valState = c.valPct>15?{t:'INFRAVALORADO',col:'var(--up)'}:c.valPct<-15?{t:'SOBREVALORADO',col:'var(--down)'}:{t:'EN VALOR JUSTO',col:'#F3BA2F'};
   // fan chart
   const FW=300,FH=128,DAYS=30, b=c.mc.bands;
@@ -1136,6 +1193,31 @@ function QuantView(){
             <div style={{textAlign:'right'}}><div style={{fontSize:8.5,letterSpacing:1.3,color:'var(--faint)',textTransform:'uppercase',fontWeight:600}}>Optimista</div>
               <div className="mono" style={{fontSize:13,fontWeight:700,color:'var(--up)'}}>{money(c.hi)}</div></div>
           </div>
+          <div style={{marginTop:13,paddingTop:11,borderTop:'1px solid var(--line2)'}}>
+            <div style={{...eyebrow,fontSize:8.5,marginBottom:7,textAlign:'left'}}>Modelos que lo componen</div>
+            {c.models.map((m,i)=>(
+              <div key={i} style={{...flx({justifyContent:'space-between'}),padding:'2.5px 0'}}>
+                <span style={{fontSize:10.5,color:'var(--dim)'}}>{m.n}</span>
+                <span className="mono" style={{fontSize:11,fontWeight:600,color:'var(--txt)'}}>{money(m.v)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* CONTEXTO: régimen + ciclo + funding */}
+      <div style={panel({marginBottom:14,padding:16})}>
+        <div style={{...eyebrow,marginBottom:12}}>Contexto de mercado</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
+          {[['Régimen',c.regime.t,c.regime.c,'Hurst '+c.H.toFixed(2)],
+            ['Ciclo',c.cyc.phase.t,c.cyc.phase.c,'semana '+c.cyc.weeks],
+            ['Funding',c.fund.t,c.fund.c,(c.gf>=0?'+':'')+c.gf.toFixed(4)+'%']].map((m,i)=>(
+            <div key={i} style={{background:'#0A0D14',borderRadius:9,padding:'11px 9px',textAlign:'center'}}>
+              <div style={{fontSize:8.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:1,fontWeight:600,marginBottom:5}}>{m[0]}</div>
+              <div style={{fontSize:11.5,fontWeight:800,color:m[2],lineHeight:1.15,minHeight:28}}>{m[1]}</div>
+              <div className="mono" style={{fontSize:8.5,color:'var(--dim)',marginTop:4}}>{m[3]}</div>
+            </div>
+          ))}
         </div>
       </div>
 
@@ -1185,6 +1267,49 @@ function QuantView(){
           ))}
         </div>
       </div>
+
+      {/* TABLA DE PROBABILIDAD DE OBJETIVOS */}
+      <div style={panel({marginBottom:14,padding:16})}>
+        <div style={{...flx({justifyContent:'space-between'}),marginBottom:12}}>
+          <span style={eyebrow}>Probabilidad de objetivos · 30d</span>
+          <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>Monte Carlo</span>
+        </div>
+        {c.levels.map((L,i)=>(
+          <div key={i} style={{...flx({gap:8}),padding:'7px 0',borderTop:i?'1px solid #12151F':'none'}}>
+            <span style={{fontSize:13,width:18,color:L.up?'var(--up)':'var(--down)'}}>{L.up?'▲':'▼'}</span>
+            <span className="mono" style={{fontSize:12,fontWeight:700,width:66,flexShrink:0}}>{money(L.lv)}</span>
+            <span className="mono" style={{fontSize:10,color:'var(--faint)',width:42}}>{L.pct>=0?'+':''}{L.pct.toFixed(0)}%</span>
+            <div style={{flex:1,height:7,borderRadius:4,background:'#0A0D14',overflow:'hidden'}}>
+              <div style={{height:'100%',width:`${Math.min(100,L.p)}%`,borderRadius:4,
+                background:L.up?'linear-gradient(90deg,var(--upDim),var(--up))':'linear-gradient(90deg,var(--downDim),var(--down))'}}/>
+            </div>
+            <span className="mono" style={{fontSize:11.5,fontWeight:700,width:38,textAlign:'right',color:L.up?'var(--up)':'var(--down)'}}>{L.p.toFixed(0)}%</span>
+          </div>
+        ))}
+        <p style={{fontSize:9.5,color:'var(--faint)',marginTop:9}}>Prob. de que BTC toque cada nivel en los próximos 30 días.</p>
+      </div>
+
+      {/* OPCIONES (Deribit) */}
+      {c.opt&&c.opt.pcr!=null&&(
+        <div style={panel({marginBottom:14,padding:16})}>
+          <div style={{...flx({justifyContent:'space-between'}),marginBottom:12}}>
+            <span style={eyebrow}>Opciones · calls / puts</span>
+            <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>Deribit</span>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
+            {[['Put/Call',c.opt.pcr.toFixed(2),c.opt.pcr<0.7?'var(--up)':c.opt.pcr>1?'var(--down)':'#F3BA2F',c.opt.pcr<0.7?'sesgo alcista':c.opt.pcr>1?'cobertura/bajista':'neutral'],
+              ['Max Pain',money(c.opt.maxPain),'var(--accent)','imán de precio'],
+              ['OI opciones',(c.opt.oi/1000).toFixed(0)+'k','var(--txt)','BTC abiertos']].map((m,i)=>(
+              <div key={i} style={{background:'#0A0D14',borderRadius:9,padding:'11px 8px',textAlign:'center'}}>
+                <div className="mono" style={{fontSize:15,fontWeight:800,color:m[2],lineHeight:1.1}}>{m[1]}</div>
+                <div style={{fontSize:8.5,color:'var(--dim)',marginTop:4}}>{m[0]}</div>
+                <div style={{fontSize:8,color:'var(--faint)',marginTop:2}}>{m[3]}</div>
+              </div>
+            ))}
+          </div>
+          <p style={{fontSize:9.5,color:'var(--faint)',marginTop:10}}>Put/Call &lt;0.7 = más calls (alcista) · &gt;1 = más puts (cobertura). Max Pain: precio donde más opciones expiran sin valor (suele atraer al precio).</p>
+        </div>
+      )}
 
       {/* ESTADÍSTICAS */}
       <div style={panel({marginBottom:14,padding:16})}>
@@ -1354,7 +1479,7 @@ function App(){
       </div>
 
       {view==='cycle'&&<CycleBTC/>}
-      {view==='quant'&&<QuantView/>}
+      {view==='quant'&&<QuantView gFunding={g.vwafr}/>}
 
       {home&&<>
       {/* status strip */}
