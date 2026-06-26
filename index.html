@@ -3,7 +3,63 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-  <title>Cripto Funding · Sentimiento de Mercado en Vivo (Top 10)</title>
+
+  <!-- ─────────── SEO ─────────── -->
+  <title>Funding Rate de Bitcoin y Cripto en Vivo · VWAFR Top 10 | Sentimiento del Mercado</title>
+  <meta name="description" content="Calculadora en vivo del funding rate de Bitcoin (BTC), Ethereum (ETH) y el top 10 de criptos en 8 exchanges: Binance, OKX, Bybit, MEXC, Hyperliquid, Bitget, KuCoin y BingX. VWAFR ponderado por interés abierto (OI) con veredicto alcista o bajista del mercado."/>
+  <meta name="keywords" content="funding rate bitcoin, funding rate cripto, VWAFR, sentimiento de mercado cripto, interés abierto, open interest, BTC funding, ETH funding, futuros perpetuos, funding Binance, funding Bybit, funding OKX, calculadora funding"/>
+  <meta name="author" content="VWAFR Funding"/>
+  <meta name="robots" content="index, follow, max-image-preview:large"/>
+  <meta name="theme-color" content="#07090E"/>
+  <link rel="canonical" href="https://dazzling-pony-17d2d9.netlify.app/"/>
+
+  <!-- Open Graph / redes sociales -->
+  <meta property="og:type" content="website"/>
+  <meta property="og:site_name" content="VWAFR · Funding de Cripto"/>
+  <meta property="og:title" content="Funding Rate de Bitcoin y Cripto en Vivo · VWAFR Top 10"/>
+  <meta property="og:description" content="Funding rate en vivo de BTC, ETH y el top 10 en 8 exchanges, ponderado por interés abierto (OI). Sabe al instante si el mercado está alcista o bajista."/>
+  <meta property="og:url" content="https://dazzling-pony-17d2d9.netlify.app/"/>
+  <meta property="og:image" content="https://dazzling-pony-17d2d9.netlify.app/og.png"/>
+  <meta property="og:locale" content="es_ES"/>
+  <meta name="twitter:card" content="summary_large_image"/>
+  <meta name="twitter:title" content="Funding Rate de Bitcoin y Cripto en Vivo · VWAFR Top 10"/>
+  <meta name="twitter:description" content="Funding rate en vivo de BTC, ETH y el top 10 en 8 exchanges, ponderado por OI. Veredicto alcista/bajista al instante."/>
+  <meta name="twitter:image" content="https://dazzling-pony-17d2d9.netlify.app/og.png"/>
+
+  <!-- Datos estructurados: app + FAQ (sirve para Google y para IA/GEO) -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebApplication",
+        "name": "VWAFR · Funding de Cripto en Vivo",
+        "url": "https://dazzling-pony-17d2d9.netlify.app/",
+        "applicationCategory": "FinanceApplication",
+        "operatingSystem": "Web",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "EUR" },
+        "description": "Calculadora en vivo del funding rate de Bitcoin, Ethereum y el top 10 de criptomonedas en 8 exchanges de futuros perpetuos, con el VWAFR (funding medio ponderado por interés abierto) y un veredicto de sentimiento de mercado.",
+        "inLanguage": "es"
+      },
+      {
+        "@type": "FAQPage",
+        "mainEntity": [
+          { "@type": "Question", "name": "¿Qué es el funding rate?",
+            "acceptedAnswer": { "@type": "Answer", "text": "El funding rate es un pago periódico (cada 8 horas) entre traders de futuros perpetuos. Si es positivo, los largos pagan a los cortos (presión alcista); si es negativo, los cortos pagan a los largos (presión bajista)." } },
+          { "@type": "Question", "name": "¿Qué es el VWAFR?",
+            "acceptedAnswer": { "@type": "Answer", "text": "El VWAFR (Volume-Weighted Average Funding Rate) es el funding rate medio de varios exchanges ponderado por el interés abierto (OI) de cada uno. Su fórmula es VWAFR = Σ(Fᵢ × OIᵢ) / Σ(OIᵢ). Un exchange con más OI pesa más en el resultado." } },
+          { "@type": "Question", "name": "¿Qué exchanges y monedas incluye?",
+            "acceptedAnswer": { "@type": "Answer", "text": "Incluye 8 exchanges (Binance, OKX, Bybit, MEXC, Hyperliquid, Bitget, KuCoin y BingX) y el top 10 de criptomonedas: BTC, ETH, SOL, XRP, BNB, DOGE, ADA, AVAX, LINK y LTC." } },
+          { "@type": "Question", "name": "¿Cada cuánto se actualizan los datos?",
+            "acceptedAnswer": { "@type": "Answer", "text": "Los datos de funding e interés abierto se actualizan automáticamente cada 60 segundos desde las APIs públicas de cada exchange." } },
+          { "@type": "Question", "name": "¿Funding positivo o negativo, qué significa?",
+            "acceptedAnswer": { "@type": "Answer", "text": "Funding positivo indica que predominan los largos y el sentimiento es alcista. Funding negativo indica que predominan los cortos y el sentimiento es bajista. Cuanto más extremo, mayor el apalancamiento direccional acumulado." } }
+        ]
+      }
+    ]
+  }
+  </script>
+  <!-- ─────────── fin SEO ─────────── -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -45,6 +101,17 @@
     .herocta{display:inline-flex;align-items:center;gap:7px;margin-top:18px;text-decoration:none;
       background:linear-gradient(100deg,var(--accent),#1FE0A0);color:#07090E;font-weight:800;font-size:13.5px;
       border-radius:10px;padding:12px 22px;box-shadow:0 4px 16px rgba(110,139,255,.30)}
+    /* contenido SEO/GEO (rastreable sin JS) */
+    .seo{max-width:540px;margin:20px auto 0;padding:0 16px;color:var(--dim);font-size:13px;line-height:1.7;position:relative;z-index:1}
+    .seo h1{font-size:18px;color:var(--txt);font-weight:800;margin-bottom:10px;letter-spacing:-.3}
+    .seo h2{font-size:14.5px;color:var(--txt);font-weight:700;margin:20px 0 7px}
+    .seo h3{font-size:13px;color:var(--txt);font-weight:700;margin:13px 0 3px}
+    .seo p{margin-bottom:10px}
+    .seo ul{margin:0 0 10px 18px}
+    .seo li{margin-bottom:4px}
+    .seo strong{color:var(--txt)}
+    .seo a{color:var(--accent);text-decoration:none}
+    .seo .faq{border-top:1px solid var(--line);padding-top:6px;margin-top:8px}
     body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
       background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);
       background-size:44px 44px;opacity:.025}
@@ -90,6 +157,43 @@
 
 <div id="root" style="position:relative;z-index:1"></div>
 
+<!-- ─────────── Contenido SEO/GEO rastreable (visible y sin depender de JS) ─────────── -->
+<section class="seo">
+  <h1>Funding rate de Bitcoin y cripto en vivo (VWAFR)</h1>
+  <p>Herramienta gratuita que mide el <strong>funding rate</strong> de los futuros perpetuos de <strong>Bitcoin (BTC)</strong>, <strong>Ethereum (ETH)</strong> y el top 10 de criptomonedas en 8 exchanges, y lo resume en un único indicador de sentimiento de mercado: el <strong>VWAFR</strong> (funding medio ponderado por interés abierto). Los datos se actualizan automáticamente cada 60 segundos.</p>
+
+  <h2>¿Qué es el funding rate?</h2>
+  <p>El <strong>funding rate</strong> es un pago periódico (normalmente cada 8 horas) que se intercambian los traders de futuros perpetuos para mantener el precio del contrato pegado al precio spot. Cuando es <strong>positivo</strong>, los largos pagan a los cortos: hay más presión compradora y el sentimiento es <strong>alcista</strong>. Cuando es <strong>negativo</strong>, los cortos pagan a los largos: el sentimiento es <strong>bajista</strong>. Cuanto más extremo es el valor, mayor es el apalancamiento direccional acumulado en el mercado.</p>
+
+  <h2>¿Qué es el VWAFR y cómo se calcula?</h2>
+  <p>El <strong>VWAFR</strong> (Volume-Weighted Average Funding Rate, o funding rate medio ponderado por volumen/interés abierto) combina el funding de varios exchanges ponderando cada uno por su <strong>interés abierto (OI)</strong>, de modo que el exchange con más posiciones abiertas pesa más en el resultado. Su fórmula es:</p>
+  <p><strong>VWAFR = Σ(Fᵢ × OIᵢ) / Σ(OIᵢ)</strong>, donde Fᵢ es el funding del exchange <em>i</em> y OIᵢ su interés abierto.</p>
+
+  <h2>Exchanges y criptomonedas incluidos</h2>
+  <p>Calculamos el funding y el interés abierto en 8 exchanges de futuros perpetuos:</p>
+  <ul>
+    <li>Binance, OKX, Bybit, MEXC, Hyperliquid, Bitget, KuCoin y BingX.</li>
+  </ul>
+  <p>Y para el top 10 de criptomonedas por interés abierto:</p>
+  <ul>
+    <li>Bitcoin (BTC), Ethereum (ETH), Solana (SOL), XRP, BNB, Dogecoin (DOGE), Cardano (ADA), Avalanche (AVAX), Chainlink (LINK) y Litecoin (LTC).</li>
+  </ul>
+
+  <h2>Preguntas frecuentes</h2>
+  <div class="faq">
+    <h3>¿Cada cuánto se actualizan los datos?</h3>
+    <p>El funding rate y el interés abierto se actualizan automáticamente cada 60 segundos desde las APIs públicas de cada exchange.</p>
+    <h3>¿Qué significa un funding rate alto?</h3>
+    <p>Un funding muy positivo indica un mercado sobre-apalancado en largo (riesgo de "long squeeze"); uno muy negativo, sobre-apalancado en corto (riesgo de "short squeeze").</p>
+    <h3>¿Puedo añadir mis propios datos?</h3>
+    <p>Sí. Cada moneda permite añadir un exchange manual con su nombre, funding e interés abierto para incluirlo en el cálculo del VWAFR.</p>
+    <h3>¿Es esto consejo financiero?</h3>
+    <p>No. Es una herramienta informativa con datos de exchanges públicos. No constituye consejo financiero ni recomendación de inversión.</p>
+  </div>
+
+  <p style="margin-top:16px">¿Quieres operar estos funding rates? Puedes abrir cuenta de futuros en <a href="https://www.bitunix.com/register?inviteCode=ffcczq" rel="noopener nofollow">Bitunix</a> con el código <strong>ffcczq</strong>.</p>
+</section>
+
 <div class="ad-wrap" style="padding-bottom:26px;margin-top:14px">
   <a class="promo" href="https://www.bitunix.com/register?inviteCode=ffcczq" target="_blank" rel="noopener nofollow">
     <span class="pico">B</span>
@@ -108,9 +212,9 @@ const META=[
   {id:'Binance', c:'#F3BA2F'},
   {id:'OKX',     c:'#BFC6D4'},
   {id:'Bybit',   c:'#F7A600'},
-  {id:'MEXC',    c:'#2EC4F3'},
-  {id:'Gate.io', c:'#17E6A0'},
-  {id:'Bitget',  c:'#00E0D3'},
+  {id:'MEXC',       c:'#2EC4F3'},
+  {id:'Hyperliquid',c:'#50D2C1'},
+  {id:'Bitget',     c:'#00E0D3'},
   {id:'KuCoin',  c:'#26C99E'},
   {id:'BingX',   c:'#3B7BFF'},
 ];

@@ -1,0 +1,25 @@
+# robots.txt — permitir indexación de buscadores y de crawlers de IA (GEO)
+User-agent: *
+Allow: /
+
+# Crawlers de IA explícitamente permitidos (para que te citen)
+User-agent: GPTBot
+Allow: /
+User-agent: OAI-SearchBot
+Allow: /
+User-agent: ChatGPT-User
+Allow: /
+User-agent: ClaudeBot
+Allow: /
+User-agent: Claude-Web
+Allow: /
+User-agent: PerplexityBot
+Allow: /
+User-agent: Google-Extended
+Allow: /
+User-agent: Applebot-Extended
+Allow: /
+User-agent: CCBot
+Allow: /
+
+Sitemap: https://dazzling-pony-17d2d9.netlify.app/sitemap.xml

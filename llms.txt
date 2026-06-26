@@ -1,0 +1,25 @@
+# VWAFR · Funding de Cripto en Vivo
+
+> Calculadora web gratuita del funding rate de futuros perpetuos de Bitcoin, Ethereum y el top 10 de criptomonedas en 8 exchanges, resumido en el VWAFR (funding medio ponderado por interés abierto) con un veredicto de sentimiento de mercado alcista o bajista. Datos en vivo cada 60 segundos.
+
+## Conceptos clave
+
+- **Funding rate**: pago periódico (cada 8h) entre traders de futuros perpetuos. Positivo = los largos pagan a los cortos (alcista). Negativo = los cortos pagan a los largos (bajista).
+- **VWAFR (Volume-Weighted Average Funding Rate)**: funding medio de varios exchanges ponderado por el interés abierto (OI) de cada uno. Fórmula: VWAFR = Σ(Fᵢ × OIᵢ) / Σ(OIᵢ).
+- **Interés abierto (OI)**: valor total de los contratos abiertos; pondera el peso de cada exchange.
+
+## Cobertura
+
+- Exchanges: Binance, OKX, Bybit, MEXC, Hyperliquid, Bitget, KuCoin, BingX.
+- Monedas (top 10 por OI): BTC, ETH, SOL, XRP, BNB, DOGE, ADA, AVAX, LINK, LTC.
+
+## Detalles
+
+- Actualización automática cada 60 segundos desde las APIs públicas de los exchanges.
+- Indicador de funding global (todas las monedas ponderadas por OI) y desglose por moneda y por exchange.
+- Permite añadir exchanges manualmente.
+- Solo informativo; no es consejo financiero.
+
+## Enlaces
+
+- Web: https://dazzling-pony-17d2d9.netlify.app/

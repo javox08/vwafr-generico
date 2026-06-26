@@ -35,6 +35,18 @@ async function jfetch(url, ms = 3800) {
   catch { await new Promise(s => setTimeout(s, 400)); return await once(url, ms); }
 }
 
+// POST con timeout (Hyperliquid usa POST)
+async function jpost(url, body, ms = 3800) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  try {
+    const r = await fetch(url, { method: 'POST', signal: ctrl.signal,
+      headers: { ...BROWSER_HEADERS, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return await r.json();
+  } finally { clearTimeout(t); }
+}
+
 const pct = (x) => { const n = parseFloat(x); return Number.isFinite(n) ? n * 100 : null; };
 const bil = (x) => { const n = parseFloat(x); return Number.isFinite(n) && n > 0 ? n / 1e9 : null; };
 
@@ -44,10 +56,10 @@ const sym = {
   OKX: c => c + '-USDT-SWAP',
   Bybit: c => c + 'USDT',
   MEXC: c => c + '_USDT',
-  'Gate.io': c => c + '_USDT',
   Bitget: c => c + 'USDT',
   KuCoin: c => (c === 'BTC' ? 'XBT' : c) + 'USDTM',
   BingX: c => c + '-USDT',
+  // Hyperliquid usa el nombre de la moneda tal cual (BTC, ETH, ...)
 };
 
 // ── Fetchers "bulk": cada uno devuelve { COIN: {funding, oi} } ──────────
@@ -85,17 +97,21 @@ async function mexcBulk() {
   return out;
 }
 
-async function gateBulk() {
+// Hyperliquid (perp DEX): 1 POST devuelve todas las monedas. Su funding es por
+// HORA, así que lo multiplicamos por 8 para equipararlo al de 8h del resto.
+async function hyperliquidBulk() {
   const out = {};
-  let arr;
-  try { arr = await jfetch('https://fx-api.gateio.ws/api/v4/futures/usdt/contracts'); }
-  catch { arr = await jfetch('https://api.gateio.ws/api/v4/futures/usdt/contracts'); }
-  const m = {}; for (const x of arr) m[x.name] = x;
+  const [meta, ctxs] = await jpost('https://api.hyperliquid.xyz/info', { type: 'metaAndAssetCtxs' });
+  const idx = {}; meta.universe.forEach((u, i) => { idx[u.name] = i; });
   for (const c of COINS) {
-    const x = m[sym['Gate.io'](c)];
-    if (!x) { out[c] = { funding: null, oi: null }; continue; }
-    const oi = bil(parseFloat(x.position_size) * (parseFloat(x.quanto_multiplier) || 0) * parseFloat(x.index_price));
-    out[c] = { funding: pct(x.funding_rate), oi };
+    const i = idx[c];
+    if (i == null || !ctxs[i]) { out[c] = { funding: null, oi: null }; continue; }
+    const x = ctxs[i];
+    const f = parseFloat(x.funding);
+    out[c] = {
+      funding: Number.isFinite(f) ? f * 8 * 100 : null,
+      oi: bil(parseFloat(x.openInterest) * parseFloat(x.markPx)),
+    };
   }
   return out;
 }
@@ -166,7 +182,7 @@ async function bybitBulk() {
 
 const EX = {
   Binance: binanceBulk, OKX: okxBulk, Bybit: bybitBulk, MEXC: mexcBulk,
-  'Gate.io': gateBulk, Bitget: bitgetBulk, KuCoin: kucoinBulk, BingX: bingxBulk,
+  Hyperliquid: hyperliquidBulk, Bitget: bitgetBulk, KuCoin: kucoinBulk, BingX: bingxBulk,
 };
 
 export default async () => {
