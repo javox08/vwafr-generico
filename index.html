@@ -746,26 +746,39 @@ function CycleBTC(){
         </div>
       </div>
 
-      {/* Precio */}
-      <div style={panel({marginBottom:14,padding:'20px'})}>
-        <div style={{...eyebrow,marginBottom:10,textAlign:'center'}}>Precio de Bitcoin (BTC)</div>
-        <div className="mono" style={{fontSize:38,fontWeight:800,textAlign:'center',lineHeight:1,letterSpacing:-1}}>
-          {d?money(d.price):'…'}
+      {/* Precio — hero con degradado según la fase */}
+      <div className="rise" style={panel({position:'relative',overflow:'hidden',marginBottom:14,padding:'24px 20px 20px',
+        background:`radial-gradient(120% 90% at 50% -10%, ${ph.c}1F 0%, var(--panel) 58%)`,borderColor:`${ph.c}33`})}>
+        <div style={{position:'absolute',top:0,left:'15%',right:'15%',height:1,
+          background:`linear-gradient(90deg,transparent,${ph.c},transparent)`,opacity:.65}}/>
+        <div style={{textAlign:'center'}}>
+          <div style={{...eyebrow,color:ph.c,marginBottom:12}}>Bitcoin · {ph.t}</div>
+          <div className="mono" style={{fontSize:40,fontWeight:800,lineHeight:1,letterSpacing:-1.5,
+            textShadow:`0 0 40px ${ph.c}44`}}>{d?money(d.price):'…'}</div>
+          {d&&Number.isFinite(d.chg24)&&(
+            <div className="mono" style={{display:'inline-flex',alignItems:'center',gap:5,marginTop:11,padding:'4px 12px',borderRadius:20,
+              background:up?'rgba(31,224,160,.12)':'rgba(255,84,112,.12)',
+              border:`1px solid ${up?'rgba(31,224,160,.32)':'rgba(255,84,112,.32)'}`,
+              fontSize:12,fontWeight:700,color:up?'var(--up)':'var(--down)'}}>
+              {up?'▲':'▼'} {d.chg24>=0?'+':''}{d.chg24.toFixed(2)}% · 24h
+            </div>
+          )}
         </div>
-        {d&&Number.isFinite(d.chg24)&&(
-          <div style={{textAlign:'center',marginTop:8,fontSize:13,fontWeight:700,color:up?'var(--up)':'var(--down)'}} className="mono">
-            {up?'▲ +':'▼ '}{d.chg24.toFixed(2)}% <span style={{color:'var(--faint)',fontWeight:400}}>· 24h</span>
-          </div>
-        )}
         {d&&Number.isFinite(d.athPct)&&(
-          <div style={{...flx({justifyContent:'space-between'}),marginTop:16,paddingTop:14,borderTop:'1px solid var(--line2)'}}>
-            <span style={{fontSize:11,color:'var(--dim)'}}>Máximo histórico (ATH)<br/><span className="mono" style={{color:'var(--txt)',fontSize:13}}>{money(d.ath)}</span></span>
-            <span style={{textAlign:'right',fontSize:11,color:'var(--dim)'}}>Desde el ATH<br/><span className="mono" style={{color:d.athPct>=-1?'var(--up)':'var(--down)',fontSize:13}}>{d.athPct.toFixed(1)}%</span></span>
+          <div style={{...flx({justifyContent:'space-between'}),marginTop:20,paddingTop:14,borderTop:'1px solid var(--line2)'}}>
+            <div>
+              <div style={{fontSize:9,letterSpacing:1.5,color:'var(--faint)',textTransform:'uppercase',fontWeight:600,marginBottom:3}}>Máximo histórico</div>
+              <div className="mono" style={{color:'var(--txt)',fontSize:14,fontWeight:700}}>{money(d.ath)}</div>
+            </div>
+            <div style={{textAlign:'right'}}>
+              <div style={{fontSize:9,letterSpacing:1.5,color:'var(--faint)',textTransform:'uppercase',fontWeight:600,marginBottom:3}}>Desde el ATH</div>
+              <div className="mono" style={{color:d.athPct>=-1?'var(--up)':'var(--down)',fontSize:14,fontWeight:700}}>{d.athPct.toFixed(1)}%</div>
+            </div>
           </div>
         )}
       </div>
 
-      {/* Fase del ciclo + cuenta atrás */}
+      {/* Fase del ciclo + progreso del halving (fusionado) */}
       <div style={panel({marginBottom:14,padding:16})}>
         <div style={{...flx({justifyContent:'space-between'}),marginBottom:12}}>
           <span style={eyebrow}>Fase del ciclo · semana {weeks}</span>
@@ -782,15 +795,29 @@ function CycleBTC(){
             <div style={{fontSize:10,color:'var(--dim)',marginTop:4}}>→ {ph.next} (≈{daysToNextPh}d)</div>
           </div>
         </div>
-        {/* timeline de fases */}
-        <div style={{display:'flex',height:7,borderRadius:5,overflow:'hidden',gap:2}}>
-          {[['Pre',0,40,'#8AA0FF'],['Bull',40,77,'var(--up)'],['Bear',77,135,'var(--down)'],['Acum',135,200,'#3B82F6']].map(([nm,a,b,c])=>{
-            const active=weeks>=a&&weeks<b;
-            return <div key={nm} style={{flex:b-a,background:active?c:`${c}33`,opacity:active?1:.5}} title={nm}/>;
-          })}
+        {/* timeline de fases con marcador de posición */}
+        <div style={{position:'relative',marginBottom:6}}>
+          <div style={{display:'flex',height:8,borderRadius:5,overflow:'hidden',gap:2}}>
+            {[['Pre',0,40,'#8AA0FF'],['Bull',40,77,'var(--up)'],['Bear',77,135,'var(--down)'],['Acum',135,200,'#3B82F6']].map(([nm,a,b,c])=>{
+              const active=weeks>=a&&weeks<b;
+              return <div key={nm} style={{flex:b-a,background:active?c:`${c}30`,opacity:active?1:.6,transition:'all .3s'}} title={nm}/>;
+            })}
+          </div>
+          <div style={{position:'absolute',top:-2,left:`${Math.min(99,prog)}%`,transform:'translateX(-50%)',
+            width:3,height:12,borderRadius:2,background:'#fff',boxShadow:'0 0 6px rgba(255,255,255,.7)'}}/>
         </div>
-        <div style={{...flx({justifyContent:'space-between'}),marginTop:5,fontSize:8.5,color:'var(--faint)'}} className="mono">
+        <div style={{...flx({justifyContent:'space-between'}),marginBottom:14,fontSize:8.5,color:'var(--faint)'}} className="mono">
           <span>Pre-Bull</span><span>Bull</span><span>Bear</span><span>Acum.</span>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+          <div style={{background:'#0A0D14',borderRadius:10,padding:'11px 12px',textAlign:'center'}}>
+            <div className="mono" style={{fontSize:20,fontWeight:800,color:ph.c}}>{since}</div>
+            <div style={{fontSize:9.5,color:'var(--dim)',marginTop:2}}>días desde el halving</div>
+          </div>
+          <div style={{background:'#0A0D14',borderRadius:10,padding:'11px 12px',textAlign:'center'}}>
+            <div className="mono" style={{fontSize:20,fontWeight:800,color:'var(--txt)'}}>{toNext}</div>
+            <div style={{fontSize:9.5,color:'var(--dim)',marginTop:2}}>días al próximo halving</div>
+          </div>
         </div>
       </div>
 
@@ -807,6 +834,10 @@ function CycleBTC(){
               <stop offset="100%" stopColor="rgba(110,139,255,0)"/>
             </linearGradient>
           </defs>
+          {[[0,40,'#8AA0FF'],[40,77,'#1FE0A0'],[77,135,'#FF5470'],[135,200,'#3B82F6']].map(([a,b,c],i)=>{
+            const wt=(len/7)||208, x1=a/wt*CW, x2=Math.min(CW,b/wt*CW), act=weeks>=a&&weeks<b;
+            return <rect key={i} x={x1.toFixed(1)} y="0" width={Math.max(0,x2-x1).toFixed(1)} height={CH} fill={c} opacity={act?0.13:0.045}/>;
+          })}
           <line x1="0" y1={yTecho} x2={CW} y2={yTecho} stroke="#F3BA2F" strokeWidth="1" strokeDasharray="4 3" opacity="0.85"/>
           <text x="2" y={yTecho-3} fontSize="8.5" fill="#F3BA2F" fontFamily="JetBrains Mono,monospace">Techo ≈ {money(athC4)}</text>
           <line x1="0" y1={ySuelo} x2={CW} y2={ySuelo} stroke="#3B82F6" strokeWidth="1" strokeDasharray="4 3" opacity="0.85"/>
@@ -814,6 +845,7 @@ function CycleBTC(){
           <path d={cArea} fill="url(#cycgrad)"/>
           <path d={cLine} fill="none" stroke="var(--accent)" strokeWidth="2.5" strokeLinecap="round"/>
           <line x1={mx} y1="2" x2={mx} y2={CH} stroke="var(--faint)" strokeWidth="1" strokeDasharray="3 3"/>
+          <circle cx={mx} cy={my} r="10" fill={ph.c} opacity="0.22"/>
           <circle cx={mx} cy={my} r="5.5" fill={ph.c} stroke="var(--bg)" strokeWidth="3"/>
           {price&&<text x={Math.min(CW-32,Math.max(32,mx))} y={Math.max(11,my-11)} textAnchor="middle"
             fontSize="10" fontWeight="700" fill="var(--txt)" fontFamily="Sora,sans-serif">{money(price)}</text>}
@@ -822,31 +854,6 @@ function CycleBTC(){
           <span>Halving {halvingYr}</span>
           <span style={{color:ph.c,fontWeight:700}}>{ph.t}</span>
           <span>Halving {nextHalvingYr}</span>
-        </div>
-      </div>
-
-      {/* Ciclo del halving */}
-      <div style={panel({marginBottom:14,padding:16})}>
-        <div style={{...flx({justifyContent:'space-between'}),marginBottom:14}}>
-          <span style={eyebrow}>Ciclo del halving</span>
-          <span className="mono" style={{fontSize:10.5,fontWeight:700,color:ph.c}}>{ph.t}</span>
-        </div>
-        <div style={{position:'relative',height:8,borderRadius:5,background:'#0A0D14',overflow:'hidden',marginBottom:6}}>
-          <div style={{height:'100%',width:`${prog}%`,borderRadius:5,
-            background:'linear-gradient(90deg,var(--upDim),#F3BA2F,var(--accent))',transition:'width .6s ease'}}/>
-        </div>
-        <div style={{...flx({justifyContent:'space-between'}),fontSize:9.5,color:'var(--faint)',marginBottom:16}} className="mono">
-          <span>Halving {halvingYr}</span><span>{prog.toFixed(0)}% del ciclo</span><span>Halving ~{nextHalvingYr}</span>
-        </div>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-          <div style={{background:'#0A0D14',borderRadius:10,padding:'12px 14px',textAlign:'center'}}>
-            <div className="mono" style={{fontSize:22,fontWeight:800,color:'var(--accent)'}}>{since}</div>
-            <div style={{fontSize:10,color:'var(--dim)',marginTop:2}}>días desde el halving</div>
-          </div>
-          <div style={{background:'#0A0D14',borderRadius:10,padding:'12px 14px',textAlign:'center'}}>
-            <div className="mono" style={{fontSize:22,fontWeight:800,color:'var(--txt)'}}>{toNext}</div>
-            <div style={{fontSize:10,color:'var(--dim)',marginTop:2}}>días al próximo halving</div>
-          </div>
         </div>
       </div>
 
