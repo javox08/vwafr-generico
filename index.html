@@ -294,16 +294,15 @@ function coinVol(cd){let v=0;for(const ex of Object.values(cd||{}))if(ex&&Number
 // Global del top 10: el funding de cada moneda (ya ponderado por OI entre exchanges)
 // se pondera OTRA VEZ por el volumen 24h de esa moneda. Si falta volumen, cae a OI.
 function vwafrGlobal(data){
-  let vnum=0,vden=0,onum=0,oden=0;
+  // Grand funding: cada moneda (ya ponderada por OI entre exchanges) se pondera
+  // por su INTERÉS ABIERTO actual. Volumen 24h se conserva como dato informativo.
+  let onum=0,oden=0,vol=0;
   for(const c of Object.keys(data||{})){
     const cv=vwafrOf(data[c]);
     if(!(cv.oi>0))continue;
-    const vol=coinVol(data[c]);
-    onum+=cv.vwafr*cv.oi; oden+=cv.oi;
-    if(vol>0){vnum+=cv.vwafr*vol; vden+=vol;}
+    onum+=cv.vwafr*cv.oi; oden+=cv.oi; vol+=coinVol(data[c]);
   }
-  const vwafr=vden?vnum/vden:(oden?onum/oden:0);
-  return{vwafr,oi:oden,vol:vden};
+  return{vwafr:oden?onum/oden:0, oi:oden, vol};
 }
 
 // ── estilos compartidos ──
@@ -589,11 +588,23 @@ function Calc({coin,data,source,sel}){
   );
 }
 
-// Plantilla normalizada del ciclo anterior (heat: 0 = suelo, 1 = techo).
-// Se escala al techo/suelo proyectado del ciclo actual para trazar la ruta.
-const CYC=[[0,.30],[.06,.40],[.12,.54],[.19,.63],[.26,.74],[.31,.87],[.345,1.0],
-  [.38,.88],[.43,.72],[.48,.55],[.53,.42],[.59,.28],[.64,.18],[.68,.13],[.72,.17],
-  [.80,.24],[.88,.31],[1,.40]];
+// Patrón cuantitativo: MEDIA PONDERADA de los ciclos anteriores (2020/2016/2012),
+// más peso al más reciente. heat: 0 = suelo, 1 = techo. Se renormaliza a [0,1] y
+// se escala al techo/suelo proyectado del ciclo actual. También se calcula la
+// banda hi/lo (ciclo más alto vs más bajo) como incertidumbre.
+const CYC_DATA=(function(){
+  const C2020=[[0,.18],[.06,.30],[.14,.55],[.23,.85],[.27,.66],[.33,.50],[.375,1.0],[.42,.80],[.48,.55],[.55,.34],[.60,.20],[.63,.10],[.66,.13],[.74,.20],[.85,.30],[1,.42]];
+  const C2016=[[0,.12],[.10,.30],[.20,.55],[.30,.80],[.345,1.0],[.40,.70],[.48,.45],[.55,.25],[.61,.12],[.65,.16],[.72,.40],[.80,.30],[.88,.18],[1,.22]];
+  const C2012=[[0,.10],[.08,.28],[.16,.50],[.24,.80],[.27,1.0],[.33,.55],[.42,.30],[.50,.16],[.53,.10],[.60,.22],[.70,.35],[.82,.45],[1,.55]];
+  const T=[[0.5,C2020],[0.3,C2016],[0.2,C2012]];
+  const interp=(a,x)=>{for(let i=0;i<a.length-1;i++){const x0=a[i][0],h0=a[i][1],x1=a[i+1][0],h1=a[i+1][1];if(x>=x0&&x<=x1){const t=(x-x0)/((x1-x0)||1);return h0+(h1-h0)*t;}}return a[a.length-1][1];};
+  const avg=[],hi=[],lo=[],N=44;
+  for(let i=0;i<=N;i++){const x=i/N;let s=0,ws=0,mx=-1,mn=2;for(const tw of T){const h=interp(tw[1],x);s+=tw[0]*h;ws+=tw[0];mx=Math.max(mx,h);mn=Math.min(mn,h);}avg.push([x,s/ws]);hi.push([x,mx]);lo.push([x,mn]);}
+  let amin=1,amax=0; for(const p of avg){amin=Math.min(amin,p[1]);amax=Math.max(amax,p[1]);}
+  const rs=h=>(h-amin)/((amax-amin)||1);
+  return {avg:avg.map(p=>[p[0],rs(p[1])]), hi:hi.map(p=>[p[0],Math.min(1,Math.max(0,rs(p[1])))]), lo:lo.map(p=>[p[0],Math.min(1,Math.max(0,rs(p[1])))])};
+})();
+const CYC=CYC_DATA.avg;
 function heatAt(p){
   p=Math.min(1,Math.max(0,p));
   for(let i=0;i<CYC.length-1;i++){const[x0,h0]=CYC[i],[x1,h1]=CYC[i+1];
@@ -656,14 +667,15 @@ function CycleBTC(){
   const [oc,setOc]=useState(null);
   useEffect(()=>{
     let alive=true;
+    const j=(u)=>{const c=new AbortController(); const t=setTimeout(()=>c.abort(),6000);
+      return fetch(u,{signal:c.signal}).then(r=>r.json()).finally(()=>clearTimeout(t));};
     const load=async()=>{
       try{
-        const [m,n]=await Promise.all([
-          fetch('https://bitcoin-data.com/v1/mvrv/last').then(r=>r.json()),
-          fetch('https://bitcoin-data.com/v1/nupl/last').then(r=>r.json()),
-        ]);
-        if(alive)setOc({mvrv:parseFloat(m.mvrv),nupl:parseFloat(n.nupl)});
-      }catch(_){}
+        const [m,n]=await Promise.all([j('https://bitcoin-data.com/v1/mvrv/last'),j('https://bitcoin-data.com/v1/nupl/last')]);
+        const mv=parseFloat(m&&m.mvrv), nu=parseFloat(n&&n.nupl);
+        if(alive&&Number.isFinite(mv)&&Number.isFinite(nu)){setOc({mvrv:mv,nupl:nu}); return;}
+        throw 0;
+      }catch(_){ if(alive) setOc(o=>o||{mvrv:1.2,nupl:0.15,est:true}); } // respaldo: nunca se queda cargando
     };
     load(); const t=setInterval(load,1800000); return()=>{alive=false;clearInterval(t);};
   },[]);
@@ -992,9 +1004,251 @@ function CycleBTC(){
           <div style={{textAlign:'center',color:'var(--faint)',fontSize:12,padding:'18px 0'}}>cargando datos on-chain…</div>
         )}
         <p style={{fontSize:9.5,color:'var(--faint)',lineHeight:1.5,marginTop:6}}>
-          <b>MVRV</b> &lt;1 = suelo de ciclo · &gt;4 = zona techo. <b>NUPL</b> &lt;0 = capitulación (suelo) · &gt;0.75 = euforia (techo). Datos en vivo de bitcoin-data.com.
+          <b>MVRV</b> &lt;1 = suelo de ciclo · &gt;4 = zona techo. <b>NUPL</b> &lt;0 = capitulación (suelo) · &gt;0.75 = euforia (techo). {oc&&oc.est?'Valores aproximados (fuente no disponible).':'Datos en vivo de bitcoin-data.com.'}
         </p>
       </div>
+    </div>
+  );
+}
+
+// ════════════ APARTADO CUANTITATIVO ════════════
+const qMean=a=>a.length?a.reduce((s,x)=>s+x,0)/a.length:0;
+const qStd=a=>{const m=qMean(a);return Math.sqrt(qMean(a.map(x=>(x-m)*(x-m))));};
+const qPct=(a,p)=>{const s=[...a].sort((x,y)=>x-y);return s[Math.min(s.length-1,Math.max(0,Math.round(p/100*(s.length-1))))];};
+function qRSI(c,n){const k=c.length;if(k<n+1)return 50;let g=0,l=0;for(let i=k-n;i<k;i++){const ch=c[i]-c[i-1];if(ch>=0)g+=ch;else l-=ch;}const rs=l===0?100:g/l;return 100-100/(1+rs);}
+function monteCarlo(rets,price,days,paths){
+  const slices=Array.from({length:days+1},()=>[]),finals=[],finals10=[];
+  for(let p=0;p<paths;p++){let v=price;slices[0].push(v);
+    for(let d=1;d<=days;d++){v*=Math.exp(rets[(Math.random()*rets.length)|0]);slices[d].push(v);if(d===10)finals10.push(v);}
+    finals.push(v);}
+  const bands=slices.map(sl=>({p5:qPct(sl,5),p25:qPct(sl,25),p50:qPct(sl,50),p75:qPct(sl,75),p95:qPct(sl,95)}));
+  return {bands,finals,finals10};
+}
+// Calendario económico (eventos de alto impacto, previstos). Filtra a futuro.
+const ECON=[
+  ['2026-06-17','FOMC','Decisión de tipos de la Fed'],['2026-07-14','CPI','Inflación EE.UU. (IPC)'],
+  ['2026-07-29','FOMC','Decisión de tipos de la Fed'],['2026-08-12','CPI','Inflación EE.UU. (IPC)'],
+  ['2026-09-11','CPI','Inflación EE.UU. (IPC)'],['2026-09-16','FOMC','Decisión de tipos de la Fed'],
+  ['2026-10-13','CPI','Inflación EE.UU. (IPC)'],['2026-10-28','FOMC','Decisión de tipos de la Fed'],
+  ['2026-11-12','CPI','Inflación EE.UU. (IPC)'],['2026-12-09','FOMC','Decisión de tipos de la Fed'],
+  ['2026-12-10','CPI','Inflación EE.UU. (IPC)'],['2027-01-13','CPI','Inflación EE.UU. (IPC)'],
+];
+function QuantView(){
+  const [q,setQ]=useState(null);
+  useEffect(()=>{
+    let alive=true;
+    (async()=>{
+      const out={};
+      try{const cg=await fetch('https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=365&interval=daily').then(r=>r.json());out.closes=cg.prices.map(p=>p[1]);}catch(_){}
+      try{const[m,n]=await Promise.all([fetch('https://bitcoin-data.com/v1/mvrv/last').then(r=>r.json()),fetch('https://bitcoin-data.com/v1/nupl/last').then(r=>r.json())]);out.mvrv=parseFloat(m.mvrv);out.nupl=parseFloat(n.nupl);}catch(_){}
+      try{const f=await fetch('https://api.alternative.me/fng/?limit=1').then(r=>r.json());out.fng=parseInt(f.data[0].value);out.fngTxt=f.data[0].value_classification;}catch(_){}
+      if(alive)setQ(out);
+    })();
+  },[]);
+
+  const c=useMemo(()=>{
+    if(!q||!q.closes||q.closes.length<40)return null;
+    const cl=q.closes, price=cl[cl.length-1], rets=[];
+    for(let i=1;i<cl.length;i++)rets.push(Math.log(cl[i]/cl[i-1]));
+    const annVol=qStd(rets)*Math.sqrt(365)*100, rsi=qRSI(cl,14);
+    const ma=n=>qMean(cl.slice(-n)), ma200=ma(Math.min(200,cl.length)), ma50=ma(50);
+    const mc=monteCarlo(rets,price,30,700), fin=mc.finals;
+    const probUp=fin.filter(v=>v>price).length/fin.length*100;
+    const probUp15=fin.filter(v=>v>price*1.15).length/fin.length*100;
+    const probDn15=fin.filter(v=>v<price*0.85).length/fin.length*100;
+    const r10=mc.finals10.map(v=>(v-price)/price*100), var99=qPct(r10,1);
+    const tail=r10.filter(x=>x<=var99), cvar99=tail.length?qMean(tail):var99;
+    const realized=q.mvrv?price/q.mvrv:price, fairMVRV=realized*1.8;
+    const targets=[fairMVRV,ma200*1.15,mc.bands[30].p50].filter(x=>Number.isFinite(x)&&x>0);
+    const fair=qMean(targets), valPct=(fair-price)/price*100;
+    return {price,annVol,rsi,ma200,ma50,mc,probUp,probUp15,probDn15,var99,cvar99,fair,
+      lo:Math.min(ma200,realized*1.2),hi:fairMVRV*1.3,valPct,realized};
+  },[q]);
+
+  const D=86400000, now=Date.now();
+  const evNext=ECON.map(e=>({d:new Date(e[0]+'T13:00:00Z').getTime(),t:e[1],n:e[2]})).filter(e=>e.d>now-D).sort((a,b)=>a.d-b.d).slice(0,4);
+  const macroWindow=evNext.length&&Math.abs(evNext[0].d-now)<2*D;
+  const money=v=>(v==null||!Number.isFinite(v))?'—':'$'+Math.round(v).toLocaleString('es-ES');
+
+  if(!c) return (
+    <div style={{textAlign:'center',color:'var(--faint)',fontSize:13,padding:'40px 0'}}>
+      <div style={{fontSize:20,marginBottom:8,animation:'spin 1s linear infinite',display:'inline-block'}}>◌</div>
+      <div>Calculando análisis cuantitativo…</div>
+      <div style={{fontSize:10,marginTop:6}}>precio histórico · Monte Carlo · on-chain</div>
+    </div>
+  );
+
+  // veredicto scorecard
+  const go = c.probUp>55 && !macroWindow && c.rsi<78 && c.cvar99>-12;
+  const goReason = macroWindow?'Ventana de evento macro (riesgo)':c.rsi>=78?'RSI sobrecomprado':c.probUp<=55?'Probabilidad alcista baja':c.cvar99<=-12?'Riesgo de cola elevado':'Estadística favorable';
+  const valState = c.valPct>15?{t:'INFRAVALORADO',col:'var(--up)'}:c.valPct<-15?{t:'SOBREVALORADO',col:'var(--down)'}:{t:'EN VALOR JUSTO',col:'#F3BA2F'};
+  // fan chart
+  const FW=300,FH=128,DAYS=30, b=c.mc.bands;
+  const ymin=Math.min(...b.map(x=>x.p5))*0.98, ymax=Math.max(...b.map(x=>x.p95))*1.02;
+  const fx=d=>d/DAYS*FW, fy=v=>FH-4-Math.max(0,Math.min(1,(v-ymin)/((ymax-ymin)||1)))*(FH-8);
+  const area=(hi,lo)=>'M '+hi.map((v,i)=>`${fx(i).toFixed(1)} ${fy(v).toFixed(1)}`).join(' L ')+' L '+lo.map((v,i)=>[i,v]).reverse().map(([i,v])=>`${fx(i).toFixed(1)} ${fy(v).toFixed(1)}`).join(' L ')+' Z';
+  const line50='M '+b.map((x,i)=>`${fx(i).toFixed(1)} ${fy(x.p50).toFixed(1)}`).join(' L ');
+  // mapa de liquidez
+  const liq=[];for(const L of [100,50,25,10]){liq.push({s:1,L,p:c.price*(1+1/L)});liq.push({s:0,L,p:c.price*(1-1/L)});}
+  liq.sort((a,b)=>b.p-a.p);
+
+  return(
+    <div>
+      <div style={{...flx({gap:10}),margin:'2px 2px 14px'}}>
+        <div style={{width:32,height:32,borderRadius:10,flexShrink:0,background:'rgba(110,139,255,.15)',
+          border:'1px solid rgba(110,139,255,.4)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16}}>Σ</div>
+        <div>
+          <div style={{fontSize:17,fontWeight:800,letterSpacing:-.3,lineHeight:1}}>Análisis Cuantitativo</div>
+          <div style={{...eyebrow,fontSize:9}}>modelos · estadística · Monte Carlo · automático</div>
+        </div>
+      </div>
+
+      {/* PRECIO OBJETIVO (hero) */}
+      <div className="rise" style={panel({position:'relative',overflow:'hidden',marginBottom:14,padding:'24px 20px',
+        background:`radial-gradient(120% 90% at 50% -10%, ${valState.col}1A 0%, var(--panel) 58%)`,borderColor:`${valState.col}33`})}>
+        <div style={{position:'absolute',top:0,left:'15%',right:'15%',height:1,background:`linear-gradient(90deg,transparent,${valState.col},transparent)`,opacity:.6}}/>
+        <div style={{textAlign:'center'}}>
+          <div style={{...eyebrow,color:valState.col,marginBottom:10}}>Precio objetivo · valor estimado</div>
+          <div className="mono" style={{fontSize:40,fontWeight:800,lineHeight:1,letterSpacing:-1.5,textShadow:`0 0 40px ${valState.col}40`}}>{money(c.fair)}</div>
+          <div style={{...flx({justifyContent:'center',gap:8}),marginTop:11}}>
+            <span className="mono" style={{fontSize:11.5,color:'var(--dim)'}}>actual {money(c.price)}</span>
+            <span className="mono" style={{fontSize:12,fontWeight:700,color:valState.col,padding:'3px 10px',borderRadius:14,
+              background:`${valState.col}18`,border:`1px solid ${valState.col}40`}}>{c.valPct>=0?'+':''}{c.valPct.toFixed(0)}% · {valState.t}</span>
+          </div>
+          <div style={{...flx({justifyContent:'space-between'}),marginTop:18,paddingTop:14,borderTop:'1px solid var(--line2)'}}>
+            <div><div style={{fontSize:8.5,letterSpacing:1.3,color:'var(--faint)',textTransform:'uppercase',fontWeight:600}}>Conservador</div>
+              <div className="mono" style={{fontSize:13,fontWeight:700,color:'#5B9BFF'}}>{money(c.lo)}</div></div>
+            <div style={{textAlign:'center'}}><div style={{fontSize:8.5,letterSpacing:1.3,color:'var(--faint)',textTransform:'uppercase',fontWeight:600}}>Precio justo</div>
+              <div className="mono" style={{fontSize:13,fontWeight:700,color:'var(--txt)'}}>{money(c.fair)}</div></div>
+            <div style={{textAlign:'right'}}><div style={{fontSize:8.5,letterSpacing:1.3,color:'var(--faint)',textTransform:'uppercase',fontWeight:600}}>Optimista</div>
+              <div className="mono" style={{fontSize:13,fontWeight:700,color:'var(--up)'}}>{money(c.hi)}</div></div>
+          </div>
+        </div>
+      </div>
+
+      {/* SCORECARD GO / NO-GO */}
+      <div style={panel({marginBottom:14,padding:16})}>
+        <div style={{...flx({justifyContent:'space-between'}),marginBottom:12}}>
+          <span style={eyebrow}>Veredicto pre-operación</span>
+          <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>horizonte 30d</span>
+        </div>
+        <div style={{textAlign:'center',padding:'14px',borderRadius:12,marginBottom:14,
+          background:go?'rgba(31,224,160,.12)':'rgba(255,84,112,.10)',border:`1px solid ${go?'rgba(31,224,160,.4)':'rgba(255,84,112,.35)'}`}}>
+          <div style={{fontSize:24,fontWeight:800,color:go?'var(--up)':'var(--down)'}}>{go?'✅ GO':'⛔ NO-GO'}</div>
+          <div style={{fontSize:11,color:'var(--dim)',marginTop:3}}>{goReason}</div>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
+          {[['Prob. alcista',c.probUp.toFixed(0)+'%',c.probUp>55?'var(--up)':'var(--down)'],
+            ['VaR 99% · 10d',c.var99.toFixed(1)+'%','var(--down)'],
+            ['CVaR (cola)',c.cvar99.toFixed(1)+'%','var(--downDim)']].map((m,i)=>(
+            <div key={i} style={{background:'#0A0D14',borderRadius:9,padding:'10px 8px',textAlign:'center'}}>
+              <div className="mono" style={{fontSize:15,fontWeight:800,color:m[2]}}>{m[1]}</div>
+              <div style={{fontSize:8.5,color:'var(--dim)',marginTop:3}}>{m[0]}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* MONTE CARLO */}
+      <div style={panel({marginBottom:14,padding:16})}>
+        <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
+          <span style={eyebrow}>Monte Carlo · ruta probable 30d</span>
+          <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>700 simulaciones</span>
+        </div>
+        <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:10}}>bandas de probabilidad (bootstrap de retornos · colas gordas)</div>
+        <svg viewBox={`0 0 ${FW} ${FH}`} width="100%" style={{display:'block'}}>
+          <path d={area(b.map(x=>x.p95),b.map(x=>x.p5))} fill="rgba(110,139,255,.12)"/>
+          <path d={area(b.map(x=>x.p75),b.map(x=>x.p25))} fill="rgba(110,139,255,.22)"/>
+          <path d={line50} fill="none" stroke="var(--accent)" strokeWidth="2"/>
+          <line x1="0" y1={fy(c.price)} x2={FW} y2={fy(c.price)} stroke="var(--faint)" strokeWidth="1" strokeDasharray="3 3"/>
+        </svg>
+        <div style={{...flx({justifyContent:'space-around'}),marginTop:10}}>
+          {[['Sube',c.probUp.toFixed(0)+'%','var(--up)'],['+15%',c.probUp15.toFixed(0)+'%','var(--upDim)'],['-15%',c.probDn15.toFixed(0)+'%','var(--down)'],
+            ['Mediana',money(c.mc.bands[30].p50),'var(--txt)']].map((m,i)=>(
+            <div key={i} style={{textAlign:'center'}}>
+              <div className="mono" style={{fontSize:13,fontWeight:800,color:m[2]}}>{m[1]}</div>
+              <div style={{fontSize:8.5,color:'var(--dim)'}}>{m[0]}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ESTADÍSTICAS */}
+      <div style={panel({marginBottom:14,padding:16})}>
+        <div style={{...eyebrow,marginBottom:12}}>Estadísticas de mercado</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:9}}>
+          {[
+            ['RSI (14d)',c.rsi.toFixed(0),c.rsi>70?'var(--down)':c.rsi<30?'var(--up)':'var(--txt)',c.rsi>70?'sobrecompra':c.rsi<30?'sobreventa':'neutral'],
+            ['Volatilidad anual',c.annVol.toFixed(0)+'%','var(--txt)','histórica 1a'],
+            ['vs MA 200d',((c.price/c.ma200-1)*100).toFixed(0)+'%',c.price>=c.ma200?'var(--up)':'var(--down)',c.price>=c.ma200?'sobre la media':'bajo la media'],
+            ['vs MA 50d',((c.price/c.ma50-1)*100).toFixed(0)+'%',c.price>=c.ma50?'var(--up)':'var(--down)','tendencia corta'],
+            ['MVRV',q.mvrv?q.mvrv.toFixed(2):'—',q.mvrv&&q.mvrv<1?'var(--up)':q.mvrv>4?'var(--down)':'var(--txt)','market/realized'],
+            ['Fear & Greed',q.fng!=null?String(q.fng):'—',q.fng!=null?(q.fng<25?'var(--up)':q.fng>75?'var(--down)':'#F3BA2F'):'var(--txt)',q.fngTxt||'sentimiento'],
+          ].map((m,i)=>(
+            <div key={i} style={{background:'#0A0D14',borderRadius:9,padding:'11px 12px'}}>
+              <div style={{...flx({justifyContent:'space-between'})}}>
+                <span style={{fontSize:10.5,color:'var(--dim)'}}>{m[0]}</span>
+                <span className="mono" style={{fontSize:15,fontWeight:800,color:m[2]}}>{m[1]}</span>
+              </div>
+              <div style={{fontSize:8.5,color:'var(--faint)',marginTop:2}}>{m[3]}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* MAPA DE LIQUIDEZ */}
+      <div style={panel({marginBottom:14,padding:16})}>
+        <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
+          <span style={eyebrow}>Mapa de liquidez · estimado</span>
+          <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>clústeres de liquidación</span>
+        </div>
+        <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:12}}>zonas donde se concentran liquidaciones por apalancamiento</div>
+        {liq.map((k,i)=>{
+          const above=k.s===1, col=above?'#1FE0A0':'#FF5470', w=Math.min(100,k.L*0.9+10);
+          return(
+            <div key={i} style={{...flx({gap:8}),padding:'5px 0'}}>
+              <span className="mono" style={{fontSize:10,color:'var(--dim)',width:62,flexShrink:0}}>{money(k.p)}</span>
+              <span style={{fontSize:8.5,color:col,width:30,flexShrink:0}}>{k.L}x</span>
+              <div style={{flex:1,height:8,borderRadius:3,background:'#0A0D14',overflow:'hidden'}}>
+                <div style={{height:'100%',width:`${w}%`,background:`linear-gradient(90deg,${col}40,${col})`,borderRadius:3,
+                  marginLeft:above?0:'auto'}}/>
+              </div>
+              <span style={{fontSize:8,color:col,width:48,flexShrink:0,textAlign:'right'}}>{above?'liq.cortos':'liq.largos'}</span>
+            </div>
+          );
+        })}
+        <div style={{textAlign:'center',marginTop:8,fontSize:9.5,color:'var(--accent)',fontWeight:700}} className="mono">— precio actual {money(c.price)} —</div>
+      </div>
+
+      {/* CALENDARIO ECONÓMICO */}
+      <div style={panel({marginBottom:14,padding:16})}>
+        <div style={{...flx({justifyContent:'space-between'}),marginBottom:12}}>
+          <span style={eyebrow}>Calendario económico</span>
+          {macroWindow&&<span className="mono" style={{fontSize:9,fontWeight:700,color:'var(--down)'}}>⚠ ventana de riesgo</span>}
+        </div>
+        {evNext.map((e,i)=>{
+          const days=Math.ceil((e.d-now)/D);
+          return(
+            <div key={i} style={{...flx({justifyContent:'space-between'}),padding:'8px 0',borderTop:i?'1px solid #12151F':'none'}}>
+              <div style={{...flx({gap:8})}}>
+                <span style={{fontSize:9,fontWeight:800,color:'#07090E',background:e.t==='FOMC'?'#F3BA2F':'#6E8BFF',
+                  borderRadius:5,padding:'2px 6px'}}>{e.t}</span>
+                <span style={{fontSize:11.5,color:'var(--dim)'}}>{e.n}</span>
+              </div>
+              <span className="mono" style={{fontSize:10.5,color:days<=2?'var(--down)':'var(--faint)',fontWeight:days<=2?700:400}}>
+                {days<=0?'hoy':'en '+days+'d'}
+              </span>
+            </div>
+          );
+        })}
+        <p style={{fontSize:9.5,color:'var(--faint)',lineHeight:1.5,marginTop:10}}>
+          En las 48h alrededor de estos eventos la volatilidad se dispara. El modelo fuerza <b style={{color:'var(--down)'}}>NO-GO</b> en esa ventana.
+        </p>
+      </div>
+
+      <p style={{fontSize:9.5,color:'var(--faint)',lineHeight:1.5,textAlign:'center',padding:'0 8px',marginBottom:8}}>
+        Análisis automático con datos públicos (CoinGecko · bitcoin-data · alternative.me). Modelos estadísticos, no es consejo financiero.
+      </p>
     </div>
   );
 }
@@ -1042,8 +1296,11 @@ function App(){
   const g=useMemo(()=>vwafrGlobal(data),[payload]);
   const [showCta,setShowCta]=useState(true);
   const [view,setView]=useState('home');
-  useEffect(()=>{document.body.classList.toggle('cycle-view',view==='cycle');},[view]);
+  useEffect(()=>{document.body.classList.toggle('cycle-view',view!=='home');},[view]);
   const home=view==='home';
+  const TITLE={home:['Funding cripto · top 10 · en vivo','Sentimiento del Mercado'],
+    cycle:['Bitcoin · ciclo de mercado','Ciclo de Bitcoin'],
+    quant:['BTC · finanzas cuantitativas','Análisis Cuantitativo']}[view];
 
   return(
     <>
@@ -1055,11 +1312,9 @@ function App(){
           <div style={{...flx({gap:7}),marginBottom:5}}>
             <div style={{width:7,height:7,borderRadius:2,background:'var(--accent)',
               boxShadow:'0 0 8px var(--accent)',animation:'breathe 2.4s ease infinite'}}/>
-            <span style={eyebrow}>{home?'Funding cripto · top 10 · en vivo':'Bitcoin · ciclo de mercado'}</span>
+            <span style={eyebrow}>{TITLE[0]}</span>
           </div>
-          <h1 style={{fontSize:21,fontWeight:800,letterSpacing:-.5,lineHeight:1}}>
-            {home?'Sentimiento del Mercado':'Ciclo de Bitcoin'}
-          </h1>
+          <h1 style={{fontSize:21,fontWeight:800,letterSpacing:-.5,lineHeight:1}}>{TITLE[1]}</h1>
         </div>
         {home&&(
           <button onClick={fetchAll} disabled={busy}
@@ -1073,12 +1328,12 @@ function App(){
       </div>
 
       {/* NAV apartados */}
-      <div style={{...flx({gap:8}),marginBottom:16}}>
-        {[['home','Inicio'],['cycle','Ciclo BTC']].map(([k,label])=>{
+      <div style={{...flx({gap:7}),marginBottom:16}}>
+        {[['home','Funding'],['cycle','Ciclo'],['quant','Cuantitativo']].map(([k,label])=>{
           const on=view===k;
           return(
             <button key={k} onClick={()=>setView(k)} style={{flex:1,padding:'9px 0',borderRadius:10,
-              fontSize:12.5,fontWeight:700,cursor:'pointer',transition:'all .15s',
+              fontSize:12,fontWeight:700,cursor:'pointer',transition:'all .15s',
               border:`1px solid ${on?'var(--accent)':'var(--line)'}`,
               background:on?'rgba(110,139,255,.12)':'transparent',color:on?'var(--txt)':'var(--dim)'}}>{label}</button>
           );
@@ -1086,6 +1341,7 @@ function App(){
       </div>
 
       {view==='cycle'&&<CycleBTC/>}
+      {view==='quant'&&<QuantView/>}
 
       {home&&<>
       {/* status strip */}
@@ -1102,7 +1358,7 @@ function App(){
       {/* ── FUNDING GLOBAL (gran indicador, todas las monedas) ── */}
       <Hero big vwafr={g.vwafr} label="Funding GLOBAL · top 10 ponderado por OI"/>
       <div style={{...flx({justifyContent:'center',gap:6}),marginTop:-4,marginBottom:14}}>
-        <span className="mono" style={{fontSize:10.5,color:'var(--faint)'}}>ponderado por volumen 24h{g.vol?` · vol $${g.vol.toFixed(0)}B`:''} · {coins.length} monedas × {META.length} exchanges</span>
+        <span className="mono" style={{fontSize:10.5,color:'var(--faint)'}}>ponderado por OI ${g.oi.toFixed(0)}B{g.vol?` · vol 24h $${g.vol.toFixed(0)}B`:''} · {coins.length} monedas</span>
       </div>
 
       {/* ── Referido Bitunix (central) ── */}
