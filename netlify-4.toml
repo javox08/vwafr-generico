@@ -1,0 +1,12 @@
+[build]
+  publish = "."
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
+
+# /api/funding → la función serverless
+[[redirects]]
+  from = "/api/funding"
+  to = "/.netlify/functions/funding"
+  status = 200
