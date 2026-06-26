@@ -28,7 +28,23 @@
     }
     *{margin:0;padding:0;box-sizing:border-box}
     body{background:var(--bg);font-family:'Sora',system-ui,sans-serif;color:var(--txt);
-      -webkit-font-smoothing:antialiased}
+      -webkit-font-smoothing:antialiased;padding-bottom:70px}
+    /* CTA fija (alta conversión) */
+    @keyframes ctaGlow{0%,100%{box-shadow:0 4px 16px rgba(110,139,255,.30)}50%{box-shadow:0 4px 26px rgba(31,224,160,.5)}}
+    .cta-bar{position:fixed;left:0;right:0;bottom:0;z-index:60;padding:9px 12px calc(9px + env(safe-area-inset-bottom));
+      background:linear-gradient(0deg,rgba(7,9,14,.99),rgba(7,9,14,.82));
+      backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-top:1px solid var(--line2)}
+    .cta-bar .row{max-width:540px;margin:0 auto;display:flex;align-items:center;gap:8px}
+    .cta-bar a{flex:1;display:flex;align-items:center;justify-content:center;gap:8px;
+      background:linear-gradient(100deg,var(--accent),#1FE0A0);color:#07090E;font-weight:800;font-size:14px;
+      text-decoration:none;border-radius:11px;padding:13px 14px;animation:ctaGlow 2.8s ease-in-out infinite}
+    .cta-bar .xc{flex-shrink:0;width:30px;height:30px;border-radius:8px;border:1px solid var(--line2);
+      background:var(--panel2);color:var(--dim);font-size:14px;display:flex;align-items:center;justify-content:center;cursor:pointer}
+    .opbtn{text-decoration:none;font-size:10.5px;font-weight:700;color:var(--accent);
+      border:1px solid rgba(110,139,255,.4);border-radius:7px;padding:5px 9px;white-space:nowrap;background:rgba(110,139,255,.07)}
+    .herocta{display:inline-flex;align-items:center;gap:7px;margin-top:18px;text-decoration:none;
+      background:linear-gradient(100deg,var(--accent),#1FE0A0);color:#07090E;font-weight:800;font-size:13.5px;
+      border-radius:10px;padding:12px 22px;box-shadow:0 4px 16px rgba(110,139,255,.30)}
     body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
       background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);
       background-size:44px 44px;opacity:.025}
@@ -221,6 +237,9 @@ function Hero({vwafr,label,big}){
           <span style={{fontSize:9,color:'var(--faint)',letterSpacing:.5}}>NEUTRAL</span>
           <span style={{fontSize:9,color:'var(--upDim)',fontWeight:600,letterSpacing:.5}}>▲ LONGS</span>
         </div>
+        {big&&(
+          <a className="herocta" href={BITUNIX} target="_blank" rel="noopener nofollow">⚡ Opera estos movimientos en Bitunix →</a>
+        )}
       </div>
     </div>
   );
@@ -286,7 +305,7 @@ function Calc({coin,data,source,sel}){
           <div style={{fontSize:15,fontWeight:800,letterSpacing:-.3,lineHeight:1.05}}>{coin} · funding por exchange</div>
           <div style={{...eyebrow,fontSize:9}}>perpetuos USDT · ponderado por OI</div>
         </div>
-        <div className="mono" style={{marginLeft:'auto',fontSize:13,fontWeight:700,color:SC}}>{fmt(vwafr)}</div>
+        <a className="opbtn" href={BITUNIX} target="_blank" rel="noopener nofollow" style={{marginLeft:'auto'}}>Operar {coin} →</a>
       </div>
 
       <Hero vwafr={vwafr} label={`Veredicto del funding · ${coin}`}/>
@@ -470,8 +489,10 @@ function App(){
   const coins=(payload&&payload.coins)||FALLBACK_COINS;
   const data=(payload&&payload.data)||{};
   const g=useMemo(()=>vwafrGlobal(data),[payload]);
+  const [showCta,setShowCta]=useState(true);
 
   return(
+    <>
     <div style={{...wrap,paddingBottom:8}}>
 
       {/* TOPBAR */}
@@ -593,6 +614,13 @@ function App(){
       </div>
 
     </div>
+    {showCta&&(
+      <div className="cta-bar"><div className="row">
+        <a href={BITUNIX} target="_blank" rel="noopener nofollow">⚡ Abrir cuenta en Bitunix · código ffcczq</a>
+        <span className="xc" onClick={()=>setShowCta(false)} title="Cerrar">✕</span>
+      </div></div>
+    )}
+    </>
   );
 }
 
