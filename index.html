@@ -1240,12 +1240,12 @@ function chartPatterns(cl){
 }
 // Gráfico interactivo estilo TradingView: cruz (crosshair) que sigue el dedo/ratón
 // y muestra en todo momento el DÍA/FECHA y el PRECIO del punto bajo el cursor.
-function TVChart({series,color='var(--accent)',H=120,area=false,band=null,bands=null,marks=null,fmt=v=>v,label=i=>'día '+i}){
+function TVChart({series,color='var(--accent)',H=120,area=false,band=null,bands=null,marks=null,hline=null,hlabel='',fmt=v=>v,label=i=>'día '+i}){
   const W=300,P=8,n=series.length;
   const ref=React.useRef(null);
   const [hv,setHv]=useState(null);
   if(!series||n<2)return null;
-  const extra=(band?band.hi.concat(band.lo):[]).concat(bands?bands.reduce((a,b)=>a.concat(b.hi,b.lo),[]):[]);
+  const extra=(band?band.hi.concat(band.lo):[]).concat(bands?bands.reduce((a,b)=>a.concat(b.hi,b.lo),[]):[]).concat(hline!=null?[hline]:[]);
   const all=series.concat(extra);
   const mn=Math.min(...all),mx=Math.max(...all),rng=(mx-mn)||1;
   const X=i=>i/(n-1)*W, Y=v=>H-P-((v-mn)/rng)*(H-2*P);
@@ -1263,6 +1263,8 @@ function TVChart({series,color='var(--accent)',H=120,area=false,band=null,bands=
         {bands&&bands.map((b,bi)=><path key={bi} d={bandD(b)} fill={b.fill}/>)}
         {band&&<path d={bandD(band)} fill="rgba(110,139,255,.15)"/>}
         {area&&<path d={lineD+` L ${W} ${H-P} L 0 ${H-P} Z`} fill={color[0]==='#'?color+'22':'rgba(110,139,255,.13)'}/>}
+        {hline!=null&&<line x1="0" y1={Y(hline).toFixed(1)} x2={W} y2={Y(hline).toFixed(1)} stroke="var(--faint)" strokeWidth="1" strokeDasharray="4 3" opacity="0.8"/>}
+        {hline!=null&&hlabel&&<text x="3" y={(Y(hline)-3).toFixed(1)} fill="var(--faint)" fontSize="8" className="mono">{hlabel}</text>}
         <path d={lineD} fill="none" stroke={color} strokeWidth="2"/>
         {marks&&marks.map((m,mi)=><circle key={mi} cx={X(m.i).toFixed(1)} cy={Y(series[m.i]).toFixed(1)} r="3.5" fill={m.c} stroke="var(--bg)" strokeWidth="2"/>)}
         <line x1={X(idx).toFixed(1)} y1="0" x2={X(idx).toFixed(1)} y2={H} stroke="var(--faint)" strokeWidth="1" strokeDasharray="3 3" opacity="0.75"/>
@@ -1853,6 +1855,130 @@ function QuantView({gFunding}){
   );
 }
 
+// ── PIB · ciclo económico por país (datos del Banco Mundial, gratis y con CORS) ──
+const PIB_LIST='USA;CHN;JPN;DEU;IND;GBR;FRA;ITA;BRA;CAN;RUS;ESP;MEX;KOR;AUS;IDN;NLD;SAU;TUR;CHE;ARG;SWE;POL;NGA;ZAF';
+const flagOf=iso2=>(iso2&&iso2.length===2)?String.fromCodePoint(...[...iso2.toUpperCase()].map(ch=>127397+ch.charCodeAt(0))):'🏳️';
+function pibPhase(s){
+  const v=s.map(x=>x.val),mean=qMean(v),latest=v[v.length-1],prev=v.length>1?v[v.length-2]:latest;
+  const mn=Math.min(...v),mx=Math.max(...v),rising=latest>=prev,above=latest>=mean;
+  const pos=mx>mn?(latest-mn)/(mx-mn)*100:50;
+  let ph;
+  if(latest<0)ph={t:'Crisis · recesión',c:'var(--down)',e:'🔻'};
+  else if(above&&rising)ph={t:'Expansión',c:'var(--up)',e:'🚀'};
+  else if(above&&!rising)ph={t:'Pico · ralentización',c:'#F3BA2F',e:'⚠️'};
+  else if(!above&&rising)ph={t:'Recuperación',c:'#3B82F6',e:'📈'};
+  else ph={t:'Desaceleración',c:'var(--downDim)',e:'🐌'};
+  return {mean,latest,prev,mn,mx,rising,above,pos,...ph};
+}
+function PIBView(){
+  const [raw,setRaw]=useState(null);
+  const [err,setErr]=useState(false);
+  const [sel,setSel]=useState('ESP');
+  useEffect(()=>{let a=true;
+    fetch(`https://api.worldbank.org/v2/country/${PIB_LIST}/indicator/NY.GDP.MKTP.KD.ZG?format=json&per_page=2000&mrv=35`)
+      .then(r=>r.json()).then(j=>{if(!a)return;
+        if(!Array.isArray(j)||!Array.isArray(j[1])){setErr(true);return;}
+        const m={};
+        for(const d of j[1]){ if(d.value==null)continue; const k=d.countryiso3code; if(!k)continue;
+          if(!m[k])m[k]={iso3:k,iso2:d.country.id,name:d.country.value,series:[]};
+          m[k].series.push({year:+d.date,val:d.value});}
+        for(const k in m)m[k].series.sort((x,y)=>x.year-y.year);
+        setRaw(m);}).catch(()=>{if(a)setErr(true);});
+    return()=>{a=false;};},[]);
+
+  if(err)return(<div style={{textAlign:'center',color:'var(--faint)',fontSize:12,padding:'40px 0'}}>No se pudo cargar el PIB ahora mismo. Vuelve a intentarlo en un momento.</div>);
+  if(!raw)return(<div style={{textAlign:'center',color:'var(--faint)',fontSize:13,padding:'40px 0'}}>
+    <div style={{fontSize:20,marginBottom:8,animation:'spin 1s linear infinite',display:'inline-block'}}>◌</div>
+    <div>Cargando PIB por país…</div><div style={{fontSize:10,marginTop:6}}>fuente: Banco Mundial</div></div>);
+
+  const countries=Object.values(raw).filter(c=>c.series.length>=5).sort((a,b)=>a.name.localeCompare(b.name));
+  const cur=raw[sel]&&raw[sel].series.length>=5?raw[sel]:countries[0];
+  const p=pibPhase(cur.series), vals=cur.series.map(s=>s.val);
+  const vsMean=p.latest-p.mean;
+  // países en su límite (cerca del máximo o mínimo de su propio histórico)
+  const ext=countries.map(c=>({c,p:pibPhase(c.series)}))
+    .filter(o=>o.p.pos>=80||o.p.pos<=20)
+    .sort((a,b)=>Math.abs(b.p.pos-50)-Math.abs(a.p.pos-50)).slice(0,8);
+  const pct=v=>(v>=0?'+':'')+v.toFixed(1)+'%';
+
+  return(
+    <div>
+      <div style={{...flx({justifyContent:'space-between',gap:10}),margin:'2px 2px 14px'}}>
+        <div style={{...flx({gap:10})}}>
+          <div style={{width:32,height:32,borderRadius:10,flexShrink:0,background:'rgba(110,139,255,.15)',
+            border:'1px solid rgba(110,139,255,.4)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16}}>🌐</div>
+          <div>
+            <div style={{fontSize:17,fontWeight:800,letterSpacing:-.3,lineHeight:1}}>Ciclo económico · PIB</div>
+            <div style={{...eyebrow,fontSize:9}}>crecimiento real · fase del ciclo · automático</div>
+          </div>
+        </div>
+        <select value={cur.iso3} onChange={e=>setSel(e.target.value)}
+          style={{background:'var(--panel2)',color:'var(--txt)',border:'1px solid var(--line2)',borderRadius:9,
+            padding:'8px 9px',fontSize:12,fontWeight:700,maxWidth:140,cursor:'pointer'}}>
+          {countries.map(c=>(<option key={c.iso3} value={c.iso3}>{flagOf(c.iso2)} {c.name}</option>))}
+        </select>
+      </div>
+
+      {/* FASE DEL CICLO (hero) */}
+      <div className="rise" style={panel({position:'relative',overflow:'hidden',marginBottom:14,padding:'22px 20px',
+        background:`radial-gradient(120% 90% at 50% -10%, ${p.c}1A 0%, var(--panel) 60%)`,borderColor:`${p.c}33`})}>
+        <div style={{textAlign:'center'}}>
+          <div style={{...eyebrow,color:p.c,marginBottom:8}}>{flagOf(cur.iso2)} {cur.name} · fase actual</div>
+          <div style={{fontSize:26,fontWeight:800,lineHeight:1.05,color:p.c}}>{p.e} {p.t}</div>
+          <div className="mono" style={{fontSize:40,fontWeight:800,lineHeight:1.1,letterSpacing:-1.5,marginTop:8,textShadow:`0 0 40px ${p.c}40`}}>{pct(p.latest)}</div>
+          <div style={{fontSize:10.5,color:'var(--dim)',marginTop:2}}>crecimiento del PIB · {cur.series[cur.series.length-1].year}</div>
+          <div style={{...flx({justifyContent:'space-between'}),marginTop:18,paddingTop:14,borderTop:'1px solid var(--line2)'}}>
+            <div><div style={{fontSize:8.5,letterSpacing:1.3,color:'var(--faint)',textTransform:'uppercase',fontWeight:600}}>Media histórica</div>
+              <div className="mono" style={{fontSize:13,fontWeight:700,color:'var(--txt)'}}>{pct(p.mean)}</div></div>
+            <div style={{textAlign:'center'}}><div style={{fontSize:8.5,letterSpacing:1.3,color:'var(--faint)',textTransform:'uppercase',fontWeight:600}}>vs media</div>
+              <div className="mono" style={{fontSize:13,fontWeight:700,color:vsMean>=0?'var(--up)':'var(--down)'}}>{pct(vsMean)}</div></div>
+            <div style={{textAlign:'right'}}><div style={{fontSize:8.5,letterSpacing:1.3,color:'var(--faint)',textTransform:'uppercase',fontWeight:600}}>Rango {cur.series[0].year}–hoy</div>
+              <div className="mono" style={{fontSize:13,fontWeight:700,color:'var(--txt)'}}>{pct(p.mn)}/{pct(p.mx)}</div></div>
+          </div>
+        </div>
+      </div>
+
+      {/* GRÁFICO PIB con media (crosshair año/PIB) */}
+      <div style={panel({marginBottom:14,padding:16})}>
+        <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
+          <span style={eyebrow}>Fluctuación del PIB · histórico</span>
+          <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>{vals.length} años</span>
+        </div>
+        <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:10}}>línea = crecimiento anual · discontinua = media; por encima de la media = expansión, por debajo = enfriamiento · toca para ver año y PIB</div>
+        <TVChart series={vals} color={p.c[0]==='#'?p.c:'#6E8BFF'} H={120} hline={p.mean} hlabel={'media '+p.mean.toFixed(1)+'%'}
+          fmt={v=>pct(v)} label={i=>'año '+cur.series[i].year}/>
+      </div>
+
+      {/* PAÍSES EN SU LÍMITE (pico o suelo del ciclo) */}
+      <div style={panel({marginBottom:14,padding:16})}>
+        <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
+          <span style={eyebrow}>Países en su límite</span>
+          <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>pico o suelo del ciclo</span>
+        </div>
+        <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:10}}>cerca de su máximo histórico (riesgo de pico) o de su mínimo (suelo/crisis). Toca un país para verlo.</div>
+        {ext.length?ext.map((o,i)=>{const near=o.p.pos>=80;
+          return(
+          <div key={i} onClick={()=>setSel(o.c.iso3)} style={{...flx({gap:9}),padding:'9px 0',borderTop:i?'1px solid #12151F':'none',cursor:'pointer'}}>
+            <span style={{fontSize:16}}>{flagOf(o.c.iso2)}</span>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:12.5,fontWeight:700,color:'var(--txt)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{o.c.name}</div>
+              <div style={{fontSize:9.5,color:near?'#F3BA2F':'#3B82F6'}}>{near?'cerca de máximo (pico)':'cerca de mínimo (suelo)'} · {o.p.t}</div>
+            </div>
+            <div style={{textAlign:'right',flexShrink:0}}>
+              <div className="mono" style={{fontSize:13,fontWeight:800,color:o.p.latest>=0?'var(--up)':'var(--down)'}}>{pct(o.p.latest)}</div>
+              <div className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>{o.p.pos.toFixed(0)}% del rango</div>
+            </div>
+          </div>);
+        }):<div style={{fontSize:11,color:'var(--faint)',textAlign:'center',padding:'8px 0'}}>Ningún país en su extremo ahora mismo.</div>}
+      </div>
+
+      <p style={{fontSize:9,color:'var(--faint)',marginTop:-4,marginBottom:14,lineHeight:1.5,padding:'0 2px'}}>
+        Datos anuales de crecimiento real del PIB (Banco Mundial, indicador NY.GDP.MKTP.KD.ZG). El ciclo económico
+        oscila entre expansión, pico, ralentización, crisis y recuperación alrededor de su crecimiento potencial (media).</p>
+    </div>
+  );
+}
+
 // Historial del grand funding (clic en el indicador): BTC + funding registrado
 function FundingHistory({g}){
   const [btc,setBtc]=useState(null);
@@ -1890,7 +2016,8 @@ function FundingHistory({g}){
       {fs&&hist.length>1?(
         <TVChart series={hist.map(h=>h.f)} color={fs.last>=0?'var(--up)':'var(--down)'} H={56}
           fmt={v=>(v>=0?'+':'')+v.toFixed(4)+'%'}
-          label={i=>{const d=new Date(hist[i].t);return d.toLocaleDateString('es-ES',{day:'numeric',month:'short'})+' '+d.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});}}/>
+          label={i=>{const mi=Math.max(0,Math.round((Date.now()-hist[i].t)/60000));
+            return mi<1?'ahora':mi<60?('hace '+mi+'m'):mi<1440?('hace '+Math.round(mi/60)+'h'):('hace '+Math.round(mi/1440)+'d');}}/>
       ):<div style={{textAlign:'center',color:'var(--faint)',fontSize:10.5,padding:'14px 0',lineHeight:1.5}}>
           El historial del funding se va registrando solo según usas la web.<br/>Vuelve en un rato para ver la tendencia.</div>}
       <p style={{fontSize:9.5,color:'var(--faint)',marginTop:8,lineHeight:1.5}}>Compara el precio de BTC con cómo ha evolucionado el funding global (sube = mercado apalancado en largo).</p>
@@ -1952,7 +2079,8 @@ function App(){
   const home=view==='home';
   const TITLE={home:['Funding cripto · top 10 · en vivo','Sentimiento del Mercado'],
     cycle:['Bitcoin · ciclo de mercado','Ciclo de Bitcoin'],
-    quant:['BTC · finanzas cuantitativas','Análisis Cuantitativo']}[view];
+    quant:['BTC · finanzas cuantitativas','Análisis Cuantitativo'],
+    pib:['Macro · ciclo económico mundial','PIB por país']}[view];
 
   return(
     <>
@@ -1981,11 +2109,11 @@ function App(){
 
       {/* NAV apartados */}
       <div style={{...flx({gap:7}),marginBottom:16}}>
-        {[['home','Funding'],['cycle','Ciclo'],['quant','Cuantitativo']].map(([k,label])=>{
+        {[['home','Funding'],['cycle','Ciclo'],['quant','Cuantitativo'],['pib','PIB']].map(([k,label])=>{
           const on=view===k;
           return(
-            <button key={k} onClick={()=>setView(k)} style={{flex:1,padding:'9px 0',borderRadius:10,
-              fontSize:12,fontWeight:700,cursor:'pointer',transition:'all .15s',
+            <button key={k} onClick={()=>setView(k)} style={{flex:1,padding:'9px 2px',borderRadius:10,
+              fontSize:11,fontWeight:700,cursor:'pointer',transition:'all .15s',whiteSpace:'nowrap',letterSpacing:-.2,
               border:`1px solid ${on?'var(--accent)':'var(--line)'}`,
               background:on?'rgba(110,139,255,.12)':'transparent',color:on?'var(--txt)':'var(--dim)'}}>{label}</button>
           );
@@ -1994,6 +2122,7 @@ function App(){
 
       {view==='cycle'&&<CycleBTC/>}
       {view==='quant'&&<QuantView gFunding={g.vwafr}/>}
+      {view==='pib'&&<PIBView/>}
 
       {home&&<>
       {/* status strip */}
