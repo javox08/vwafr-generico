@@ -1147,6 +1147,7 @@ function QuantView({gFunding}){
         jget('https://api.alternative.me/fng/?limit=1').then(j=>{out.fng=parseInt(j.data[0].value);out.fngTxt=j.data[0].value_classification;}),
         jget('https://www.deribit.com/api/v2/public/get_book_summary_by_currency?currency=BTC&kind=option').then(j=>{out.opts=j.result;}),
         jget('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1w&limit=300').then(k=>{out.weekly=k.map(x=>parseFloat(x[4]));}),
+        jget('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=90').then(k=>{out.ohlc=k.map(x=>({o:+x[1],h:+x[2],l:+x[3],c:+x[4]}));}),
         jget('https://api.coingecko.com/api/v3/coins/ethereum/market_chart?vs_currency=usd&days=90&interval=daily').then(j=>{out.eth=j.prices.map(p=>p[1]);}),
         jget('https://api.coingecko.com/api/v3/coins/solana/market_chart?vs_currency=usd&days=90&interval=daily').then(j=>{out.sol=j.prices.map(p=>p[1]);}),
       ].map(p=>p.catch(()=>{})));
@@ -1209,6 +1210,14 @@ function QuantView({gFunding}){
     const corrE=(q.eth&&q.eth.length>10)?pearson(dret(cl),dret(q.eth)):null;
     const corrS=(q.sol&&q.sol.length>10)?pearson(dret(cl),dret(q.sol)):null;
     const corrVals=[corrE,corrS].filter(x=>x!=null), corrAvg=corrVals.length?qMean(corrVals):null;
+    // ── Barridos / trampas (mechas largas) + niveles swing reales ──
+    let trap=null,swingHi=null,swingLo=null;
+    if(q.ohlc&&q.ohlc.length>5){const oh=q.ohlc,rec=oh.slice(-3);
+      for(let idx=rec.length-1;idx>=0;idx--){const k=rec[idx],rng=k.h-k.l;if(rng<=0)continue;
+        const up=(k.h-Math.max(k.o,k.c))/rng,dn=(Math.min(k.o,k.c)-k.l)/rng;
+        if(up>0.55){trap={t:'Mecha superior larga',sig:-1,d:'rechazo arriba: posible trampa de compra / barrido',ago:rec.length-1-idx};break;}
+        if(dn>0.55){trap={t:'Mecha inferior larga',sig:1,d:'barrido de stops abajo: posible trampa de venta',ago:rec.length-1-idx};break;}}
+      const l60=oh.slice(-60); swingHi=Math.max(...l60.map(k=>k.h)); swingLo=Math.min(...l60.map(k=>k.l));}
     // ── Vencimiento de opciones (Deribit) ──
     let optExp=null;
     if(q.opts&&q.opts.length){const MON={JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11},exp={};
@@ -1222,7 +1231,7 @@ function QuantView({gFunding}){
         optExp={date:big,oi:exp[big].oi,maxPain:mp,days:Math.ceil((big-Date.now())/864e5)};}}
     return {price,annVol,rsi,ma200,ma50,ma200w,mc,probUp,probUp15,probDn15,var99,cvar99,
       fair,lo,hi,valPct,realized,models,plSup,plRes,H,regime,fund,gf,opt,levels,cyc,patterns,corrE,corrS,corrAvg,optExp,
-      route,tomorrow,tomPct,sig10,pdrift};
+      route,tomorrow,tomPct,sig10,pdrift,trap,swingHi,swingLo};
   },[q,gFunding]);
 
   const D=86400000, now=Date.now();
@@ -1363,6 +1372,16 @@ function QuantView({gFunding}){
           <span style={eyebrow}>Patrones detectados · auto</span>
           <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>tendencia · breakouts</span>
         </div>
+        {c.trap&&(
+          <div style={{...flx({gap:8}),marginBottom:10,padding:'9px 11px',borderRadius:9,
+            background:'rgba(243,186,47,.08)',border:'1px solid rgba(243,186,47,.28)'}}>
+            <span style={{fontSize:15}}>🪤</span>
+            <div style={{flex:1}}>
+              <div style={{fontSize:12,fontWeight:700,color:'#F3BA2F'}}>{c.trap.t}{c.trap.ago>0?` (hace ${c.trap.ago}d)`:' (hoy)'}</div>
+              <div style={{fontSize:9.5,color:'var(--faint)'}}>{c.trap.d}</div>
+            </div>
+          </div>
+        )}
         {c.patterns.length?c.patterns.map((pt,i)=>(
           <div key={i} style={{...flx({gap:9}),padding:'9px 0',borderTop:i?'1px solid #12151F':'none'}}>
             <span style={{fontSize:15,color:pt.sig>0?'var(--up)':'var(--down)'}}>{pt.sig>0?'▲':'▼'}</span>
@@ -1549,7 +1568,18 @@ function QuantView({gFunding}){
             </div>
           );
         })}
-        <div style={{textAlign:'center',marginTop:8,fontSize:9.5,color:'var(--accent)',fontWeight:700}} className="mono">— precio actual {money(c.price)} —</div>
+        {(c.swingHi||c.swingLo)&&(
+          <div style={{marginTop:10,paddingTop:10,borderTop:'1px solid var(--line2)'}}>
+            <div style={{fontSize:8.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:1,fontWeight:600,marginBottom:6}}>Liquidez real · máx/mín 60d</div>
+            <div style={{...flx({justifyContent:'space-between'}),fontSize:11}} className="mono">
+              <span style={{color:'var(--down)'}}>▲ {money(c.swingHi)} <span style={{color:'var(--faint)'}}>resist./stops cortos</span></span>
+            </div>
+            <div style={{...flx({justifyContent:'space-between'}),fontSize:11,marginTop:4}} className="mono">
+              <span style={{color:'var(--up)'}}>▼ {money(c.swingLo)} <span style={{color:'var(--faint)'}}>soporte/stops largos</span></span>
+            </div>
+          </div>
+        )}
+        <div style={{textAlign:'center',marginTop:10,fontSize:9.5,color:'var(--accent)',fontWeight:700}} className="mono">— precio actual {money(c.price)} —</div>
       </div>
 
       {/* CALENDARIO ECONÓMICO */}
