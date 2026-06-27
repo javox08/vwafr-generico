@@ -1383,71 +1383,60 @@ function cycleModel(athLive){
   const cn=Math.min(Math.max(hi+1,4),11), athC=ath[cn], sueloC=athC*(1-(caida[cn]||dd3)/100);
   return {cycleNum:cn,weeks,prog,phase,athC,sueloC};
 }
-// Patrones gráficos clásicos (estilo Binance) por pivotes de swing. Cada figura
-// trae su objetivo por proyección (measured move) y su estadística histórica
-// (fiabilidad y movimiento medio típicos del patrón). Alimentan el Monte Carlo.
-const CP_STATS={
-  'Doble techo':[72,-18],'Doble suelo':[78,40],
-  'Hombro-cabeza-hombro':[81,-21],'HCH invertido':[83,38],
-  'Triángulo ascendente':[70,34],'Triángulo descendente':[66,-16],
-  'Triángulo simétrico':[62,25],'Cuña ascendente':[64,-17],'Cuña descendente':[68,30],
-  'Canal alcista':[66,16],'Canal bajista':[63,-14],'Canal lateral':[55,11],
-  'Triple techo':[79,-20],'Triple suelo':[83,38],'Suelo redondeado':[74,30],'Techo redondeado':[70,-18],
-};
-function cpSlope(pts){const n=pts.length;if(n<2)return 0;
-  const mx=pts.reduce((s,p)=>s+p[0],0)/n,my=pts.reduce((s,p)=>s+p[1],0)/n;
-  let num=0,den=0;for(const p of pts){num+=(p[0]-mx)*(p[1]-my);den+=(p[0]-mx)**2;}
-  return den?(num/den)/(my||1):0;}
+// Patrones gráficos (figuras) detectados por pivotes de swing y BACKTESTEADOS sobre
+// el histórico real de BTC: cada figura se busca en TODO el histórico (su día de
+// ruptura) y se mide su retorno real a 1…60 días → % acierto, retorno medio y el
+// perfil que alimenta el Monte Carlo. La dirección sale de la estadística real.
 function chartPatterns(cl){
-  const n=cl.length;if(n<60)return [];
-  const W=4,s0=Math.max(W,n-150),ph=[],pl=[];
-  for(let i=s0;i<n-W;i++){let isH=true,isL=true;
-    for(let k=i-W;k<=i+W;k++){if(cl[k]>cl[i])isH=false;if(cl[k]<cl[i])isL=false;}
-    if(isH)ph.push(i);if(isL)pl.push(i);}
-  const price=cl[n-1],out=[],near=(a,b,t)=>Math.abs(a-b)/((a+b)/2)<t;
-  const add=(t,sig,d,target,avg)=>{const st=CP_STATS[t]||[null,null];
-    out.push({t,sig,d,target,win:st[0],avg:avg!=null?avg:st[1]});};
-  // Doble techo / doble suelo (dos pivotes del mismo tipo al mismo nivel)
-  if(ph.length>=2){const a=ph[ph.length-2],b=ph[ph.length-1];
-    if(near(cl[a],cl[b],0.045)){let v=Infinity;for(let k=a;k<=b;k++)v=Math.min(v,cl[k]);
-      const top=(cl[a]+cl[b])/2;if((top-v)/v>0.04&&price<top)add('Doble techo',-1,'dos máximos al mismo nivel: techo',v-(top-v));}}
-  if(pl.length>=2){const a=pl[pl.length-2],b=pl[pl.length-1];
-    if(near(cl[a],cl[b],0.045)){let v=-Infinity;for(let k=a;k<=b;k++)v=Math.max(v,cl[k]);
-      const bot=(cl[a]+cl[b])/2;if((v-bot)/bot>0.04&&price>bot)add('Doble suelo',1,'dos mínimos al mismo nivel: suelo',v+(v-bot));}}
-  // Hombro-cabeza-hombro y su inverso (3 pivotes, central el extremo)
-  if(ph.length>=3){const x=ph.slice(-3),l=cl[x[0]],h=cl[x[1]],r=cl[x[2]];
-    if(h>l*1.02&&h>r*1.02&&near(l,r,0.05)){const mids=pl.filter(p=>p>x[0]&&p<x[2]).map(p=>cl[p]);
-      const neck=mids.length?Math.min(...mids):Math.min(l,r);add('Hombro-cabeza-hombro',-1,'techo de reversión (3 picos)',neck-(h-neck));}}
-  if(pl.length>=3){const x=pl.slice(-3),l=cl[x[0]],h=cl[x[1]],r=cl[x[2]];
-    if(h<l*0.98&&h<r*0.98&&near(l,r,0.05)){const mids=ph.filter(p=>p>x[0]&&p<x[2]).map(p=>cl[p]);
-      const neck=mids.length?Math.max(...mids):Math.max(l,r);add('HCH invertido',1,'suelo de reversión (3 valles)',neck+(neck-h));}}
-  // Triángulos y cuñas por pendiente de las líneas de máximos y mínimos
-  if(ph.length>=2&&pl.length>=2){
-    const sh=cpSlope(ph.slice(-3).map(i=>[i,cl[i]])),sl=cpSlope(pl.slice(-3).map(i=>[i,cl[i]]));
-    const fl=0.0006,up=x=>x>fl,dn=x=>x<-fl,flat=x=>Math.abs(x)<=fl;
-    const tr=cl[n-1]>=cl[Math.max(0,n-20)]?1:-1;
-    const para=Math.abs(sh-sl)<0.0005; // máximos y mínimos en paralelo = canal
-    if(para&&up(sh))add('Canal alcista',1,'máximos y mínimos en paralelo al alza',price*1.12);
-    else if(para&&dn(sh))add('Canal bajista',-1,'máximos y mínimos en paralelo a la baja',price*0.9);
-    else if(para&&flat(sh))add('Canal lateral',tr,'rango horizontal (rompe en la tendencia previa)',price*(1+tr*0.1),tr*11);
-    else if(flat(sh)&&up(sl))add('Triángulo ascendente',1,'máximos planos + mínimos al alza',price*1.18);
-    else if(dn(sh)&&flat(sl))add('Triángulo descendente',-1,'máximos a la baja + mínimos planos',price*0.84);
-    else if(dn(sh)&&up(sl))add('Triángulo simétrico',tr,'rangos que convergen (continúa la tendencia)',price*(1+tr*0.18),tr*25);
-    else if(up(sh)&&up(sl)&&sl>sh)add('Cuña ascendente',-1,'subida perdiendo fuerza (giro)',price*0.83);
-    else if(dn(sh)&&dn(sl)&&sl>sh)add('Cuña descendente',1,'caída perdiendo fuerza (giro)',price*1.17);
+  const n=cl.length; if(n<150)return [];
+  const W=4,HM=60,H10=10,R=6;
+  const PH=[],PL=[];
+  for(let i=W;i<n-W;i++){let h=true,l=true;for(let k=i-W;k<=i+W;k++){if(cl[k]>cl[i])h=false;if(cl[k]<cl[i])l=false;}if(h)PH.push(i);if(l)PL.push(i);}
+  const recent=(arr,j,m)=>{const o=[];for(let z=arr.length-1;z>=0&&o.length<m;z--){if(arr[z]<=j-W)o.unshift(arr[z]);}return o;};
+  const near=(a,b,t)=>Math.abs(a-b)/((a+b)/2)<t;
+  const minR=(a,b)=>{let v=Infinity;for(let k=a;k<=b;k++)v=Math.min(v,cl[k]);return v;};
+  const maxR=(a,b)=>{let v=-Infinity;for(let k=a;k<=b;k++)v=Math.max(v,cl[k]);return v;};
+  const maxN=(j,w)=>{let v=-Infinity;for(let k=Math.max(0,j-w);k<j;k++)v=Math.max(v,cl[k]);return v;};
+  const minN=(j,w)=>{let v=Infinity;for(let k=Math.max(0,j-w);k<j;k++)v=Math.min(v,cl[k]);return v;};
+  const slope=pts=>{const m=pts.length;if(m<2)return 0;const mx=pts.reduce((s,p)=>s+p[0],0)/m,my=pts.reduce((s,p)=>s+p[1],0)/m;let nu=0,de=0;for(const p of pts){nu+=(p[0]-mx)*(p[1]-my);de+=(p[0]-mx)**2;}return de?(nu/de)/(my||1):0;};
+  // detectores de DISPARO (devuelven {target} el día de confirmación de la ruptura, o null)
+  const dTop=j=>{const h=recent(PH,j,2);if(h.length<2||!near(cl[h[0]],cl[h[1]],0.05))return null;const v=minR(h[0],h[1]),top=(cl[h[0]]+cl[h[1]])/2;if((top-v)/v<0.04)return null;return(cl[j]<v&&cl[j-1]>=v)?{target:v-(top-v)}:null;};
+  const dBot=j=>{const l=recent(PL,j,2);if(l.length<2||!near(cl[l[0]],cl[l[1]],0.05))return null;const v=maxR(l[0],l[1]),bot=(cl[l[0]]+cl[l[1]])/2;if((v-bot)/bot<0.04)return null;return(cl[j]>v&&cl[j-1]<=v)?{target:v+(v-bot)}:null;};
+  const tTop=j=>{const h=recent(PH,j,3);if(h.length<3||!near(cl[h[0]],cl[h[1]],0.045)||!near(cl[h[1]],cl[h[2]],0.045))return null;const v=minR(h[0],h[2]),top=(cl[h[0]]+cl[h[1]]+cl[h[2]])/3;if((top-v)/v<0.04)return null;return(cl[j]<v&&cl[j-1]>=v)?{target:v-(top-v)}:null;};
+  const tBot=j=>{const l=recent(PL,j,3);if(l.length<3||!near(cl[l[0]],cl[l[1]],0.045)||!near(cl[l[1]],cl[l[2]],0.045))return null;const v=maxR(l[0],l[2]),bot=(cl[l[0]]+cl[l[1]]+cl[l[2]])/3;if((v-bot)/bot<0.04)return null;return(cl[j]>v&&cl[j-1]<=v)?{target:v+(v-bot)}:null;};
+  const hch=j=>{const h=recent(PH,j,3);if(h.length<3)return null;const L=cl[h[0]],Hd=cl[h[1]],Rr=cl[h[2]];if(!(Hd>L*1.02&&Hd>Rr*1.02&&near(L,Rr,0.06)))return null;const neck=minR(h[0],h[2]);return(cl[j]<neck&&cl[j-1]>=neck)?{target:neck-(Hd-neck)}:null;};
+  const hchInv=j=>{const l=recent(PL,j,3);if(l.length<3)return null;const L=cl[l[0]],Hd=cl[l[1]],Rr=cl[l[2]];if(!(Hd<L*0.98&&Hd<Rr*0.98&&near(L,Rr,0.06)))return null;const neck=maxR(l[0],l[2]);return(cl[j]>neck&&cl[j-1]<=neck)?{target:neck+(neck-Hd)}:null;};
+  const triAsc=j=>{const h=recent(PH,j,3),l=recent(PL,j,3);if(h.length<2||l.length<3)return null;const sh=slope(h.map(x=>[x,cl[x]])),sl=slope(l.map(x=>[x,cl[x]]));if(!(Math.abs(sh)<0.0008&&sl>0.0008))return null;const d=maxN(j,20);return(cl[j]>d&&cl[j-1]<=d)?{target:cl[j]*1.12}:null;};
+  const triDesc=j=>{const h=recent(PH,j,3),l=recent(PL,j,3);if(h.length<3||l.length<2)return null;const sh=slope(h.map(x=>[x,cl[x]])),sl=slope(l.map(x=>[x,cl[x]]));if(!(sh<-0.0008&&Math.abs(sl)<0.0008))return null;const d=minN(j,20);return(cl[j]<d&&cl[j-1]>=d)?{target:cl[j]*0.9}:null;};
+  const rangeUp=j=>{const d=maxN(j,25);return(cl[j]>d&&cl[j-1]<=d&&(maxN(j,25)-minN(j,25))/cl[j]<0.18)?{target:cl[j]*1.1}:null;};
+  const rangeDn=j=>{const d=minN(j,25);return(cl[j]<d&&cl[j-1]>=d&&(maxN(j,25)-minN(j,25))/cl[j]<0.18)?{target:cl[j]*0.92}:null;};
+  let muD=0;for(let j=1;j<n;j++)muD+=(cl[j]-cl[j-1])/cl[j-1];muD/=(n-1);
+  const start=Math.max(60,Math.floor(n*0.25));
+  const bt=(fn,sgn)=>{let k=0,win=0;const acc=new Array(HM+1).fill(0),cnt=new Array(HM+1).fill(0);
+    for(let j=start;j<n-1;j++){if(fn(j)){k++;for(let h=1;h<=HM&&j+h<n;h++){acc[h]+=(cl[j+h]-cl[j])/cl[j];cnt[h]++;}if(j+H10<n&&((cl[j+H10]-cl[j])/cl[j])*sgn>0)win++;}}
+    if(k<3)return null;
+    const path=[0];let prev=0;for(let h=1;h<=HM;h++){prev=cnt[h]?acc[h]/cnt[h]:prev;path[h]=prev;}
+    const shr=k/(k+6),pathX=path.map((v,h)=>(v-muD*h)*shr);
+    return {n:k,win:Math.round(win/k*100),avg:+(path[Math.min(20,HM)]*100).toFixed(1),path,pathX};};
+  const figs=[
+    ['Doble techo',-1,'dos máximos al mismo nivel: ruptura del cuello',dTop],
+    ['Doble suelo',1,'dos mínimos al mismo nivel: ruptura del cuello',dBot],
+    ['Triple techo',-1,'tres máximos al mismo nivel: ruptura',tTop],
+    ['Triple suelo',1,'tres mínimos al mismo nivel: ruptura',tBot],
+    ['Hombro-cabeza-hombro',-1,'techo de reversión (3 picos): pierde el cuello',hch],
+    ['HCH invertido',1,'suelo de reversión (3 valles): rompe el cuello',hchInv],
+    ['Triángulo ascendente',1,'máximos planos + mínimos al alza · ruptura ↑',triAsc],
+    ['Triángulo descendente',-1,'máximos a la baja + mínimos planos · ruptura ↓',triDesc],
+    ['Ruptura de rango ↑',1,'sale del rango lateral por arriba',rangeUp],
+    ['Ruptura de rango ↓',-1,'sale del rango lateral por abajo',rangeDn],
+  ];
+  const out=[];
+  for(const [t,sig,d,fn] of figs){
+    let trig=null;for(let j=n-1;j>=Math.max(start,n-R);j--){const r=fn(j);if(r){trig=r;break;}}
+    if(!trig)continue;
+    const st=bt(fn,sig);
+    out.push({t,sig,d,target:trig.target,st,win:st?st.win:null,avg:st?st.avg:null});
   }
-  // Triple techo / triple suelo (3 pivotes del mismo tipo al mismo nivel)
-  if(ph.length>=3){const x=ph.slice(-3);
-    if(near(cl[x[0]],cl[x[1]],0.04)&&near(cl[x[1]],cl[x[2]],0.04)){let v=Infinity;for(let k=x[0];k<=x[2];k++)v=Math.min(v,cl[k]);
-      const top=(cl[x[0]]+cl[x[1]]+cl[x[2]])/3;if((top-v)/v>0.04&&price<top)add('Triple techo',-1,'tres máximos al mismo nivel: techo',v-(top-v));}}
-  if(pl.length>=3){const x=pl.slice(-3);
-    if(near(cl[x[0]],cl[x[1]],0.04)&&near(cl[x[1]],cl[x[2]],0.04)){let v=-Infinity;for(let k=x[0];k<=x[2];k++)v=Math.max(v,cl[k]);
-      const bot=(cl[x[0]]+cl[x[1]]+cl[x[2]])/3;if((v-bot)/bot>0.04&&price>bot)add('Triple suelo',1,'tres mínimos al mismo nivel: suelo',v+(v-bot));}}
-  // Suelo / techo redondeado (forma de U o de ∩ suave en el último tramo)
-  if(n>=50){const w=cl.slice(-40),mid=w[Math.floor(w.length/2)],ends=(w[0]+w[w.length-1])/2;
-    const depth=(ends-mid)/(ends||1);
-    if(depth>0.06&&cl[n-1]>=Math.max(...w.slice(-5)))add('Suelo redondeado',1,'base en forma de U: acumulación',price*1.2);
-    else if(depth<-0.06&&cl[n-1]<=Math.min(...w.slice(-5)))add('Techo redondeado',-1,'techo en forma de ∩: distribución',price*0.85);}
   return out;
 }
 // Patrones de VELAS japonesas (estilo "patrones" de Binance), backtesteados sobre
@@ -1671,8 +1660,7 @@ function QuantView({gFunding}){
     if(q.opts&&q.opts.length){let poi=0,coi=0;for(const o of q.opts){const m=o.instrument_name.match(/-([CP])$/);if(!m)continue;if(m[1]==='P')poi+=o.open_interest||0;else coi+=o.open_interest||0;}optPcr=coi>0?poi/coi:null;}
     const optB=Number.isFinite(optPcr)?cl0((0.85-optPcr)*0.0016,0.0008):null;
     const biases=[
-      {k:'Patrones técnicos',v:cl0(Math.log(1+sig10/100)/10,0.003),why:(sig10>=0?'+':'')+sig10.toFixed(1)+'% medio 10d · '+actSt.length+' señal(es)'},
-      {k:'Patrones gráficos',v:cl0((cpAvg/100)/20,0.003),why:chartPats.length?chartPats.map(p=>p.t).join(', '):'sin figura clara'},
+      {k:'Patrones (técnicos/velas/figuras)',v:cl0(Math.log(1+sig10/100)/10,0.003),why:actSt.length+' técnicos/velas + '+chartPats.filter(p=>p.st).length+' figuras (todos backtesteados)'},
       {k:'Ciclo (halving)',v:cyc.phase.bias*0.0009,why:cyc.phase.t+' · sesgo '+(cyc.phase.bias>=0?'+':'')+cyc.phase.bias},
       {k:'Régimen / tendencia',v:regime.trend?(tUp?0.0007:tDn?-0.0007:0):0,why:regime.t+' (Hurst '+H.toFixed(2)+')'},
       {k:'Funding',v:cl0(-gf*0.02,0.0012),why:(gf>=0?'+':'')+gf.toFixed(4)+'% · '+fund.t},
@@ -1692,12 +1680,9 @@ function QuantView({gFunding}){
     const macroB=(q.macro&&Number.isFinite(q.macro.score))?cl0(q.macro.score*0.0009,0.0009):null;
     if(macroB!=null&&macroB!==0)biases.push({k:'Ciclo económico EE.UU.',v:macroB,why:q.macro.phase.t+' · '+(q.macro.score>0?'risk-on (+)':'risk-off (−)')});
     // Perfil de retorno día a día (path histórico 1..30d) de TODO lo que afecta al
-    // precio: patrones técnicos, de velas y figuras gráficas (estas con su movimiento
-    // esperado repartido en ~20d). Se convierte en una deriva DISTINTA para cada día.
-    const geoPaths=chartPats.filter(p=>Number.isFinite(p.avg)).map(p=>{
-      const path=[0];for(let h=1;h<=30;h++)path[h]=(p.avg/100)*Math.min(h,20)/20;
-      return {st:{n:6,path}};});
-    const actPath=patterns.filter(p=>p.st&&p.st.path).concat(geoPaths);
+    // precio: patrones técnicos, de velas y figuras gráficas. AHORA las figuras
+    // también traen su perfil REAL backtesteado sobre BTC (1…60d), igual que el resto.
+    const actPath=patterns.filter(p=>p.st&&p.st.path).concat(chartPats.filter(p=>p.st&&p.st.path));
     let cumPath=null;
     if(actPath.length){cumPath=new Array(31).fill(0);let wsum=0;
       for(const p of actPath){const w=Math.min(p.st.n,40),pa=p.st.pathX||p.st.path;wsum+=w;for(let h=1;h<=30;h++)cumPath[h]+=pa[h]*w;}
@@ -1988,7 +1973,7 @@ function QuantView({gFunding}){
             </div>
           </div>
         )):<div style={{fontSize:11,color:'var(--faint)',textAlign:'center',padding:'8px 0'}}>Sin figuras gráficas claras ahora mismo.</div>}
-        <p style={{fontSize:9,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Figuras detectadas por pivotes de swing (doble techo/suelo, hombro-cabeza-hombro, triángulos, cuñas). <b>Objetivo</b> = proyección por amplitud de la figura · <b>%</b> = fiabilidad histórica típica del patrón. Sesgan el Monte Carlo.</p>
+        <p style={{fontSize:9,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Figuras detectadas por pivotes de swing (dobles/triples techos y suelos, hombro-cabeza-hombro, triángulos, rupturas de rango). <b>Backtesteadas sobre BTC real</b>: cada figura se busca en todo el histórico y se mide su retorno real a 1…60 días. <b>Objetivo</b> = proyección por amplitud · <b>%</b> = acierto histórico medido. Alimentan el cono.</p>
       </div>
 
       {/* MONTE CARLO · cono de probabilidad (grado institucional) */}
