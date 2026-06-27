@@ -1058,18 +1058,24 @@ function monteCarlo(rets,price,days,paths,drift,mags){
   // la volatilidad agrupada, las tendencias y las colas históricas. El arranque del
   // bloque favorece la historia reciente (régimen actual): se adapta a lo histórico.
   const n=rets.length, HL=Math.max(45,Math.min(150,n/3)); // vida media de recencia (días)
+  // DESMEDIA: a los retornos históricos se les quita su deriva media para que la
+  // ÚNICA deriva venga de las señales explicadas (evita contar el drift dos veces y
+  // hace que la "ruta" coincida con la suma de sesgos). Se conserva la volatilidad,
+  // los bloques y las colas; solo se neutraliza el sesgo direccional del muestreo.
+  const mu=rets.reduce((s,x)=>s+x,0)/(n||1);
   const pickStart=()=>{let s=n-1-Math.floor(-Math.log(Math.random()+1e-9)*HL);
     if(s<0)s=(Math.random()*n)|0; return Math.min(n-1,Math.max(0,s));};
-  const slices=Array.from({length:days+1},()=>[]),finals=[],finals10=[];
-  for(let p=0;p<paths;p++){let v=price,bi=n,bl=0;slices[0].push(v);
+  const slices=Array.from({length:days+1},()=>[]),finals=[],finals10=[],maxes=[],mins=[];
+  for(let p=0;p<paths;p++){let v=price,bi=n,bl=0,mx=price,mn=price;slices[0].push(v);
     for(let d=1;d<=days;d++){
       if(bl<=0||bi>=n){bi=pickStart();bl=1+Math.floor(-Math.log(Math.random()+1e-9)*4);} // bloque medio ~5d
-      const r=rets[bi];bi++;bl--;
+      const r=rets[bi]-mu;bi++;bl--; // demediado
       const dr=darr?(drift[d-1]||0):dc;
-      v*=Math.exp(r+dr+(M?pull(v):0));slices[d].push(v);if(d===10)finals10.push(v);}
-    finals.push(v);}
+      v*=Math.exp(r+dr+(M?pull(v):0));slices[d].push(v);
+      if(v>mx)mx=v;if(v<mn)mn=v;if(d===10)finals10.push(v);}
+    finals.push(v);maxes.push(mx);mins.push(mn);}
   const bands=slices.map(sl=>({p5:qPct(sl,5),p25:qPct(sl,25),p50:qPct(sl,50),p75:qPct(sl,75),p95:qPct(sl,95)}));
-  return {bands,finals,finals10};
+  return {bands,finals,finals10,maxes,mins};
 }
 // Rutas Monte Carlo persistentes: se FIJAN el día que nacen (snapshot de las
 // bandas) y luego cada día se ve cómo avanza el precio real sobre esa ruta.
@@ -1161,17 +1167,19 @@ function analyzePatterns(cl){
   const std=(j,p)=>{const mm=sma(j,p);let s=0;for(let m=j-p;m<j;m++)s+=(cl[m]-mm)*(cl[m]-mm);return Math.sqrt(s/p);};
   const maxN=(j,w)=>Math.max(...cl.slice(j-w,j)),minN=(j,w)=>Math.min(...cl.slice(j-w,j));
   const start=Math.min(205,Math.floor(n*0.55));
+  let muD=0;for(let j=1;j<n;j++)muD+=(cl[j]-cl[j-1])/cl[j-1];muD/=(n-1); // retorno diario medio (base)
   // backtest: por cada vez que la señal se dio en el histórico, recoge el retorno
-  // a los días 1,2,3,…,30. Devuelve % acierto (10d), retorno medio 10d y el PERFIL
-  // de retorno medio acumulado a cada horizonte (path[1..30]) → alimenta el Monte Carlo.
+  // a los días 1,2,3,…,30. Devuelve % acierto (10d), retorno medio 10d, el PERFIL
+  // acumulado (path) y su EXCESO sobre el mercado (pathX) → alimenta el Monte Carlo.
   const bt=fn=>{let k=0,win=0,sum=0;const acc=new Array(HM+1).fill(0),cnt=new Array(HM+1).fill(0);
     for(let j=start;j<n-1;j++){if(fn(j)){k++;
       for(let h=1;h<=HM&&j+h<n;h++){acc[h]+=(cl[j+h]-cl[j])/cl[j];cnt[h]++;}
       if(j+H<n){const r=(cl[j+H]-cl[j])/cl[j];sum+=r;if(r>0)win++;}}}
     if(k<4)return null;
     const path=[0];let prev=0;for(let h=1;h<=HM;h++){prev=cnt[h]?acc[h]/cnt[h]:prev;path[h]=prev;}
+    const pathX=path.map((v,h)=>v-muD*h); // exceso sobre el rendimiento base del mercado
     const wn=cnt[H]||k;
-    return {n:k,win:Math.round(win/wn*100),avg:+(path[H]*100).toFixed(1),path};};
+    return {n:k,win:Math.round(win/wn*100),avg:+(path[H]*100).toFixed(1),path,pathX};};
   const has=n>206;
   const defs=[
     [has&&sma(i,50)>sma(i,200)&&sma(i-1,50)<=sma(i-1,200),1,'Golden Cross','MA50 cruza arriba la MA200',j=>sma(j,50)>sma(j,200)&&sma(j-1,50)<=sma(j-1,200)],
@@ -1287,13 +1295,15 @@ function candlePatterns(oh){
   const bull=j=>cl[j]>op[j],bear=j=>cl[j]<op[j];
   const aBody=(j,w=14)=>{let s=0,c=0;for(let m=Math.max(1,j-w);m<j;m++){s+=Math.abs(cl[m]-op[m]);c++;}return c?s/c:0;};
   const start=Math.min(205,Math.floor(n*0.55));
+  let muD=0;for(let j=1;j<n;j++)muD+=(cl[j]-cl[j-1])/cl[j-1];muD/=(n-1);
   const bt=fn=>{let k=0,win=0,sum=0;const acc=new Array(HM+1).fill(0),cnt=new Array(HM+1).fill(0);
     for(let j=start;j<n-1;j++){if(fn(j)){k++;
       for(let h=1;h<=HM&&j+h<n;h++){acc[h]+=(cl[j+h]-cl[j])/cl[j];cnt[h]++;}
       if(j+H<n){const r=(cl[j+H]-cl[j])/cl[j];sum+=r;if(r>0)win++;}}}
     if(k<4)return null;
     const path=[0];let prev=0;for(let h=1;h<=HM;h++){prev=cnt[h]?acc[h]/cnt[h]:prev;path[h]=prev;}
-    return {n:k,win:Math.round(win/(cnt[H]||k)*100),avg:+(path[H]*100).toFixed(1),path};};
+    const pathX=path.map((v,h)=>v-muD*h);
+    return {n:k,win:Math.round(win/(cnt[H]||k)*100),avg:+(path[H]*100).toFixed(1),path,pathX};};
   const i=n-1,defs=[
     [rng(i)>0&&dnW(i)>2*body(i)&&upW(i)<body(i)&&cl[i-1]<cl[i-3],1,'Martillo','mecha inferior larga tras caída (giro alcista)',j=>rng(j)>0&&dnW(j)>2*body(j)&&upW(j)<body(j)&&cl[j-1]<cl[j-3]],
     [rng(i)>0&&upW(i)>2*body(i)&&dnW(i)<body(i)&&cl[i-1]>cl[i-3],-1,'Estrella fugaz','mecha superior larga tras subida (giro bajista)',j=>rng(j)>0&&upW(j)>2*body(j)&&dnW(j)<body(j)&&cl[j-1]>cl[j-3]],
@@ -1458,7 +1468,7 @@ function QuantView({gFunding}){
     const actPath=patterns.filter(p=>p.st&&p.st.path).concat(geoPaths);
     let cumPath=null;
     if(actPath.length){cumPath=new Array(31).fill(0);let wsum=0;
-      for(const p of actPath){const w=Math.min(p.st.n,40);wsum+=w;for(let h=1;h<=30;h++)cumPath[h]+=p.st.path[h]*w;}
+      for(const p of actPath){const w=Math.min(p.st.n,40),pa=p.st.pathX||p.st.path;wsum+=w;for(let h=1;h<=30;h++)cumPath[h]+=pa[h]*w;}
       for(let h=1;h<=30;h++)cumPath[h]/=(wsum||1);}
     const patDrift=new Array(31).fill(0); // deriva diaria marginal que aportan los patrones
     if(cumPath){let prev=0;for(let h=1;h<=30;h++){const cur=Math.log(1+Math.max(-0.6,cumPath[h]));patDrift[h]=cl0((cur-prev)*0.6,0.006);prev=cur;}}
@@ -1498,9 +1508,12 @@ function QuantView({gFunding}){
       let mp=null,minp=Infinity;const ks=Object.keys(sk).map(Number).sort((a,b)=>a-b);
       for(const S of ks){let pay=0;for(const K of ks){const o=sk[K];pay+=o.c*Math.max(0,S-K)+o.p*Math.max(0,K-S);}if(pay<minp){minp=pay;mp=S;}}
       opt={pcr:coi>0?poi/coi:null,oi:poi+coi,maxPain:mp};}
-    // ── Tabla de probabilidad de objetivos (Monte Carlo 30d) ──
+    // ── Probabilidad de TOCAR cada objetivo (first-passage: máximo/mínimo de cada
+    // camino, no solo el valor final). Es la probabilidad real de que el precio
+    // llegue a tocar el nivel en algún momento de los 30 días. ──
     const levels=[1.30,1.15,0.85,0.70].map(mul=>{const lv=price*mul,up=mul>=1;
-      return {lv,pct:(mul-1)*100,p:(up?fin.filter(v=>v>=lv).length:fin.filter(v=>v<=lv).length)/fin.length*100,up};});
+      const hit=up?mc.maxes.filter(v=>v>=lv).length:mc.mins.filter(v=>v<=lv).length;
+      return {lv,pct:(mul-1)*100,p:hit/(mc.maxes.length||1)*100,up};});
     // ── Correlaciones (riesgo sistémico) ──
     const corrE=(q.eth&&q.eth.length>10)?pearson(dret(cl),dret(q.eth)):null;
     const corrS=(q.sol&&q.sol.length>10)?pearson(dret(cl),dret(q.sol)):null;
@@ -1724,7 +1737,7 @@ function QuantView({gFunding}){
           <span style={eyebrow}>Monte Carlo · ruta probable 30d</span>
           <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>700 simulaciones</span>
         </div>
-        <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:10}}>bootstrap por bloques (replica la historia: volatilidad, tendencias y colas, con más peso lo reciente) · <span style={{color:c.drift>0?'var(--up)':c.drift<0?'var(--down)':'var(--faint)'}}>sesgo total {c.drift>=0?'+':''}{(Math.expm1(c.drift)*100).toFixed(2)}%/día</span> · 🧲 imán de liquidez · toca para ver día y precio</div>
+        <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:10}}>bootstrap por bloques sin deriva (replica la volatilidad y las colas históricas; la dirección la ponen SOLO las señales) · <span style={{color:c.drift>0?'var(--up)':c.drift<0?'var(--down)':'var(--faint)'}}>sesgo total {c.drift>=0?'+':''}{(Math.expm1(c.drift)*100).toFixed(2)}%/día</span> · 🧲 imán de liquidez · toca para ver día y precio</div>
         <TVChart series={b.map(x=>x.p50)} H={FH}
           bands={[{hi:b.map(x=>x.p95),lo:b.map(x=>x.p5),fill:'rgba(110,139,255,.12)'},{hi:b.map(x=>x.p75),lo:b.map(x=>x.p25),fill:'rgba(110,139,255,.22)'}]}
           fmt={money} label={i=>i===0?'hoy':'día '+i}/>
@@ -1782,7 +1795,7 @@ function QuantView({gFunding}){
             <span className="mono" style={{fontSize:11.5,fontWeight:700,width:38,textAlign:'right',color:L.up?'var(--up)':'var(--down)'}}>{L.p.toFixed(0)}%</span>
           </div>
         ))}
-        <p style={{fontSize:9.5,color:'var(--faint)',marginTop:9}}>Prob. de que BTC toque cada nivel en los próximos 30 días.</p>
+        <p style={{fontSize:9.5,color:'var(--faint)',marginTop:9}}>Prob. de TOCAR cada nivel en algún momento de los 30 días (máx./mín. de cada simulación, no solo el cierre).</p>
       </div>
 
       {/* OPCIONES (Deribit) */}
