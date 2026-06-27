@@ -1998,7 +1998,7 @@ function pibPhase(s){
 function PIBView(){
   const [raw,setRaw]=useState(null);
   const [err,setErr]=useState(false);
-  const [sel,setSel]=useState('ESP');
+  const [sel,setSel]=useState('USA');
   useEffect(()=>{let a=true;
     const base=`https://api.worldbank.org/v2/country/${PIB_LIST}/indicator/`;
     Promise.all([
