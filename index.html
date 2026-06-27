@@ -1044,10 +1044,11 @@ const qMean=a=>a.length?a.reduce((s,x)=>s+x,0)/a.length:0;
 const qStd=a=>{const m=qMean(a);return Math.sqrt(qMean(a.map(x=>(x-m)*(x-m))));};
 const qPct=(a,p)=>{const s=[...a].sort((x,y)=>x-y);return s[Math.min(s.length-1,Math.max(0,Math.round(p/100*(s.length-1))))];};
 function qRSI(c,n){const k=c.length;if(k<n+1)return 50;let g=0,l=0;for(let i=k-n;i<k;i++){const ch=c[i]-c[i-1];if(ch>=0)g+=ch;else l-=ch;}const rs=l===0?100:g/l;return 100-100/(1+rs);}
-function monteCarlo(rets,price,days,paths,drift,mags){
+function monteCarlo(rets,price,days,paths,drift,mags,volScale){
   // drift puede ser un número (sesgo diario constante) o un ARRAY con un sesgo
   // distinto para cada día 1..N (perfil que sigue la trayectoria de los patrones)
   const darr=Array.isArray(drift), dc=darr?0:(drift||0);
+  const vs=(Number.isFinite(volScale)&&volScale>0)?volScale:1; // reescala la vol al régimen/implícita
   // mags: zonas del mapa de liquidez que actúan como IMÁN (el precio tiende a ir
   // hacia los clústeres de liquidaciones). Cada una: {p:nivel, w:fuerza}.
   const M=(mags&&mags.length)?mags:null, S2=2*0.06*0.06; // núcleo gaussiano σ≈6%
@@ -1069,7 +1070,7 @@ function monteCarlo(rets,price,days,paths,drift,mags){
   for(let p=0;p<paths;p++){let v=price,bi=n,bl=0,mx=price,mn=price;slices[0].push(v);
     for(let d=1;d<=days;d++){
       if(bl<=0||bi>=n){bi=pickStart();bl=1+Math.floor(-Math.log(Math.random()+1e-9)*4);} // bloque medio ~5d
-      const r=rets[bi]-mu;bi++;bl--; // demediado
+      const r=(rets[bi]-mu)*vs;bi++;bl--; // demediado y reescalado a la vol objetivo
       const dr=darr?(drift[d-1]||0):dc;
       v*=Math.exp(r+dr+(M?pull(v):0));slices[d].push(v);
       if(v>mx)mx=v;if(v<mn)mn=v;if(d===10)finals10.push(v);}
@@ -1134,6 +1135,26 @@ function shutdownState(){
   let nextDl=null;for(const [a,b,lab] of US_SHUTDOWN){if(!b){const ia=Date.parse(a+'T00:00:00Z');if(ia>now&&(!nextDl||ia<nextDl.ts))nextDl={ts:ia,label:lab,daysTo:Math.ceil((ia-now)/D)};}}
   return {active:false,deadline:false,bias:0,next:nextDl};
 }
+// Auto-backtest de CALIBRACIÓN: igual que el Monte Carlo, usa la distribución
+// EMPÍRICA reciente de los retornos a H días (percentiles, con colas reales) para
+// formar las bandas 50% y 90%, y comprueba walk-forward qué % de las veces el
+// retorno real cayó dentro. Bien calibrado ≈ 50% y 90%.
+function calibrate(cl,H){
+  const n=cl.length; if(n<170)return null;
+  const Hret=[];for(let i=0;i+H<n;i++)Hret.push(Math.log(cl[i+H]/cl[i]));
+  const W=120; let in50=0,in90=0,tot=0;
+  for(let t=W;t<Hret.length;t++){
+    const w=Hret.slice(t-W,t), m=w.reduce((s,x)=>s+x,0)/W;
+    const dem=w.map(x=>x-m).sort((a,b)=>a-b);
+    const qp=p=>dem[Math.min(dem.length-1,Math.floor(p/100*dem.length))];
+    const a=Hret[t]-m; // retorno real centrado (la deriva la ponen las señales, no esto)
+    if(a>=qp(25)&&a<=qp(75))in50++;
+    if(a>=qp(5)&&a<=qp(95))in90++;
+    tot++;
+  }
+  if(!tot)return null;
+  return {cov50:in50/tot*100,cov90:in90/tot*100,n:tot,H};
+}
 // Exponente de Hurst (R/S): >0.5 tendencial, <0.5 media-reversivo, ~0.5 aleatorio
 function hurst(s){
   const lags=[8,16,32,64],pts=[];
@@ -1177,7 +1198,9 @@ function analyzePatterns(cl){
       if(j+H<n){const r=(cl[j+H]-cl[j])/cl[j];sum+=r;if(r>0)win++;}}}
     if(k<4)return null;
     const path=[0];let prev=0;for(let h=1;h<=HM;h++){prev=cnt[h]?acc[h]/cnt[h]:prev;path[h]=prev;}
-    const pathX=path.map((v,h)=>v-muD*h); // exceso sobre el rendimiento base del mercado
+    // exceso sobre el mercado, ENCOGIDO por tamaño de muestra (anti-sobreajuste):
+    // con pocas ocurrencias el aporte al Monte Carlo se acerca a cero.
+    const shr=k/(k+8), pathX=path.map((v,h)=>(v-muD*h)*shr);
     const wn=cnt[H]||k;
     return {n:k,win:Math.round(win/wn*100),avg:+(path[H]*100).toFixed(1),path,pathX};};
   const has=n>206;
@@ -1302,7 +1325,7 @@ function candlePatterns(oh){
       if(j+H<n){const r=(cl[j+H]-cl[j])/cl[j];sum+=r;if(r>0)win++;}}}
     if(k<4)return null;
     const path=[0];let prev=0;for(let h=1;h<=HM;h++){prev=cnt[h]?acc[h]/cnt[h]:prev;path[h]=prev;}
-    const pathX=path.map((v,h)=>v-muD*h);
+    const shr=k/(k+8), pathX=path.map((v,h)=>(v-muD*h)*shr); // exceso encogido por muestra
     return {n:k,win:Math.round(win/(cnt[H]||k)*100),avg:+(path[H]*100).toFixed(1),path,pathX};};
   const i=n-1,defs=[
     [rng(i)>0&&dnW(i)>2*body(i)&&upW(i)<body(i)&&cl[i-1]<cl[i-3],1,'Martillo','mecha inferior larga tras caída (giro alcista)',j=>rng(j)>0&&dnW(j)>2*body(j)&&upW(j)<body(j)&&cl[j-1]<cl[j-3]],
@@ -1389,12 +1412,20 @@ function QuantView({gFunding}){
         jget('https://api.alternative.me/fng/?limit=1').then(j=>{out.fng=parseInt(j.data[0].value);out.fngTxt=j.data[0].value_classification;}),
         jget('https://www.deribit.com/api/v2/public/get_book_summary_by_currency?currency=BTC&kind=option').then(j=>{out.opts=j.result;}),
         jget('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1w&limit=300').then(k=>{out.weekly=k.map(x=>parseFloat(x[4]));}),
-        jget('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=365').then(k=>{out.ohlc=k.map(x=>({o:+x[1],h:+x[2],l:+x[3],c:+x[4]}));}),
+        // histórico largo (≈2.7 años) para backtests, Monte Carlo y volatilidad más fiables
+        jget('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=1000').then(k=>{out.ohlc=k.map(x=>({o:+x[1],h:+x[2],l:+x[3],c:+x[4]}));}),
         jget('https://api.coingecko.com/api/v3/coins/ethereum/market_chart?vs_currency=usd&days=90&interval=daily').then(j=>{out.eth=j.prices.map(p=>p[1]);}),
         jget('https://api.coingecko.com/api/v3/coins/solana/market_chart?vs_currency=usd&days=90&interval=daily').then(j=>{out.sol=j.prices.map(p=>p[1]);}),
+        // volatilidad IMPLÍCITA (índice DVOL de Deribit, anualizada %): expectativa del mercado
+        jget('https://www.deribit.com/api/v2/public/get_volatility_index_data?currency=BTC&start_timestamp='+(Date.now()-2*864e5)+'&end_timestamp='+Date.now()+'&resolution=3600').then(j=>{const dd=j.result&&j.result.data;if(dd&&dd.length)out.dvol=parseFloat(dd[dd.length-1][4]);}),
+        // libro de órdenes spot (presión compradora/vendedora a corto)
+        jget('https://api.binance.com/api/v3/depth?symbol=BTCUSDT&limit=500').then(j=>{
+          let B=0,A=0;for(const b of j.bids)B+=parseFloat(b[1]);for(const a of j.asks)A+=parseFloat(a[1]);
+          out.obImb=(B+A)>0?(B-A)/(B+A):null;}),
       ].map(p=>p.catch(()=>{})));
-      // fallback de precio si CoinGecko rate-limita: klines diarios de Binance
-      if(!out.closes){try{const k=await jget('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=365');out.closes=k.map(x=>parseFloat(x[4]));}catch(_){}}
+      // preferimos el histórico largo de Binance para closes; CoinGecko queda de respaldo
+      if(out.ohlc&&out.ohlc.length>=60){out.closes=out.ohlc.map(k=>k.c);}
+      if(!out.closes){try{const k=await jget('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=1000');out.closes=k.map(x=>parseFloat(x[4]));}catch(_){}}
       // reintento SECUENCIAL de métricas on-chain: bitcoin-data.com limita las
       // peticiones concurrentes, así que las que fallaron se repiten una a una.
       const ocRetry=[['mvrv','mvrv','mvrv'],['nupl','nupl','nupl'],['zscore','mvrv-zscore','mvrvZscore'],['puell','puell-multiple','puellMultiple'],['sopr','sopr','sopr']];
@@ -1412,6 +1443,13 @@ function QuantView({gFunding}){
     const annVol=qStd(rets)*Math.sqrt(365)*100, rsi=qRSI(cl,14);
     const ma=n=>qMean(cl.slice(-n)), ma200=ma(Math.min(200,cl.length)), ma50=ma(50);
     const ma200w=(q.weekly&&q.weekly.length>=10)?qMean(q.weekly.slice(-Math.min(200,q.weekly.length))):null;
+    // ── Volatilidad objetivo: mezcla la IMPLÍCITA (DVOL) con la realizada reciente
+    // (EWMA ~25d) y reescala el Monte Carlo a ese régimen (no a la media de todo el año).
+    const sigHist=qStd(rets), recentVol=rets.length>=25?qStd(rets.slice(-25)):sigHist;
+    const impDaily=Number.isFinite(q.dvol)?(q.dvol/100)/Math.sqrt(365):null;
+    const sigTarget=impDaily?(0.55*impDaily+0.45*recentVol):recentVol;
+    const volScale=Math.max(0.5,Math.min(2.4,sigTarget/(sigHist||sigTarget)));
+    const cal=calibrate(cl,10); // auto-backtest de calibración de la banda
     // ══ SEÑALES QUE SESGAN EL MONTE CARLO (se calculan ANTES de simular) ══
     // Patrones técnicos (indicadores) + de velas (estilo Binance); todos con
     // backtest del retorno a los días 1…30 sobre el histórico real.
@@ -1459,6 +1497,8 @@ function QuantView({gFunding}){
     if(fngB!=null&&fngB!==0)biases.push({k:'Sentimiento',v:fngB,why:'Fear & Greed '+q.fng+(q.fng>=80?' (codicia extrema)':' (miedo extremo)')});
     // Cierre de gobierno de EE.UU. (riesgo macro): activo o fecha límite próxima
     if(shutdown&&shutdown.bias)biases.push({k:'Cierre de gobierno EE.UU.',v:shutdown.bias,why:shutdown.why});
+    // Libro de órdenes spot (presión de muy corto plazo)
+    if(Number.isFinite(q.obImb))biases.push({k:'Libro de órdenes',v:cl0(q.obImb*0.0015,0.0009),why:(q.obImb>=0?'+':'')+(q.obImb*100).toFixed(0)+'% desequilibrio ('+(q.obImb>=0?'compradores':'vendedores')+')'});
     // Perfil de retorno día a día (path histórico 1..30d) de TODO lo que afecta al
     // precio: patrones técnicos, de velas y figuras gráficas (estas con su movimiento
     // esperado repartido en ~20d). Se convierte en una deriva DISTINTA para cada día.
@@ -1488,9 +1528,10 @@ function QuantView({gFunding}){
     if(q.ohlc&&q.ohlc.length>10){const l60=q.ohlc.slice(-60);
       mags.push({p:Math.max(...l60.map(k=>k.h)),w:0.8});
       mags.push({p:Math.min(...l60.map(k=>k.l)),w:0.8});}
-    // ── Monte Carlo (700 caminos · 30 días) sesgado por TODAS las señales día a día + imán de liquidez ──
+    // ── Monte Carlo (700 caminos · 30 días): bloques históricos sin deriva,
+    // reescalados a la volatilidad objetivo (implícita+reciente), con sesgos día a día e imán ──
     const pdrift=drift;
-    const mc=monteCarlo(rets,price,30,700,drift30,mags), fin=mc.finals;
+    const mc=monteCarlo(rets,price,30,700,drift30,mags,volScale), fin=mc.finals;
     const routes=loadRoutes(price,mc.bands); // 2 rutas persistentes (7d y 30d) con seguimiento diario
     const probUp=fin.filter(v=>v>price).length/fin.length*100;
     const probUp15=fin.filter(v=>v>price*1.15).length/fin.length*100;
@@ -1539,7 +1580,8 @@ function QuantView({gFunding}){
         optExp={date:big,oi:exp[big].oi,maxPain:mp,days:Math.ceil((big-Date.now())/864e5)};}}
     return {price,annVol,rsi,ma200,ma50,ma200w,mc,probUp,probUp15,probDn15,var99,cvar99,
       fair,lo,hi,valPct,realized,models,plSup,plRes,H,regime,fund,gf,opt,levels,cyc,patterns,corrE,corrS,corrAvg,optExp,
-      route,tomorrow,tomPct,sig10,pdrift,trap,swingHi,swingLo,routes,biases,chartPats,drift,drift30,shutdown};
+      route,tomorrow,tomPct,sig10,pdrift,trap,swingHi,swingLo,routes,biases,chartPats,drift,drift30,shutdown,
+      cal,volScale,sigTarget,dvol:q.dvol,obImb:q.obImb,impDaily};
   },[q,gFunding]);
 
   const D=86400000, now=Date.now();
@@ -1738,7 +1780,7 @@ function QuantView({gFunding}){
           <span style={eyebrow}>Monte Carlo · ruta probable 30d</span>
           <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>700 simulaciones</span>
         </div>
-        <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:10}}>bootstrap por bloques sin deriva (replica la volatilidad y las colas históricas; la dirección la ponen SOLO las señales) · <span style={{color:c.drift>0?'var(--up)':c.drift<0?'var(--down)':'var(--faint)'}}>sesgo total {c.drift>=0?'+':''}{(Math.expm1(c.drift)*100).toFixed(2)}%/día</span> · 🧲 imán de liquidez · toca para ver día y precio</div>
+        <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:10}}>bloques históricos sin deriva, reescalados a la <b>vol objetivo</b> {Number.isFinite(c.dvol)?'(implícita DVOL '+c.dvol.toFixed(0)+'% + reciente)':'(vol reciente)'} · <span style={{color:c.drift>0?'var(--up)':c.drift<0?'var(--down)':'var(--faint)'}}>sesgo {c.drift>=0?'+':''}{(Math.expm1(c.drift)*100).toFixed(2)}%/día</span> · 🧲 imán de liquidez · toca para ver día y precio</div>
         <TVChart series={b.map(x=>x.p50)} H={FH}
           bands={[{hi:b.map(x=>x.p95),lo:b.map(x=>x.p5),fill:'rgba(110,139,255,.12)'},{hi:b.map(x=>x.p75),lo:b.map(x=>x.p25),fill:'rgba(110,139,255,.22)'}]}
           fmt={money} label={i=>i===0?'hoy':'día '+i}/>
@@ -1751,6 +1793,25 @@ function QuantView({gFunding}){
             </div>
           ))}
         </div>
+        {/* AUTO-BACKTEST DE CALIBRACIÓN del modelo de volatilidad */}
+        {c.cal&&(()=>{const ok50=Math.abs(c.cal.cov50-50)<=10, ok90=Math.abs(c.cal.cov90-90)<=7;
+          const good=ok50&&ok90;
+          return(
+          <div style={{marginTop:11,paddingTop:11,borderTop:'1px solid var(--line2)'}}>
+            <div style={{...flx({justifyContent:'space-between'}),marginBottom:6}}>
+              <span style={{fontSize:9.5,color:'var(--faint)',fontWeight:600,letterSpacing:.5,textTransform:'uppercase'}}>Calibración · {c.cal.n} casos</span>
+              <span className="mono" style={{fontSize:9.5,fontWeight:700,color:good?'var(--up)':'#F3BA2F'}}>{good?'✓ bien calibrado':'aprox.'}</span>
+            </div>
+            <div style={{...flx({gap:8})}}>
+              {[['Banda 50%',c.cal.cov50,50],['Banda 90%',c.cal.cov90,90]].map((m,i)=>(
+                <div key={i} style={{flex:1,background:'#0A0D14',borderRadius:8,padding:'8px 9px',textAlign:'center'}}>
+                  <div className="mono" style={{fontSize:13,fontWeight:800,color:'var(--txt)'}}>{m[1].toFixed(0)}%</div>
+                  <div style={{fontSize:8.5,color:'var(--dim)'}}>{m[0]} · objetivo {m[2]}%</div>
+                </div>
+              ))}
+            </div>
+            <p style={{fontSize:9,color:'var(--faint)',marginTop:7,lineHeight:1.5}}>Sobre el histórico, el precio real a 10d cayó dentro de cada banda este % de las veces. Cuanto más cerca del objetivo, mejor calibrado el cono.</p>
+          </div>);})()}
         {/* EXPLICACIÓN: todos los sesgos que inclinan el Monte Carlo */}
         <div onClick={()=>setShowBias(s=>!s)} style={{...flx({justifyContent:'space-between'}),marginTop:12,paddingTop:11,
           borderTop:'1px solid var(--line2)',cursor:'pointer'}}>
