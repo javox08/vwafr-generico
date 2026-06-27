@@ -1181,9 +1181,17 @@ function simulateBot(cl,fee,fundDaily){
   if(dr.length>40){for(let p=0;p<P;p++){let e=1,d=0;while(d<BD){const stt=(Math.random()*(dr.length-B))|0;for(let qx=0;qx<B&&d<BD;qx++,d++)e*=(1+dr[stt+qx]);}fin.push(e);}fin.sort((a,b)=>a-b);}
   const qf=p=>fin.length?fin[Math.min(fin.length-1,Math.floor(p/100*fin.length))]:Math.pow(1+cagr/100,20);
   const band20={p5:qf(5),p50:qf(50),p95:qf(95)};
-  const stepc=Math.max(1,Math.floor(curve.length/110)),eqCurve=[];for(let k=0;k<curve.length;k+=stepc)eqCurve.push(curve[k]);eqCurve.push(curve[curve.length-1]);
+  const stepc=Math.max(1,Math.floor(curve.length/110)),eqCurve=[],hodlCurve=[];
+  for(let k=0;k<curve.length;k+=stepc){eqCurve.push(curve[k]);hodlCurve.push(cl[start+k]/cl[start-1]);}
+  eqCurve.push(curve[curve.length-1]);hodlCurve.push(cl[n-1]/cl[start-1]);
+  // COMPRAR Y MANTENER BTC (spot) en el MISMO periodo, para comparar
+  const hodlMult=cl[n-1]/cl[start-1], hodlRoe=(hodlMult-1)*100;
+  const hodlCagr=years>0?(Math.pow(Math.max(hodlMult,1e-6),1/years)-1)*100:0;
+  // máxima caída del hold
+  let hp=cl[start-1],hdd=0;for(let j=start-1;j<n;j++){if(cl[j]>hp)hp=cl[j];const d=(hp-cl[j])/hp;if(d>hdd)hdd=d;}
   return {eq,roe,cagr,years,trades,winRate:trades?wins/trades*100:0,maxDD:maxDD*100,
-    sharpe,sortino,calmar,avgLev,band20,eqCurve,m20:Math.pow(1+cagr/100,20)};
+    sharpe,sortino,calmar,avgLev,band20,eqCurve,hodlCurve,m20:Math.pow(1+cagr/100,20),
+    hodlMult,hodlRoe,hodlCagr,hodlMaxDD:hdd*100};
 }
 // Calendario económico (eventos de alto impacto, previstos). Filtra a futuro.
 const ECON=[
@@ -1456,14 +1464,14 @@ function candlePatterns(oh){
 }
 // Gráfico interactivo estilo TradingView: cruz (crosshair) que sigue el dedo/ratón
 // y muestra en todo momento el DÍA/FECHA y el PRECIO del punto bajo el cursor.
-function TVChart({series,color='var(--accent)',H=120,area=false,band=null,bands=null,marks=null,hline=null,hlabel='',hlines=null,grid=false,glow=false,fmt=v=>v,label=i=>'día '+i}){
+function TVChart({series,color='var(--accent)',H=120,area=false,band=null,bands=null,marks=null,hline=null,hlabel='',hlines=null,refLine=null,refColor='var(--faint)',grid=false,glow=false,fmt=v=>v,label=i=>'día '+i}){
   const W=300,P=8,n=series.length;
   const ref=React.useRef(null);
   const uid=React.useMemo(()=>'g'+Math.random().toString(36).slice(2,8),[]);
   const [hv,setHv]=useState(null);
   if(!series||n<2)return null;
   const hlv=(hlines||[]).map(h=>h.v).filter(v=>Number.isFinite(v));
-  const extra=(band?band.hi.concat(band.lo):[]).concat(bands?bands.reduce((a,b)=>a.concat(b.hi,b.lo),[]):[]).concat(hline!=null?[hline]:[]).concat(hlv);
+  const extra=(band?band.hi.concat(band.lo):[]).concat(bands?bands.reduce((a,b)=>a.concat(b.hi,b.lo),[]):[]).concat(hline!=null?[hline]:[]).concat(hlv).concat(refLine||[]);
   const all=series.concat(extra);
   const mn=Math.min(...all),mx=Math.max(...all),rng=(mx-mn)||1;
   const X=i=>i/(n-1)*W, Y=v=>H-P-((v-mn)/rng)*(H-2*P);
@@ -1488,6 +1496,7 @@ function TVChart({series,color='var(--accent)',H=120,area=false,band=null,bands=
         {bands&&bands.map((b,bi)=><path key={bi} d={bandD(b)} fill={b.fill}/>)}
         {band&&<path d={bandD(band)} fill="rgba(110,139,255,.15)"/>}
         {area&&<path d={lineD+` L ${W} ${H-P} L 0 ${H-P} Z`} fill={color[0]==='#'?color+'22':'rgba(110,139,255,.13)'}/>}
+        {refLine&&refLine.length===n&&<path d={'M '+refLine.map((v,i)=>X(i).toFixed(1)+' '+Y(v).toFixed(1)).join(' L ')} fill="none" stroke={refColor} strokeWidth="1.4" strokeDasharray="4 3" opacity="0.8"/>}
         {hline!=null&&<line x1="0" y1={Y(hline).toFixed(1)} x2={W} y2={Y(hline).toFixed(1)} stroke="var(--faint)" strokeWidth="1" strokeDasharray="4 3" opacity="0.8"/>}
         {hline!=null&&hlabel&&<text x="3" y={(Y(hline)-3).toFixed(1)} fill="var(--faint)" fontSize="8" className="mono">{hlabel}</text>}
         {(hlines||[]).filter(h=>Number.isFinite(h.v)).map((h,hi)=>(<g key={'h'+hi}>
@@ -1741,8 +1750,9 @@ function QuantView({gFunding}){
     const tconf=tside==='NEUTRAL'?0:Math.round(Math.min(92,42+Math.abs(probUp-50)*1.5+(agree?12:0)));
     const tradeRec={side:tside,tpPct,slPct,reason:treason,conf:tconf,lev:recLev};
     const trade=loadTrade(tradeRec,price);
-    // ── BACKTEST del bot sobre el histórico largo: sin y con comisiones de Binance ──
-    const bcl=(q.longCloses&&q.longCloses.length>=230)?q.longCloses:cl;
+    // ── BACKTEST del bot: 6 años (210d de calentamiento + 6×365 de prueba) ──
+    const bclAll=(q.longCloses&&q.longCloses.length>=230)?q.longCloses:cl;
+    const bcl=bclAll.slice(-(210+6*365)); // últimos ~6 años de prueba
     const sim=simulateBot(bcl,0,0);                 // sin comisiones
     const simC=simulateBot(bcl,0.0004,0.0003);      // comisión taker futuros 0.04%/lado + funding 0.03%/día
     return {price,annVol,rsi,ma200,ma50,ma200w,mc,probUp,probUp15,probDn15,var99,cvar99,
@@ -2301,10 +2311,32 @@ function QuantView({gFunding}){
             <div className="mono" style={{fontSize:30,fontWeight:800,color:(sc?sc.roe:s.roe)>=0?'var(--up)':'var(--down)',lineHeight:1}}>{fmtRoe(sc?sc.roe:s.roe)}</div>
             <div style={{fontSize:9.5,color:'var(--dim)',marginTop:3}}>ROE en {yr} años (con comisiones) · {fmtMult(sc?sc.eq:s.eq)} la inversión</div>
           </div>
-          {/* curva de equity (log) */}
+          {/* curva de equity (log) · BOT vs COMPRAR BTC */}
           {useC.eqCurve&&useC.eqCurve.length>3&&(()=>{const cv=useC.eqCurve.map(x=>Math.log(Math.max(1e-6,x)));
-            return <div style={{margin:'8px 0 4px'}}><TVChart series={cv} color="#1FE0A0" H={70} glow
-              fmt={v=>fmtMult(Math.exp(v))} label={i=>'≈ año '+(i/cv.length*s.years).toFixed(1)}/></div>;})()}
+            const hc=useC.hodlCurve&&useC.hodlCurve.length===cv.length?useC.hodlCurve.map(x=>Math.log(Math.max(1e-6,x))):null;
+            return <div style={{margin:'4px 0'}}>
+              <div style={{...flx({gap:12}),marginBottom:4,fontSize:9}} className="mono">
+                <span style={{color:'#1FE0A0',fontWeight:700}}>━ Bot</span><span style={{color:'#F7931A',fontWeight:700}}>┄ Comprar BTC</span>
+              </div>
+              <TVChart series={cv} color="#1FE0A0" H={72} glow refLine={hc} refColor="#F7931A"
+                fmt={v=>fmtMult(Math.exp(v))} label={i=>'≈ año '+(i/cv.length*useC.years).toFixed(1)}/>
+            </div>;})()}
+          {/* COMPARACIÓN: Bot vs comprar y mantener BTC (mismo periodo) */}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,margin:'10px 0'}}>
+            <div style={{background:'rgba(31,224,160,.08)',border:'1px solid rgba(31,224,160,.3)',borderRadius:10,padding:'10px 8px',textAlign:'center'}}>
+              <div style={{fontSize:8.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.7,fontWeight:600}}>🤖 Bot</div>
+              <div className="mono" style={{fontSize:16,fontWeight:800,color:'var(--up)',marginTop:3,lineHeight:1}}>{fmtMult(useC.eq)}</div>
+              <div className="mono" style={{fontSize:9,color:'var(--dim)',marginTop:2}}>{fmtRoe(useC.roe)} · DD -{useC.maxDD.toFixed(0)}%</div>
+            </div>
+            <div style={{background:'#0A0D14',border:'1px solid var(--line2)',borderRadius:10,padding:'10px 8px',textAlign:'center'}}>
+              <div style={{fontSize:8.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.7,fontWeight:600}}>🟠 Comprar BTC</div>
+              <div className="mono" style={{fontSize:16,fontWeight:800,color:'#F7931A',marginTop:3,lineHeight:1}}>{fmtMult(useC.hodlMult)}</div>
+              <div className="mono" style={{fontSize:9,color:'var(--dim)',marginTop:2}}>{fmtRoe(useC.hodlRoe)} · DD -{useC.hodlMaxDD.toFixed(0)}%</div>
+            </div>
+          </div>
+          <div style={{textAlign:'center',fontSize:10,fontWeight:700,marginBottom:6,
+            color:useC.eq>=useC.hodlMult?'var(--up)':'var(--down)'}}>
+            {useC.eq>=useC.hodlMult?'✅ el bot batió a comprar BTC':'⚠️ comprar BTC habría rendido más'} · {(useC.eq/Math.max(1e-6,useC.hodlMult)).toFixed(2)}× vs hold</div>
           {/* métricas ajustadas al riesgo */}
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:7,margin:'10px 0'}}>
             {[['CAGR',(useC.cagr>=0?'+':'')+useC.cagr.toFixed(0)+'%/año',useC.cagr>=0?'var(--up)':'var(--down)'],
