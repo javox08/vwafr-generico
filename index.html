@@ -1072,17 +1072,32 @@ function detectPatterns(cl){
   const out=[],n=cl.length,last=cl[n-1];
   const sma=(p,off=0)=>{const s=cl.slice(n-p-off,n-off);return s.reduce((x,y)=>x+y,0)/s.length;};
   if(n>205){const f0=sma(50),s0=sma(200),f1=sma(50,4),s1=sma(200,4);
-    if(f1<=s1&&f0>s0)out.push({t:'Golden Cross',sig:1,d:'MA50 cruza arriba la MA200 — señal alcista de tendencia'});
-    else if(f1>=s1&&f0<s0)out.push({t:'Death Cross',sig:-1,d:'MA50 cruza abajo la MA200 — señal bajista'});
-    else if(f0>s0)out.push({t:'Estructura alcista',sig:1,d:'MA50 por encima de la MA200'});
-    else out.push({t:'Estructura bajista',sig:-1,d:'MA50 por debajo de la MA200'});}
+    if(f1<=s1&&f0>s0)out.push({t:'Golden Cross',sig:1,k:'golden',d:'MA50 cruza arriba la MA200'});
+    else if(f1>=s1&&f0<s0)out.push({t:'Death Cross',sig:-1,k:'death',d:'MA50 cruza abajo la MA200'});
+    else if(f0>s0)out.push({t:'Estructura alcista',sig:1,k:'trendUp',d:'MA50 por encima de la MA200'});
+    else out.push({t:'Estructura bajista',sig:-1,k:'trendDn',d:'MA50 por debajo de la MA200'});}
   const hi20=Math.max(...cl.slice(-21,-1)),lo20=Math.min(...cl.slice(-21,-1));
-  if(last>hi20)out.push({t:'Ruptura Donchian 20d ↑',sig:1,d:'nuevo máximo de 20 días (breakout)'});
-  else if(last<lo20)out.push({t:'Ruptura Donchian 20d ↓',sig:-1,d:'nuevo mínimo de 20 días (breakdown)'});
+  if(last>hi20)out.push({t:'Ruptura Donchian 20d ↑',sig:1,k:'don20up',d:'nuevo máximo de 20 días'});
+  else if(last<lo20)out.push({t:'Ruptura Donchian 20d ↓',sig:-1,k:'don20dn',d:'nuevo mínimo de 20 días'});
   if(n>56){const hi55=Math.max(...cl.slice(-56,-1)),lo55=Math.min(...cl.slice(-56,-1));
-    if(last>hi55)out.push({t:'Ruptura 55d ↑ (Turtle)',sig:1,d:'breakout de tendencia mayor'});
-    else if(last<lo55)out.push({t:'Ruptura 55d ↓ (Turtle)',sig:-1,d:'breakdown de tendencia mayor'});}
+    if(last>hi55)out.push({t:'Ruptura 55d ↑ (Turtle)',sig:1,k:'don55up',d:'breakout de tendencia mayor'});
+    else if(last<lo55)out.push({t:'Ruptura 55d ↓ (Turtle)',sig:-1,k:'don55dn',d:'breakdown de tendencia mayor'});}
   return out;
+}
+// Backtest de cada patrón sobre el histórico real → % acierto y retorno medio a 10d
+function patternStats(cl){
+  const n=cl.length,H=10;
+  const maxN=(i,w)=>Math.max(...cl.slice(i-w,i)), minN=(i,w)=>Math.min(...cl.slice(i-w,i));
+  const sma=(i,p)=>{let s=0;for(let j=i-p;j<i;j++)s+=cl[j];return s/p;};
+  const bt=fn=>{let k=0,win=0,sum=0;for(let i=205;i<n-H;i++){if(fn(i)){const r=(cl[i+H]-cl[i])/cl[i];k++;sum+=r;if(r>0)win++;}}
+    return k>=4?{n:k,win:Math.round(win/k*100),avg:+(sum/k*100).toFixed(1)}:null;};
+  return {
+    don20up:bt(i=>cl[i]>maxN(i,20)), don20dn:bt(i=>cl[i]<minN(i,20)),
+    don55up:bt(i=>cl[i]>maxN(i,55)), don55dn:bt(i=>cl[i]<minN(i,55)),
+    trendUp:bt(i=>sma(i,50)>sma(i,200)), trendDn:bt(i=>sma(i,50)<sma(i,200)),
+    golden:bt(i=>sma(i,50)>sma(i,200)&&sma(i-1,50)<=sma(i-1,200)),
+    death:bt(i=>sma(i,50)<sma(i,200)&&sma(i-1,50)>=sma(i-1,200)),
+  };
 }
 // Modelo de ciclo (halving) reutilizable: fase, semana y techo/suelo proyectados
 function cycleModel(athLive){
@@ -1166,7 +1181,8 @@ function QuantView({gFunding}){
     const levels=[1.30,1.15,0.85,0.70].map(mul=>{const lv=price*mul,up=mul>=1;
       return {lv,pct:(mul-1)*100,p:(up?fin.filter(v=>v>=lv).length:fin.filter(v=>v<=lv).length)/fin.length*100,up};});
     // ── Patrones chartistas + correlaciones ──
-    const patterns=detectPatterns(cl);
+    const pStats=patternStats(cl);
+    const patterns=detectPatterns(cl).map(p=>({...p,st:pStats[p.k]}));
     const corrE=(q.eth&&q.eth.length>10)?pearson(dret(cl),dret(q.eth)):null;
     const corrS=(q.sol&&q.sol.length>10)?pearson(dret(cl),dret(q.sol)):null;
     // ── Vencimiento de opciones (Deribit) ──
@@ -1300,15 +1316,21 @@ function QuantView({gFunding}){
           <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>tendencia · breakouts</span>
         </div>
         {c.patterns.length?c.patterns.map((pt,i)=>(
-          <div key={i} style={{...flx({gap:9}),padding:'8px 0',borderTop:i?'1px solid #12151F':'none'}}>
+          <div key={i} style={{...flx({gap:9}),padding:'9px 0',borderTop:i?'1px solid #12151F':'none'}}>
             <span style={{fontSize:15,color:pt.sig>0?'var(--up)':'var(--down)'}}>{pt.sig>0?'▲':'▼'}</span>
-            <div style={{flex:1}}>
+            <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:12.5,fontWeight:700,color:pt.sig>0?'var(--up)':'var(--down)'}}>{pt.t}</div>
               <div style={{fontSize:9.5,color:'var(--faint)'}}>{pt.d}</div>
             </div>
+            {pt.st?(
+              <div style={{textAlign:'right',flexShrink:0}}>
+                <div className="mono" style={{fontSize:13,fontWeight:800,color:pt.st.win>=55?'var(--up)':pt.st.win<=45?'var(--down)':'#F3BA2F'}}>{pt.st.win}%</div>
+                <div className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>{pt.st.avg>=0?'+':''}{pt.st.avg}% · n={pt.st.n}</div>
+              </div>
+            ):<div style={{fontSize:8.5,color:'var(--faint)',textAlign:'right',flexShrink:0,maxWidth:60}}>pocos casos</div>}
           </div>
         )):<div style={{fontSize:11,color:'var(--faint)',textAlign:'center',padding:'8px 0'}}>Sin patrones claros ahora mismo.</div>}
-        <p style={{fontSize:9,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Patrones de seguimiento de tendencia (cruces de medias, rupturas Donchian/Turtle) con histórico de rentabilidad reconocido.</p>
+        <p style={{fontSize:9,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>% = acierto histórico de la señal · retorno medio a 10 días · n = nº de veces que ocurrió en el último año (backtest sobre el precio real).</p>
       </div>
 
       {/* MONTE CARLO */}
