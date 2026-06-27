@@ -284,6 +284,18 @@ async function binanceFallback(coins,data){
       data[c].Binance={funding:parseFloat(pf.lastFundingRate)*100,oi:(Number.isFinite(oi)&&oi>0)?oi:null,ok:true};
   }));
 }
+// Bitget bloquea IPs de datacenter (Cloudflare/Netlify) pero permite CORS → pedirlo desde el navegador.
+async function bitgetFallback(coins,data){
+  const r=await fetch('https://api.bitget.com/api/v2/mix/market/tickers?productType=usdt-futures').then(r=>r.json());
+  const m={}; for(const t of (r.data||[])) m[t.symbol]=t;
+  for(const c of coins){ const t=m[c+'USDT'];
+    if(t&&(!data[c].Bitget||!data[c].Bitget.ok)){
+      const oi=parseFloat(t.holdingAmount)*parseFloat(t.markPrice)/1e9;
+      const vol=parseFloat(t.usdtVolume)/1e9;
+      data[c].Bitget={funding:parseFloat(t.fundingRate)*100,oi:(Number.isFinite(oi)&&oi>0)?oi:null,vol:(Number.isFinite(vol)&&vol>0)?vol:null,ok:true};
+    }
+  }
+}
 
 // ── VWAFR helpers ──
 function vwafrOf(coinData){
@@ -1675,10 +1687,11 @@ function App(){
       const coins=json.coins||FALLBACK_COINS;
       const data=json.data||{};
       for(const c of coins) if(!data[c])data[c]={};
-      // respaldo navegador (Binance/Bybit) para todas las monedas
+      // respaldo navegador (Binance/Bybit/Bitget) para todas las monedas
       await Promise.all([
         bybitFallback(coins,data).catch(()=>{}),
         binanceFallback(coins,data).catch(()=>{}),
+        bitgetFallback(coins,data).catch(()=>{}),
       ]);
       setPayload({coins,data});
       setSource('server');
