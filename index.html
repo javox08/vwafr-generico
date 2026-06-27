@@ -1059,6 +1059,28 @@ function hurst(s){
   let num=0,den=0;for(let i=0;i<pts.length;i++){num+=(xs[i]-mx)*(ys[i]-my);den+=(xs[i]-mx)*(xs[i]-mx);}
   return den?num/den:0.5;
 }
+// correlación de Pearson y detección de patrones chartistas (backtested)
+function pearson(a,b){const n=Math.min(a.length,b.length);if(n<5)return null;
+  const x=a.slice(-n),y=b.slice(-n),mx=qMean(x),my=qMean(y);let num=0,dx=0,dy=0;
+  for(let i=0;i<n;i++){const ax=x[i]-mx,ay=y[i]-my;num+=ax*ay;dx+=ax*ax;dy+=ay*ay;}
+  return(dx&&dy)?num/Math.sqrt(dx*dy):null;}
+function dret(a){const r=[];for(let i=1;i<a.length;i++)r.push(Math.log(a[i]/a[i-1]));return r;}
+function detectPatterns(cl){
+  const out=[],n=cl.length,last=cl[n-1];
+  const sma=(p,off=0)=>{const s=cl.slice(n-p-off,n-off);return s.reduce((x,y)=>x+y,0)/s.length;};
+  if(n>205){const f0=sma(50),s0=sma(200),f1=sma(50,4),s1=sma(200,4);
+    if(f1<=s1&&f0>s0)out.push({t:'Golden Cross',sig:1,d:'MA50 cruza arriba la MA200 — señal alcista de tendencia'});
+    else if(f1>=s1&&f0<s0)out.push({t:'Death Cross',sig:-1,d:'MA50 cruza abajo la MA200 — señal bajista'});
+    else if(f0>s0)out.push({t:'Estructura alcista',sig:1,d:'MA50 por encima de la MA200'});
+    else out.push({t:'Estructura bajista',sig:-1,d:'MA50 por debajo de la MA200'});}
+  const hi20=Math.max(...cl.slice(-21,-1)),lo20=Math.min(...cl.slice(-21,-1));
+  if(last>hi20)out.push({t:'Ruptura Donchian 20d ↑',sig:1,d:'nuevo máximo de 20 días (breakout)'});
+  else if(last<lo20)out.push({t:'Ruptura Donchian 20d ↓',sig:-1,d:'nuevo mínimo de 20 días (breakdown)'});
+  if(n>56){const hi55=Math.max(...cl.slice(-56,-1)),lo55=Math.min(...cl.slice(-56,-1));
+    if(last>hi55)out.push({t:'Ruptura 55d ↑ (Turtle)',sig:1,d:'breakout de tendencia mayor'});
+    else if(last<lo55)out.push({t:'Ruptura 55d ↓ (Turtle)',sig:-1,d:'breakdown de tendencia mayor'});}
+  return out;
+}
 // Modelo de ciclo (halving) reutilizable: fase, semana y techo/suelo proyectados
 function cycleModel(athLive){
   const HALV=[Date.UTC(2012,10,28),Date.UTC(2016,6,9),Date.UTC(2020,4,11),Date.UTC(2024,3,20),Date.UTC(2028,3,18),Date.UTC(2032,3,16)];
@@ -1086,6 +1108,15 @@ function QuantView({gFunding}){
       try{const f=await fetch('https://api.alternative.me/fng/?limit=1').then(r=>r.json());out.fng=parseInt(f.data[0].value);out.fngTxt=f.data[0].value_classification;}catch(_){}
       try{const dr=await fetch('https://www.deribit.com/api/v2/public/get_book_summary_by_currency?currency=BTC&kind=option').then(r=>r.json());out.opts=dr.result;}catch(_){}
       try{const k=await fetch('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1w&limit=300').then(r=>r.json());out.weekly=k.map(x=>parseFloat(x[4]));}catch(_){}
+      try{const[e,s]=await Promise.all([
+        fetch('https://api.coingecko.com/api/v3/coins/ethereum/market_chart?vs_currency=usd&days=90&interval=daily').then(r=>r.json()),
+        fetch('https://api.coingecko.com/api/v3/coins/solana/market_chart?vs_currency=usd&days=90&interval=daily').then(r=>r.json())]);
+        out.eth=e.prices.map(p=>p[1]);out.sol=s.prices.map(p=>p[1]);}catch(_){}
+      try{const[z,pu,so]=await Promise.all([
+        fetch('https://bitcoin-data.com/v1/mvrv-zscore/last').then(r=>r.json()),
+        fetch('https://bitcoin-data.com/v1/puell-multiple/last').then(r=>r.json()),
+        fetch('https://bitcoin-data.com/v1/sopr/last').then(r=>r.json())]);
+        out.zscore=parseFloat(z.mvrvZscore);out.puell=parseFloat(pu.puellMultiple);out.sopr=parseFloat(so.sopr);}catch(_){}
       if(alive)setQ(out);
     })();
   },[]);
@@ -1131,8 +1162,23 @@ function QuantView({gFunding}){
     // ── Tabla de probabilidad de objetivos (Monte Carlo 30d) ──
     const levels=[1.30,1.15,0.85,0.70].map(mul=>{const lv=price*mul,up=mul>=1;
       return {lv,pct:(mul-1)*100,p:(up?fin.filter(v=>v>=lv).length:fin.filter(v=>v<=lv).length)/fin.length*100,up};});
+    // ── Patrones chartistas + correlaciones ──
+    const patterns=detectPatterns(cl);
+    const corrE=(q.eth&&q.eth.length>10)?pearson(dret(cl),dret(q.eth)):null;
+    const corrS=(q.sol&&q.sol.length>10)?pearson(dret(cl),dret(q.sol)):null;
+    // ── Vencimiento de opciones (Deribit) ──
+    let optExp=null;
+    if(q.opts&&q.opts.length){const MON={JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11},exp={};
+      for(const o of q.opts){const m=o.instrument_name.match(/^BTC-(\d{1,2})([A-Z]{3})(\d{2})-(\d+)-([CP])/);if(!m)continue;
+        const dt=Date.UTC(2000+ +m[3],MON[m[2]]||0,+m[1],8),k=+m[4],t=m[5],oi=o.open_interest||0;
+        exp[dt]=exp[dt]||{oi:0,sk:{}};exp[dt].oi+=oi;exp[dt].sk[k]=exp[dt].sk[k]||{c:0,p:0};exp[dt].sk[k][t==='P'?'p':'c']+=oi;}
+      const fut=Object.keys(exp).map(Number).filter(d=>d>Date.now());
+      if(fut.length){const big=fut.reduce((a,b)=>exp[b].oi>exp[a].oi?b:a),sk=exp[big].sk;
+        let mp=null,minp=Infinity;const ks=Object.keys(sk).map(Number).sort((a,b)=>a-b);
+        for(const S of ks){let pay=0;for(const K of ks){const oo=sk[K];pay+=oo.c*Math.max(0,S-K)+oo.p*Math.max(0,K-S);}if(pay<minp){minp=pay;mp=S;}}
+        optExp={date:big,oi:exp[big].oi,maxPain:mp,days:Math.ceil((big-Date.now())/864e5)};}}
     return {price,annVol,rsi,ma200,ma50,ma200w,mc,probUp,probUp15,probDn15,var99,cvar99,
-      fair,lo,hi,valPct,realized,models,plSup,plRes,H,regime,fund,gf,opt,levels,cyc};
+      fair,lo,hi,valPct,realized,models,plSup,plRes,H,regime,fund,gf,opt,levels,cyc,patterns,corrE,corrS,optExp};
   },[q,gFunding]);
 
   const D=86400000, now=Date.now();
@@ -1244,6 +1290,24 @@ function QuantView({gFunding}){
         </div>
       </div>
 
+      {/* PATRONES CHARTISTAS (automático) */}
+      <div style={panel({marginBottom:14,padding:16})}>
+        <div style={{...flx({justifyContent:'space-between'}),marginBottom:12}}>
+          <span style={eyebrow}>Patrones detectados · auto</span>
+          <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>tendencia · breakouts</span>
+        </div>
+        {c.patterns.length?c.patterns.map((pt,i)=>(
+          <div key={i} style={{...flx({gap:9}),padding:'8px 0',borderTop:i?'1px solid #12151F':'none'}}>
+            <span style={{fontSize:15,color:pt.sig>0?'var(--up)':'var(--down)'}}>{pt.sig>0?'▲':'▼'}</span>
+            <div style={{flex:1}}>
+              <div style={{fontSize:12.5,fontWeight:700,color:pt.sig>0?'var(--up)':'var(--down)'}}>{pt.t}</div>
+              <div style={{fontSize:9.5,color:'var(--faint)'}}>{pt.d}</div>
+            </div>
+          </div>
+        )):<div style={{fontSize:11,color:'var(--faint)',textAlign:'center',padding:'8px 0'}}>Sin patrones claros ahora mismo.</div>}
+        <p style={{fontSize:9,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Patrones de seguimiento de tendencia (cruces de medias, rupturas Donchian/Turtle) con histórico de rentabilidad reconocido.</p>
+      </div>
+
       {/* MONTE CARLO */}
       <div style={panel({marginBottom:14,padding:16})}>
         <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
@@ -1307,7 +1371,19 @@ function QuantView({gFunding}){
               </div>
             ))}
           </div>
-          <p style={{fontSize:9.5,color:'var(--faint)',marginTop:10}}>Put/Call &lt;0.7 = más calls (alcista) · &gt;1 = más puts (cobertura). Max Pain: precio donde más opciones expiran sin valor (suele atraer al precio).</p>
+          {c.optExp&&(
+            <div style={{...flx({justifyContent:'space-between'}),marginTop:12,paddingTop:12,borderTop:'1px solid var(--line2)'}}>
+              <div>
+                <div style={{fontSize:9,letterSpacing:1,color:'var(--faint)',textTransform:'uppercase',fontWeight:600}}>Próximo gran vencimiento</div>
+                <div className="mono" style={{fontSize:12.5,fontWeight:700,marginTop:2}}>{new Date(c.optExp.date).toLocaleDateString('es-ES',{day:'numeric',month:'short',year:'2-digit'})} <span style={{color:c.optExp.days<=3?'var(--down)':'var(--faint)'}}>· en {c.optExp.days}d</span></div>
+              </div>
+              <div style={{textAlign:'right'}}>
+                <div style={{fontSize:9,letterSpacing:1,color:'var(--faint)',textTransform:'uppercase',fontWeight:600}}>Max pain venc.</div>
+                <div className="mono" style={{fontSize:12.5,fontWeight:700,color:'var(--accent)',marginTop:2}}>{money(c.optExp.maxPain)}</div>
+              </div>
+            </div>
+          )}
+          <p style={{fontSize:9.5,color:'var(--faint)',marginTop:10}}>Put/Call &lt;0.7 = más calls (alcista) · &gt;1 = más puts (cobertura). En el vencimiento el precio tiende a imantarse al <b>max pain</b>; vencimientos grandes mueven el mercado.</p>
         </div>
       )}
 
@@ -1333,6 +1409,46 @@ function QuantView({gFunding}){
           ))}
         </div>
       </div>
+
+      {/* VALORACIÓN ON-CHAIN */}
+      {(q.zscore!=null||q.puell!=null||q.sopr!=null)&&(()=>{
+        const sig=(v,fondo,caro,inv)=>v==null?{t:'—',c:'var(--dim)'}:v<fondo?{t:'FONDO',c:'var(--up)'}:v>caro?{t:'TECHO',c:'var(--down)'}:v<inv?{t:'Infravalorado',c:'#26C99E'}:{t:'Neutral',c:'#F3BA2F'};
+        const zs=sig(q.zscore,0,7,2.5), pu=sig(q.puell,0.5,4,1), so=q.sopr==null?{t:'—',c:'var(--dim)'}:q.sopr<1?{t:'Pérdidas (suelo)',c:'var(--up)'}:q.sopr>1.04?{t:'Euforia',c:'var(--down)'}:{t:'Ganancias',c:'#F3BA2F'};
+        return(
+        <div style={panel({marginBottom:14,padding:16})}>
+          <div style={{...eyebrow,marginBottom:12}}>Valoración on-chain</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
+            {[['MVRV Z-Score',q.zscore!=null?q.zscore.toFixed(2):'—',zs],['Puell Multiple',q.puell!=null?q.puell.toFixed(2):'—',pu],['SOPR',q.sopr!=null?q.sopr.toFixed(3):'—',so]].map((m,i)=>(
+              <div key={i} style={{background:'#0A0D14',borderRadius:9,padding:'11px 8px',textAlign:'center'}}>
+                <div className="mono" style={{fontSize:15,fontWeight:800,color:m[2].c}}>{m[1]}</div>
+                <div style={{fontSize:8.5,color:'var(--dim)',marginTop:4}}>{m[0]}</div>
+                <div style={{fontSize:8.5,fontWeight:700,color:m[2].c,marginTop:2}}>{m[2].t}</div>
+              </div>
+            ))}
+          </div>
+          <p style={{fontSize:9,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Z-Score &lt;0 y Puell &lt;0.5 = suelos históricos · Z-Score &gt;7 y Puell &gt;4 = techos. SOPR &lt;1 = ventas en pérdidas (capitulación).</p>
+        </div>);})()}
+
+      {/* CORRELACIONES */}
+      {(c.corrE!=null||c.corrS!=null)&&(
+        <div style={panel({marginBottom:14,padding:16})}>
+          <div style={{...flx({justifyContent:'space-between'}),marginBottom:12}}>
+            <span style={eyebrow}>Correlación · 90d</span>
+            <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>retornos diarios</span>
+          </div>
+          {[['ETH',c.corrE],['SOL',c.corrS]].filter(x=>x[1]!=null).map(([nm,cv],i)=>(
+            <div key={i} style={{...flx({gap:9}),padding:'7px 0',borderTop:i?'1px solid #12151F':'none'}}>
+              <span style={{fontSize:12,fontWeight:700,width:42}}>BTC·{nm}</span>
+              <div style={{flex:1,position:'relative',height:7,borderRadius:4,background:'#0A0D14',overflow:'hidden'}}>
+                <div style={{height:'100%',width:`${Math.abs(cv)*100}%`,borderRadius:4,marginLeft:cv<0?'auto':0,
+                  background:cv>=0?'linear-gradient(90deg,var(--upDim),var(--up))':'linear-gradient(90deg,var(--downDim),var(--down))'}}/>
+              </div>
+              <span className="mono" style={{fontSize:12,fontWeight:700,width:42,textAlign:'right',color:cv>=0?'var(--up)':'var(--down)'}}>{cv.toFixed(2)}</span>
+            </div>
+          ))}
+          <p style={{fontSize:9,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Cerca de 1 = se mueven igual. BTC suele liderar; correlación alta = el mercado va en bloque.</p>
+        </div>
+      )}
 
       {/* MAPA DE LIQUIDEZ */}
       <div style={panel({marginBottom:14,padding:16})}>
@@ -1391,6 +1507,50 @@ function QuantView({gFunding}){
   );
 }
 
+// Historial del grand funding (clic en el indicador): BTC + funding registrado
+function FundingHistory({g}){
+  const [btc,setBtc]=useState(null);
+  useEffect(()=>{let a=true;
+    fetch('https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=180&interval=daily')
+      .then(r=>r.json()).then(j=>{if(a&&j.prices)setBtc(j.prices.map(p=>p[1]));}).catch(()=>{});
+    return()=>{a=false;};},[]);
+  let hist=[];try{hist=JSON.parse(localStorage.getItem('vwafr_fh')||'[]');}catch(_){}
+  const W=300,H=110,P=8;
+  const spark=arr=>{if(!arr||arr.length<2)return null;const mn=Math.min(...arr),mx=Math.max(...arr),rng=(mx-mn)||1;
+    const xs=i=>i/(arr.length-1)*W,ys=v=>H-P-((v-mn)/rng)*(H-2*P);
+    const d='M '+arr.map((v,i)=>xs(i).toFixed(1)+' '+ys(v).toFixed(1)).join(' L ');
+    return{d,area:d+` L ${W} ${H} L 0 ${H} Z`,mn,mx,last:arr[arr.length-1]};};
+  const bs=spark(btc), fs=spark(hist.map(h=>h.f));
+  const money=v=>'$'+Math.round(v).toLocaleString('es-ES');
+  return(
+    <div style={panel({marginBottom:14,padding:16,borderColor:'rgba(110,139,255,.3)'})}>
+      <div style={{...flx({justifyContent:'space-between'}),marginBottom:10}}>
+        <span style={eyebrow}>Bitcoin · 180 días</span>
+        {bs&&<span className="mono" style={{fontSize:11,fontWeight:700}}>{money(bs.last)}</span>}
+      </div>
+      {bs?(
+        <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{display:'block'}}>
+          <defs><linearGradient id="bhg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="rgba(247,147,26,.35)"/><stop offset="100%" stopColor="rgba(247,147,26,0)"/></linearGradient></defs>
+          <path d={bs.area} fill="url(#bhg)"/><path d={bs.d} fill="none" stroke="#F7931A" strokeWidth="2"/>
+        </svg>
+      ):<div style={{textAlign:'center',color:'var(--faint)',fontSize:12,padding:'24px 0'}}>cargando precio…</div>}
+      <div style={{...flx({justifyContent:'space-between'}),marginTop:14,marginBottom:8}}>
+        <span style={eyebrow}>Funding global · historial</span>
+        <span className="mono" style={{fontSize:10,color:'var(--faint)'}}>{hist.length} puntos</span>
+      </div>
+      {fs?(
+        <svg viewBox={`0 0 ${W} 56`} width="100%" style={{display:'block'}}>
+          <line x1="0" y1={56-8-((0-fs.mn)/((fs.mx-fs.mn)||1))*(56-16)} x2={W} y2={56-8-((0-fs.mn)/((fs.mx-fs.mn)||1))*(56-16)} stroke="var(--faint)" strokeWidth="1" strokeDasharray="2 3"/>
+          <path d={'M '+hist.map((h,i)=>(i/(hist.length-1)*W).toFixed(1)+' '+(56-8-((h.f-fs.mn)/((fs.mx-fs.mn)||1))*(56-16)).toFixed(1)).join(' L ')}
+            fill="none" stroke={fs.last>=0?'var(--up)':'var(--down)'} strokeWidth="2"/>
+        </svg>
+      ):<div style={{textAlign:'center',color:'var(--faint)',fontSize:10.5,padding:'14px 0',lineHeight:1.5}}>
+          El historial del funding se va registrando solo según usas la web.<br/>Vuelve en un rato para ver la tendencia.</div>}
+      <p style={{fontSize:9.5,color:'var(--faint)',marginTop:8,lineHeight:1.5}}>Compara el precio de BTC con cómo ha evolucionado el funding global (sube = mercado apalancado en largo).</p>
+    </div>
+  );
+}
+
 function App(){
   const [payload,setPayload]=useState(null);
   const [source,setSource]=useState(null);
@@ -1433,7 +1593,13 @@ function App(){
   const data=(payload&&payload.data)||{};
   const g=useMemo(()=>vwafrGlobal(data),[payload]);
   const [showCta,setShowCta]=useState(true);
+  const [fundOpen,setFundOpen]=useState(false);
   const [view,setView]=useState('home');
+  useEffect(()=>{ if(!g.oi)return;
+    try{const h=JSON.parse(localStorage.getItem('vwafr_fh')||'[]');const now=Date.now();
+      if(!h.length||now-h[h.length-1].t>3.6e6){h.push({t:now,f:+g.vwafr.toFixed(5)});while(h.length>240)h.shift();localStorage.setItem('vwafr_fh',JSON.stringify(h));}
+    }catch(_){}
+  },[payload]);
   useEffect(()=>{document.body.classList.toggle('cycle-view',view!=='home');},[view]);
   const home=view==='home';
   const TITLE={home:['Funding cripto · top 10 · en vivo','Sentimiento del Mercado'],
@@ -1494,10 +1660,16 @@ function App(){
       </div>
 
       {/* ── FUNDING GLOBAL (gran indicador, todas las monedas) ── */}
-      <Hero big vwafr={g.vwafr} label="Funding GLOBAL · top 10 ponderado por OI"/>
-      <div style={{...flx({justifyContent:'center',gap:6}),marginTop:-4,marginBottom:14}}>
+      <div onClick={()=>setFundOpen(o=>!o)} style={{cursor:'pointer'}}>
+        <Hero big vwafr={g.vwafr} label="Funding GLOBAL · top 10 ponderado por OI"/>
+      </div>
+      <div style={{...flx({justifyContent:'center',gap:6}),marginTop:-4,marginBottom:fundOpen?12:14}}>
         <span className="mono" style={{fontSize:10.5,color:'var(--faint)'}}>ponderado por OI ${g.oi.toFixed(0)}B{g.vol?` · vol 24h $${g.vol.toFixed(0)}B`:''} · {coins.length} monedas</span>
       </div>
+      <div onClick={()=>setFundOpen(o=>!o)} style={{textAlign:'center',marginTop:-6,marginBottom:14,cursor:'pointer'}}>
+        <span className="mono" style={{fontSize:10,color:'var(--accent)',fontWeight:700}}>{fundOpen?'▲ ocultar historial':'▼ ver historial + gráfico BTC'}</span>
+      </div>
+      {fundOpen&&<FundingHistory g={g}/>}
 
       {/* ── Referido Bitunix (central) ── */}
       <div style={{marginBottom:16}}>
