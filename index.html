@@ -112,9 +112,20 @@
     .seo strong{color:var(--txt)}
     .seo a{color:var(--accent);text-decoration:none}
     .seo .faq{border-top:1px solid var(--line);padding-top:6px;margin-top:8px}
+    html{scroll-behavior:smooth}
     body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
       background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);
       background-size:44px 44px;opacity:.025}
+    /* resplandor ambiental superior (profundidad estilo terminal) */
+    body::after{content:'';position:fixed;top:-12%;left:50%;transform:translateX(-50%);width:130%;height:360px;z-index:0;pointer-events:none;
+      background:radial-gradient(58% 100% at 50% 0%, rgba(110,139,255,.09), transparent 72%)}
+    ::selection{background:rgba(110,139,255,.32);color:#fff}
+    .nav-glow{box-shadow:0 0 0 1px rgba(110,139,255,.25),0 6px 18px -6px rgba(110,139,255,.45)}
+    /* pie de página */
+    .ftr{max-width:540px;margin:26px auto 8px;padding:18px 16px 8px;border-top:1px solid var(--line);
+      color:var(--dim);font-size:11px;line-height:1.7;text-align:center;position:relative;z-index:1}
+    .ftr a{color:var(--accent);text-decoration:none}
+    .ftr .links{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin:8px 0}
     .mono{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums}
     input[type=number]::-webkit-inner-spin-button{opacity:.25}
     input:focus{border-color:var(--accent)!important;outline:none}
@@ -2792,8 +2803,8 @@ function App(){
         {[['home','Funding'],['cycle','Ciclo'],['quant','Cuantitativo'],['pib','Macro']].map(([k,label])=>{
           const on=view===k;
           return(
-            <button key={k} onClick={()=>setView(k)} style={{flex:1,padding:'9px 2px',borderRadius:10,
-              fontSize:11,fontWeight:700,cursor:'pointer',transition:'all .15s',whiteSpace:'nowrap',letterSpacing:-.2,
+            <button key={k} onClick={()=>setView(k)} className={on?'nav-glow':''} style={{flex:1,padding:'9px 2px',borderRadius:10,
+              fontSize:11,fontWeight:700,cursor:'pointer',transition:'all .18s',whiteSpace:'nowrap',letterSpacing:-.2,
               border:`1px solid ${on?'var(--accent)':'var(--line)'}`,
               background:on?'rgba(110,139,255,.12)':'transparent',color:on?'var(--txt)':'var(--dim)'}}>{label}</button>
           );
@@ -2905,6 +2916,18 @@ function App(){
         </p>
       </div>
       </>}
+
+      {/* PIE DE PÁGINA (todas las vistas) */}
+      <div className="ftr">
+        <div style={{fontWeight:800,color:'var(--txt)',fontSize:12.5,letterSpacing:-.2}}>VWAFR · Cripto Quant</div>
+        <div style={{marginTop:4}}>Funding · Ciclo BTC · Cuantitativo · Macro · 100% automático</div>
+        <div className="links">
+          <a href="/privacidad.html">Privacidad</a>
+          <a href="/contacto.html">Contacto</a>
+          <a href={BITUNIX} target="_blank" rel="noopener nofollow">Bitunix · ffcczq</a>
+        </div>
+        <div style={{fontSize:9.5,color:'var(--faint)',marginTop:6,lineHeight:1.6}}>Datos: Binance · Deribit · CoinGecko · bitcoin-data · Banco Mundial. Modelos estadísticos con fines educativos — <b style={{color:'var(--down)'}}>no es consejo de inversión</b>.</div>
+      </div>
 
     </div>
     {showCta&&home&&(
