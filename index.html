@@ -1299,6 +1299,7 @@ function analyzePatterns(cl){
   const wr=j=>{const Hh=maxN(j+1,14),Ll=minN(j+1,14);return Hh>Ll?(Hh-cl[j])/(Hh-Ll)*-100:-50;};      // Williams %R
   const stoch=j=>{const Hh=maxN(j+1,14),Ll=minN(j+1,14);return Hh>Ll?(cl[j]-Ll)/(Hh-Ll)*100:50;};     // Estocástico %K
   const fibZ=(j,a,b)=>{const Hh=maxN(j,60),Ll=minN(j,60),R=Hh-Ll;return R>0&&cl[j]<=Hh-a*R&&cl[j]>=Hh-b*R;}; // retroceso de Fib
+  const cci=j=>{const mm=sma(j,20);let md=0;for(let m=j-20;m<j;m++)md+=Math.abs(cl[m]-mm);md/=20;return md>0?(cl[j]-mm)/(0.015*md):0;}; // CCI (cierre como TP)
   const defs=[
     [has&&sma(i,50)>sma(i,200)&&sma(i-1,50)<=sma(i-1,200),1,'Golden Cross','MA50 cruza arriba la MA200',j=>sma(j,50)>sma(j,200)&&sma(j-1,50)<=sma(j-1,200)],
     [has&&sma(i,50)<sma(i,200)&&sma(i-1,50)>=sma(i-1,200),-1,'Death Cross','MA50 cruza abajo la MA200',j=>sma(j,50)<sma(j,200)&&sma(j-1,50)>=sma(j-1,200)],
@@ -1342,6 +1343,14 @@ function analyzePatterns(cl){
     [macd[i]>0&&macd[i-1]<=0,1,'MACD cruza el cero ↑','momentum entra en positivo',j=>macd[j]>0&&macd[j-1]<=0],
     [macd[i]<0&&macd[i-1]>=0,-1,'MACD cruza el cero ↓','momentum entra en negativo',j=>macd[j]<0&&macd[j-1]>=0],
     [cl[i]>maxN(i,10)&&cl[i-5]<minN(i-5,10)*1.02,1,'Suelo en V','rebote rápido desde mínimos',j=>cl[j]>maxN(j,10)&&cl[j-5]<minN(j-5,10)*1.02],
+    [cci(i)>100,-1,'CCI sobrecompra (>100)','precio muy estirado (reversión)',j=>cci(j)>100],
+    [cci(i)<-100,1,'CCI sobreventa (<-100)','precio muy castigado (rebote)',j=>cci(j)<-100],
+    [has&&cl[i]>sma(i,20)&&sma(i,20)>sma(i,50)&&sma(i,50)>sma(i,200),1,'Medias alineadas alcistas','MA20>MA50>MA200 (tendencia fuerte)',j=>cl[j]>sma(j,20)&&sma(j,20)>sma(j,50)&&sma(j,50)>sma(j,200)],
+    [has&&cl[i]<sma(i,20)&&sma(i,20)<sma(i,50)&&sma(i,50)<sma(i,200),-1,'Medias alineadas bajistas','MA20<MA50<MA200 (tendencia fuerte)',j=>cl[j]<sma(j,20)&&sma(j,20)<sma(j,50)&&sma(j,50)<sma(j,200)],
+    [sma(i,20)>sma(i,50)&&sma(i-1,20)<=sma(i-1,50),1,'Cruce MA20/MA50 ↑','cruce alcista rápido',j=>sma(j,20)>sma(j,50)&&sma(j-1,20)<=sma(j-1,50)],
+    [sma(i,20)<sma(i,50)&&sma(i-1,20)>=sma(i-1,50),-1,'Cruce MA20/MA50 ↓','cruce bajista rápido',j=>sma(j,20)<sma(j,50)&&sma(j-1,20)>=sma(j-1,50)],
+    [cl[i]>sma(i,20)+2*std(i,20)&&cl[i-1]<=sma(i-1,20)+2*std(i-1,20),1,'Ruptura banda Bollinger ↑','cierre por encima de la banda (impulso)',j=>cl[j]>sma(j,20)+2*std(j,20)&&cl[j-1]<=sma(j-1,20)+2*std(j-1,20)],
+    [cl[i]<sma(i,20)-2*std(i,20)&&cl[i-1]>=sma(i-1,20)-2*std(i-1,20),-1,'Ruptura banda Bollinger ↓','cierre por debajo de la banda (presión)',j=>cl[j]<sma(j,20)-2*std(j,20)&&cl[j-1]>=sma(j-1,20)-2*std(j-1,20)],
   ];
   const out=[];
   for(const d of defs){ if(d[0]){out.push({t:d[2],sig:d[1],d:d[3],st:bt(d[4])});} }
@@ -1372,6 +1381,7 @@ const CP_STATS={
   'Triángulo ascendente':[70,34],'Triángulo descendente':[66,-16],
   'Triángulo simétrico':[62,25],'Cuña ascendente':[64,-17],'Cuña descendente':[68,30],
   'Canal alcista':[66,16],'Canal bajista':[63,-14],'Canal lateral':[55,11],
+  'Triple techo':[79,-20],'Triple suelo':[83,38],'Suelo redondeado':[74,30],'Techo redondeado':[70,-18],
 };
 function cpSlope(pts){const n=pts.length;if(n<2)return 0;
   const mx=pts.reduce((s,p)=>s+p[0],0)/n,my=pts.reduce((s,p)=>s+p[1],0)/n;
@@ -1415,6 +1425,18 @@ function chartPatterns(cl){
     else if(up(sh)&&up(sl)&&sl>sh)add('Cuña ascendente',-1,'subida perdiendo fuerza (giro)',price*0.83);
     else if(dn(sh)&&dn(sl)&&sl>sh)add('Cuña descendente',1,'caída perdiendo fuerza (giro)',price*1.17);
   }
+  // Triple techo / triple suelo (3 pivotes del mismo tipo al mismo nivel)
+  if(ph.length>=3){const x=ph.slice(-3);
+    if(near(cl[x[0]],cl[x[1]],0.04)&&near(cl[x[1]],cl[x[2]],0.04)){let v=Infinity;for(let k=x[0];k<=x[2];k++)v=Math.min(v,cl[k]);
+      const top=(cl[x[0]]+cl[x[1]]+cl[x[2]])/3;if((top-v)/v>0.04&&price<top)add('Triple techo',-1,'tres máximos al mismo nivel: techo',v-(top-v));}}
+  if(pl.length>=3){const x=pl.slice(-3);
+    if(near(cl[x[0]],cl[x[1]],0.04)&&near(cl[x[1]],cl[x[2]],0.04)){let v=-Infinity;for(let k=x[0];k<=x[2];k++)v=Math.max(v,cl[k]);
+      const bot=(cl[x[0]]+cl[x[1]]+cl[x[2]])/3;if((v-bot)/bot>0.04&&price>bot)add('Triple suelo',1,'tres mínimos al mismo nivel: suelo',v+(v-bot));}}
+  // Suelo / techo redondeado (forma de U o de ∩ suave en el último tramo)
+  if(n>=50){const w=cl.slice(-40),mid=w[Math.floor(w.length/2)],ends=(w[0]+w[w.length-1])/2;
+    const depth=(ends-mid)/(ends||1);
+    if(depth>0.06&&cl[n-1]>=Math.max(...w.slice(-5)))add('Suelo redondeado',1,'base en forma de U: acumulación',price*1.2);
+    else if(depth<-0.06&&cl[n-1]<=Math.min(...w.slice(-5)))add('Techo redondeado',-1,'techo en forma de ∩: distribución',price*0.85);}
   return out;
 }
 // Patrones de VELAS japonesas (estilo "patrones" de Binance), backtesteados sobre
@@ -1458,6 +1480,13 @@ function candlePatterns(oh){
     [Math.abs(hi[i]-hi[i-1])<0.001*cl[i]&&cl[i-1]>cl[i-3]&&bear(i),-1,'Pinzas de techo','dos máximos idénticos tras subida',j=>Math.abs(hi[j]-hi[j-1])<0.001*cl[j]&&cl[j-1]>cl[j-3]&&bear(j)],
     [bull(i)&&bull(i-1)&&bull(i-2)&&body(i)>aBody(i)*0.7&&cl[i-1]>cl[i-2]&&cl[i]>cl[i-1]&&op[i]<cl[i-1]&&op[i]>op[i-1],1,'Tres métodos alcistas','continuación de tendencia al alza',j=>bull(j)&&bull(j-1)&&bull(j-2)&&body(j)>aBody(j)*0.7&&cl[j-1]>cl[j-2]&&cl[j]>cl[j-1]&&op[j]<cl[j-1]&&op[j]>op[j-1]],
     [rng(i)>aBody(i)*2.2&&body(i)>aBody(i)*1.4,bull(i)?1:-1,'Vela de gran rango','expansión de volatilidad (impulso)',j=>rng(j)>aBody(j)*2.2&&body(j)>aBody(j)*1.4],
+    [rng(i)>0&&body(i)<0.3*rng(i)&&upW(i)>body(i)&&dnW(i)>body(i),0,'Peonza (spinning top)','cuerpo pequeño con mechas a ambos lados: indecisión',j=>rng(j)>0&&body(j)<0.3*rng(j)&&upW(j)>body(j)&&dnW(j)>body(j)],
+    [rng(i)>0&&dnW(i)>2*body(i)&&upW(i)<body(i)&&cl[i-1]>cl[i-3],-1,'Hombre colgado','mecha inferior larga tras subida (giro bajista)',j=>rng(j)>0&&dnW(j)>2*body(j)&&upW(j)<body(j)&&cl[j-1]>cl[j-3]],
+    [rng(i)>0&&upW(i)>2*body(i)&&dnW(i)<body(i)&&cl[i-1]<cl[i-3],1,'Martillo invertido','mecha superior larga tras caída (posible giro)',j=>rng(j)>0&&upW(j)>2*body(j)&&dnW(j)<body(j)&&cl[j-1]<cl[j-3]],
+    [bull(i)&&op[i]<=lo[i]*1.001&&body(i)>aBody(i)*1.2,1,'Belt hold alcista','abre en mínimo y sube con fuerza',j=>bull(j)&&op[j]<=lo[j]*1.001&&body(j)>aBody(j)*1.2],
+    [bear(i)&&op[i]>=hi[i]*0.999&&body(i)>aBody(i)*1.2,-1,'Belt hold bajista','abre en máximo y cae con fuerza',j=>bear(j)&&op[j]>=hi[j]*0.999&&body(j)>aBody(j)*1.2],
+    [rng(i)>0&&body(i)<0.1*rng(i)&&dnW(i)>3*body(i)&&upW(i)<body(i),1,'Doji libélula','rechazo de mínimos (giro alcista)',j=>rng(j)>0&&body(j)<0.1*rng(j)&&dnW(j)>3*body(j)&&upW(j)<body(j)],
+    [rng(i)>0&&body(i)<0.1*rng(i)&&upW(i)>3*body(i)&&dnW(i)<body(i),-1,'Doji lápida','rechazo de máximos (giro bajista)',j=>rng(j)>0&&body(j)<0.1*rng(j)&&upW(j)>3*body(j)&&dnW(j)<body(j)],
   ];
   const out=[];for(const d of defs){if(d[0])out.push({t:d[2],sig:d[1],d:d[3],st:bt(d[4]),vela:true});}
   return out;
