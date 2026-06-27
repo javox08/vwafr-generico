@@ -1940,15 +1940,19 @@ function PIBView(){
   const [err,setErr]=useState(false);
   const [sel,setSel]=useState('ESP');
   useEffect(()=>{let a=true;
-    fetch(`https://api.worldbank.org/v2/country/${PIB_LIST}/indicator/NY.GDP.MKTP.KD.ZG?format=json&per_page=2000&mrv=35`)
-      .then(r=>r.json()).then(j=>{if(!a)return;
-        if(!Array.isArray(j)||!Array.isArray(j[1])){setErr(true);return;}
-        const m={};
-        for(const d of j[1]){ if(d.value==null)continue; const k=d.countryiso3code; if(!k)continue;
-          if(!m[k])m[k]={iso3:k,iso2:d.country.id,name:d.country.value,series:[]};
-          m[k].series.push({year:+d.date,val:d.value});}
-        for(const k in m)m[k].series.sort((x,y)=>x.year-y.year);
-        setRaw(m);}).catch(()=>{if(a)setErr(true);});
+    const base=`https://api.worldbank.org/v2/country/${PIB_LIST}/indicator/`;
+    Promise.all([
+      fetch(base+'NY.GDP.MKTP.KD.ZG?format=json&per_page=2000&mrv=35').then(r=>r.json()),
+      fetch(base+'NY.GDP.MKTP.CD?format=json&per_page=600&mrv=1').then(r=>r.json()).catch(()=>null), // tamaño del PIB (US$) para ordenar
+    ]).then(([gj,lj])=>{if(!a)return;
+      if(!Array.isArray(gj)||!Array.isArray(gj[1])){setErr(true);return;}
+      const m={};
+      for(const d of gj[1]){ if(d.value==null)continue; const k=d.countryiso3code; if(!k)continue;
+        if(!m[k])m[k]={iso3:k,iso2:d.country.id,name:d.country.value,series:[],gdp:0};
+        m[k].series.push({year:+d.date,val:d.value});}
+      if(Array.isArray(lj)&&Array.isArray(lj[1]))for(const d of lj[1]){if(d.value!=null&&m[d.countryiso3code])m[d.countryiso3code].gdp=d.value;}
+      for(const k in m)m[k].series.sort((x,y)=>x.year-y.year);
+      setRaw(m);}).catch(()=>{if(a)setErr(true);});
     return()=>{a=false;};},[]);
 
   if(err)return(<div style={{textAlign:'center',color:'var(--faint)',fontSize:12,padding:'40px 0'}}>No se pudo cargar el PIB ahora mismo. Vuelve a intentarlo en un momento.</div>);
@@ -1956,7 +1960,8 @@ function PIBView(){
     <div style={{fontSize:20,marginBottom:8,animation:'spin 1s linear infinite',display:'inline-block'}}>◌</div>
     <div>Cargando PIB por país…</div><div style={{fontSize:10,marginTop:6}}>fuente: Banco Mundial</div></div>);
 
-  const countries=Object.values(raw).filter(c=>c.series.length>=5).sort((a,b)=>a.name.localeCompare(b.name));
+  // ordenados de mayor a menor economía (PIB en US$)
+  const countries=Object.values(raw).filter(c=>c.series.length>=5).sort((a,b)=>(b.gdp||0)-(a.gdp||0));
   const cur=raw[sel]&&raw[sel].series.length>=5?raw[sel]:countries[0];
   const p=pibPhase(cur.series), vals=cur.series.map(s=>s.val);
   const vsMean=p.latest-p.mean;
@@ -2003,15 +2008,48 @@ function PIBView(){
         </div>
       </div>
 
-      {/* GRÁFICO PIB con media (crosshair año/PIB) */}
+      {/* GRÁFICO DE CICLO: pasado (rosa) + futuro proyectado (azul) sobre la onda del ciclo */}
       <div style={panel({marginBottom:14,padding:16})}>
         <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
-          <span style={eyebrow}>Fluctuación del PIB · histórico</span>
-          <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>{vals.length} años</span>
+          <span style={eyebrow}>Ciclo del PIB · pasado y futuro</span>
+          <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>{vals.length} años + 5 proy.</span>
         </div>
-        <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:10}}>línea = crecimiento anual · discontinua = media; por encima de la media = expansión, por debajo = enfriamiento · toca para ver año y PIB</div>
-        <TVChart series={vals} color={p.c[0]==='#'?p.c:'#6E8BFF'} H={120} hline={p.mean} hlabel={'media '+p.mean.toFixed(1)+'%'}
-          fmt={v=>pct(v)} label={i=>'año '+cur.series[i].year}/>
+        <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:8}}><span style={{color:'#FF5C8A',fontWeight:700}}>● rosa</span> = pasado/actual · <span style={{color:'#5B9BFF',fontWeight:700}}>● azul</span> = futuro proyectado · la onda de fondo es el ciclo económico (expansión → pico → crisis → recuperación)</div>
+        {(()=>{
+          const ROSE='#FF5C8A',BLUE='#5B9BFF';
+          const hs=cur.series.slice(-Math.min(cur.series.length,22));
+          const FUT=5,proj=[]; let g=p.latest,vel=(p.latest-p.prev)*0.6;
+          const hMin=Math.min(...hs.map(d=>d.val)),hMax=Math.max(...hs.map(d=>d.val));
+          for(let k=1;k<=FUT;k++){const acc=-0.14*(g-p.mean)-0.4*vel; vel+=acc; g+=vel;
+            g=Math.max(hMin-2,Math.min(hMax+2,g)); proj.push({year:hs[hs.length-1].year+k,val:g});}
+          const all=hs.concat(proj),n=all.length,splitI=hs.length-1;
+          const Wc=320,Hc=160,Pd=12;
+          const sc=all.map(d=>d.val).concat([p.mean]); let lo=Math.min(...sc),hi=Math.max(...sc);
+          const pad=((hi-lo)||1)*0.2; lo-=pad; hi+=pad;
+          const X=i=>Pd+i/(n-1)*(Wc-2*Pd), Y=v=>Hc-Pd-((v-lo)/((hi-lo)||1))*(Hc-2*Pd);
+          let bg='';for(let i=0;i<n;i++){const t=i/(n-1),yv=p.mean+(hi-lo)*0.16*Math.sin(t*Math.PI*3-0.6);bg+=(i?'L ':'M ')+X(i).toFixed(1)+' '+Y(yv).toFixed(1)+' ';}
+          const pastD='M '+hs.map((d,i)=>X(i).toFixed(1)+' '+Y(d.val).toFixed(1)).join(' L ');
+          const futD='M '+all.slice(splitI).map((d,i)=>X(i+splitI).toFixed(1)+' '+Y(d.val).toFixed(1)).join(' L ');
+          const areaPast=pastD+` L ${X(splitI).toFixed(1)} ${Hc-Pd} L ${Pd} ${Hc-Pd} Z`;
+          let mxI=0,mnI=0;hs.forEach((d,i)=>{if(d.val>hs[mxI].val)mxI=i;if(d.val<hs[mnI].val)mnI=i;});
+          const phEnd=splitI>n*0.62;
+          return(
+          <svg viewBox={`0 0 ${Wc} ${Hc}`} width="100%" style={{display:'block'}}>
+            <defs><linearGradient id="pibg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={ROSE+'2E'}/><stop offset="100%" stopColor={ROSE+'00'}/></linearGradient></defs>
+            <path d={bg} fill="none" stroke="rgba(255,255,255,.07)" strokeWidth="11" strokeLinecap="round"/>
+            <line x1={Pd} y1={Y(p.mean).toFixed(1)} x2={Wc-Pd} y2={Y(p.mean).toFixed(1)} stroke="var(--faint)" strokeWidth="1" strokeDasharray="4 3" opacity="0.7"/>
+            <text x={Pd+1} y={(Y(p.mean)-3).toFixed(1)} fill="var(--faint)" fontSize="8" className="mono">media {p.mean.toFixed(1)}%</text>
+            <path d={areaPast} fill="url(#pibg)"/>
+            <path d={pastD} fill="none" stroke={ROSE} strokeWidth="2.4"/>
+            <path d={futD} fill="none" stroke={BLUE} strokeWidth="2.4" strokeDasharray="5 3"/>
+            <line x1={X(splitI).toFixed(1)} y1={Pd} x2={X(splitI).toFixed(1)} y2={Hc-Pd} stroke="var(--line2)" strokeWidth="1" strokeDasharray="2 3"/>
+            <text x={(X(splitI)-2).toFixed(1)} y={Hc-3} fill="var(--faint)" fontSize="7.5" textAnchor="end" className="mono">hoy</text>
+            <circle cx={X(splitI).toFixed(1)} cy={Y(p.latest).toFixed(1)} r="3.6" fill={ROSE} stroke="var(--bg)" strokeWidth="2"/>
+            <text x={X(mxI).toFixed(1)} y={(Y(hs[mxI].val)-5).toFixed(1)} fill={ROSE} fontSize="8" textAnchor="middle" className="mono">pico</text>
+            <text x={X(mnI).toFixed(1)} y={(Y(hs[mnI].val)+11).toFixed(1)} fill={BLUE} fontSize="8" textAnchor="middle" className="mono">crisis</text>
+            <text x={(phEnd?X(splitI)-5:X(splitI)+5).toFixed(1)} y={Pd+8} fill={p.c} fontSize="10" fontWeight="700" textAnchor={phEnd?'end':'start'}>{p.e} {p.t.split(' ')[0]}</text>
+          </svg>);
+        })()}
       </div>
 
       {/* PAÍSES EN SU LÍMITE (pico o suelo del ciclo) */}
