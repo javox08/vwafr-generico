@@ -1583,6 +1583,7 @@ function QuantView({gFunding}){
         <div style={{textAlign:'center'}}>
           <div style={{...eyebrow,color:valState.col,marginBottom:10}}>Precio objetivo · valor estimado</div>
           <div className="mono" style={{fontSize:40,fontWeight:800,lineHeight:1,letterSpacing:-1.5,textShadow:`0 0 40px ${valState.col}40`}}>{money(c.fair)}</div>
+          <div style={{fontSize:9,color:'var(--faint)',marginTop:6}}>estimación a LARGO PLAZO (ciclo · ~1 año) · no es el objetivo a 30 días</div>
           <div style={{...flx({justifyContent:'center',gap:8}),marginTop:11}}>
             <span className="mono" style={{fontSize:11.5,color:'var(--dim)'}}>actual {money(c.price)}</span>
             <span className="mono" style={{fontSize:12,fontWeight:700,color:valState.col,padding:'3px 10px',borderRadius:14,
@@ -2092,22 +2093,32 @@ function PIBView(){
           const futD='M '+all.slice(splitI).map((d,i)=>X(i+splitI).toFixed(1)+' '+Y(d.val).toFixed(1)).join(' L ');
           const areaPast=pastD+` L ${X(splitI).toFixed(1)} ${Hc-Pd} L ${Pd} ${Hc-Pd} Z`;
           let mxI=0,mnI=0;hs.forEach((d,i)=>{if(d.val>hs[mxI].val)mxI=i;if(d.val<hs[mnI].val)mnI=i;});
-          const phEnd=splitI>n*0.62;
+          // punto de giro PROBABLE en el futuro: mayor desviación de la media en la proyección
+          let extI=-1,best=-1;for(let i=splitI+1;i<n;i++){const dv=Math.abs(all[i].val-p.mean);if(dv>best){best=dv;extI=i;}}
+          const extPico=extI>=0&&all[extI].val>=p.mean, extYr=extI>=0?all[extI].year:null;
+          const phEnd=splitI>n*0.62, extEnd=extI>n*0.7;
           return(
           <svg viewBox={`0 0 ${Wc} ${Hc}`} width="100%" style={{display:'block'}}>
             <defs><linearGradient id="pibg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={ROSE+'2E'}/><stop offset="100%" stopColor={ROSE+'00'}/></linearGradient></defs>
             <path d={bg} fill="none" stroke="rgba(255,255,255,.07)" strokeWidth="11" strokeLinecap="round"/>
             <line x1={Pd} y1={Y(p.mean).toFixed(1)} x2={Wc-Pd} y2={Y(p.mean).toFixed(1)} stroke="var(--faint)" strokeWidth="1" strokeDasharray="4 3" opacity="0.7"/>
             <text x={Pd+1} y={(Y(p.mean)-3).toFixed(1)} fill="var(--faint)" fontSize="8" className="mono">media {p.mean.toFixed(1)}%</text>
+            {/* líneas verticales en los máximos/mínimos (históricos y el proyectado) */}
+            <line x1={X(mxI).toFixed(1)} y1={Pd} x2={X(mxI).toFixed(1)} y2={Hc-Pd} stroke={ROSE} strokeWidth="1" strokeDasharray="2 3" opacity="0.45"/>
+            <line x1={X(mnI).toFixed(1)} y1={Pd} x2={X(mnI).toFixed(1)} y2={Hc-Pd} stroke={BLUE} strokeWidth="1" strokeDasharray="2 3" opacity="0.45"/>
             <path d={areaPast} fill="url(#pibg)"/>
             <path d={pastD} fill="none" stroke={ROSE} strokeWidth="2.4"/>
             <path d={futD} fill="none" stroke={BLUE} strokeWidth="2.4" strokeDasharray="5 3"/>
             <line x1={X(splitI).toFixed(1)} y1={Pd} x2={X(splitI).toFixed(1)} y2={Hc-Pd} stroke="var(--line2)" strokeWidth="1" strokeDasharray="2 3"/>
             <text x={(X(splitI)-2).toFixed(1)} y={Hc-3} fill="var(--faint)" fontSize="7.5" textAnchor="end" className="mono">hoy</text>
+            {/* giro probable en el futuro: línea vertical + etiqueta */}
+            {extI>=0&&<line x1={X(extI).toFixed(1)} y1={Pd} x2={X(extI).toFixed(1)} y2={Hc-Pd} stroke={extPico?'#F3BA2F':'#3B82F6'} strokeWidth="1.3" strokeDasharray="4 2"/>}
+            {extI>=0&&<circle cx={X(extI).toFixed(1)} cy={Y(all[extI].val).toFixed(1)} r="3" fill={extPico?'#F3BA2F':'#3B82F6'} stroke="var(--bg)" strokeWidth="1.5"/>}
+            {extI>=0&&<text x={(extEnd?X(extI)-3:X(extI)+3).toFixed(1)} y={extPico?Pd+8:Hc-Pd-2} fill={extPico?'#F3BA2F':'#3B82F6'} fontSize="8" fontWeight="700" textAnchor={extEnd?'end':'start'} className="mono">{extPico?'pico':'suelo'} prob. {extYr}</text>}
             <circle cx={X(splitI).toFixed(1)} cy={Y(p.latest).toFixed(1)} r="3.6" fill={ROSE} stroke="var(--bg)" strokeWidth="2"/>
-            <text x={X(mxI).toFixed(1)} y={(Y(hs[mxI].val)-5).toFixed(1)} fill={ROSE} fontSize="8" textAnchor="middle" className="mono">pico</text>
-            <text x={X(mnI).toFixed(1)} y={(Y(hs[mnI].val)+11).toFixed(1)} fill={BLUE} fontSize="8" textAnchor="middle" className="mono">crisis</text>
-            <text x={(phEnd?X(splitI)-5:X(splitI)+5).toFixed(1)} y={Pd+8} fill={p.c} fontSize="10" fontWeight="700" textAnchor={phEnd?'end':'start'}>{p.e} {p.t.split(' ')[0]}</text>
+            <text x={X(mxI).toFixed(1)} y={(Y(hs[mxI].val)-5).toFixed(1)} fill={ROSE} fontSize="8" textAnchor="middle" className="mono">máx</text>
+            <text x={X(mnI).toFixed(1)} y={(Y(hs[mnI].val)+11).toFixed(1)} fill={BLUE} fontSize="8" textAnchor="middle" className="mono">mín</text>
+            <text x={Pd+1} y={Pd+9} fill={p.c} fontSize="10.5" fontWeight="700" textAnchor="start">{p.e} {p.t.split(' ')[0]}</text>
           </svg>);
         })()}
       </div>
