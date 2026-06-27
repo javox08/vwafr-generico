@@ -1263,6 +1263,10 @@ function analyzePatterns(cl){
     const wn=cnt[H]||k;
     return {n:k,win:Math.round(win/wn*100),avg:+(path[H]*100).toFixed(1),path,pathX};};
   const has=n>206;
+  // osciladores y zona de Fibonacci (todo derivable del cierre)
+  const wr=j=>{const Hh=maxN(j+1,14),Ll=minN(j+1,14);return Hh>Ll?(Hh-cl[j])/(Hh-Ll)*-100:-50;};      // Williams %R
+  const stoch=j=>{const Hh=maxN(j+1,14),Ll=minN(j+1,14);return Hh>Ll?(cl[j]-Ll)/(Hh-Ll)*100:50;};     // Estocástico %K
+  const fibZ=(j,a,b)=>{const Hh=maxN(j,60),Ll=minN(j,60),R=Hh-Ll;return R>0&&cl[j]<=Hh-a*R&&cl[j]>=Hh-b*R;}; // retroceso de Fib
   const defs=[
     [has&&sma(i,50)>sma(i,200)&&sma(i-1,50)<=sma(i-1,200),1,'Golden Cross','MA50 cruza arriba la MA200',j=>sma(j,50)>sma(j,200)&&sma(j-1,50)<=sma(j-1,200)],
     [has&&sma(i,50)<sma(i,200)&&sma(i-1,50)>=sma(i-1,200),-1,'Death Cross','MA50 cruza abajo la MA200',j=>sma(j,50)<sma(j,200)&&sma(j-1,50)>=sma(j-1,200)],
@@ -1297,6 +1301,15 @@ function analyzePatterns(cl){
     [cl[i]<=minN(i,20)&&rsi[i]>40,1,'Divergencia alcista RSI','nuevo mínimo sin debilidad en RSI',j=>cl[j]<=minN(j,20)&&rsi[j]>40],
     [cl[i]>=maxN(i,20)&&rsi[i]<60,-1,'Divergencia bajista RSI','nuevo máximo sin fuerza en RSI',j=>cl[j]>=maxN(j,20)&&rsi[j]<60],
     [hist[i]>hist[i-1]&&hist[i-1]>hist[i-2]&&hist[i]>0,1,'Histograma MACD acelerando','momentum alcista ganando fuerza',j=>hist[j]>hist[j-1]&&hist[j-1]>hist[j-2]&&hist[j]>0],
+    // ── osciladores, cruces de cero y zona de Fibonacci ──
+    [has&&fibZ(i,0.5,0.705)&&sma(i,50)>sma(i,200),1,'Golden Zone (Fib 0.618)','retroceso al bolsillo dorado en tendencia alcista',j=>fibZ(j,0.5,0.705)&&sma(j,50)>sma(j,200)],
+    [wr(i)<-80,1,'Williams %R sobreventa','%R < -80 (rebote por reversión)',j=>wr(j)<-80],
+    [wr(i)>-20,-1,'Williams %R sobrecompra','%R > -20 (agotamiento)',j=>wr(j)>-20],
+    [stoch(i)<20,1,'Estocástico sobreventa','%K < 20 (zona de rebote)',j=>stoch(j)<20],
+    [stoch(i)>80,-1,'Estocástico sobrecompra','%K > 80 (zona de techo)',j=>stoch(j)>80],
+    [macd[i]>0&&macd[i-1]<=0,1,'MACD cruza el cero ↑','momentum entra en positivo',j=>macd[j]>0&&macd[j-1]<=0],
+    [macd[i]<0&&macd[i-1]>=0,-1,'MACD cruza el cero ↓','momentum entra en negativo',j=>macd[j]<0&&macd[j-1]>=0],
+    [cl[i]>maxN(i,10)&&cl[i-5]<minN(i-5,10)*1.02,1,'Suelo en V','rebote rápido desde mínimos',j=>cl[j]>maxN(j,10)&&cl[j-5]<minN(j-5,10)*1.02],
   ];
   const out=[];
   for(const d of defs){ if(d[0]){out.push({t:d[2],sig:d[1],d:d[3],st:bt(d[4])});} }
@@ -1326,6 +1339,7 @@ const CP_STATS={
   'Hombro-cabeza-hombro':[81,-21],'HCH invertido':[83,38],
   'Triángulo ascendente':[70,34],'Triángulo descendente':[66,-16],
   'Triángulo simétrico':[62,25],'Cuña ascendente':[64,-17],'Cuña descendente':[68,30],
+  'Canal alcista':[66,16],'Canal bajista':[63,-14],'Canal lateral':[55,11],
 };
 function cpSlope(pts){const n=pts.length;if(n<2)return 0;
   const mx=pts.reduce((s,p)=>s+p[0],0)/n,my=pts.reduce((s,p)=>s+p[1],0)/n;
@@ -1359,7 +1373,11 @@ function chartPatterns(cl){
     const sh=cpSlope(ph.slice(-3).map(i=>[i,cl[i]])),sl=cpSlope(pl.slice(-3).map(i=>[i,cl[i]]));
     const fl=0.0006,up=x=>x>fl,dn=x=>x<-fl,flat=x=>Math.abs(x)<=fl;
     const tr=cl[n-1]>=cl[Math.max(0,n-20)]?1:-1;
-    if(flat(sh)&&up(sl))add('Triángulo ascendente',1,'máximos planos + mínimos al alza',price*1.18);
+    const para=Math.abs(sh-sl)<0.0005; // máximos y mínimos en paralelo = canal
+    if(para&&up(sh))add('Canal alcista',1,'máximos y mínimos en paralelo al alza',price*1.12);
+    else if(para&&dn(sh))add('Canal bajista',-1,'máximos y mínimos en paralelo a la baja',price*0.9);
+    else if(para&&flat(sh))add('Canal lateral',tr,'rango horizontal (rompe en la tendencia previa)',price*(1+tr*0.1),tr*11);
+    else if(flat(sh)&&up(sl))add('Triángulo ascendente',1,'máximos planos + mínimos al alza',price*1.18);
     else if(dn(sh)&&flat(sl))add('Triángulo descendente',-1,'máximos a la baja + mínimos planos',price*0.84);
     else if(dn(sh)&&up(sl))add('Triángulo simétrico',tr,'rangos que convergen (continúa la tendencia)',price*(1+tr*0.18),tr*25);
     else if(up(sh)&&up(sl)&&sl>sh)add('Cuña ascendente',-1,'subida perdiendo fuerza (giro)',price*0.83);
@@ -1467,11 +1485,12 @@ function TVChart({series,color='var(--accent)',H=120,area=false,band=null,bands=
 function QuantView({gFunding}){
   const [q,setQ]=useState(null);
   const [showBias,setShowBias]=useState(false);
+  const longRef=React.useRef(null); // caché del histórico largo (no se re-pagina en cada refresco)
   useEffect(()=>{
-    let alive=true;
+    let alive=true, timer=null;
     const jget=(u,ms=8000)=>{const c=new AbortController();const t=setTimeout(()=>c.abort(),ms);
       return fetch(u,{signal:c.signal}).then(r=>{if(!r.ok)throw 0;return r.json();}).finally(()=>clearTimeout(t));};
-    (async()=>{
+    const load=async()=>{
       const out={};
       // todas en paralelo e independientes: si una falla, las demás siguen
       await Promise.allSettled([
@@ -1498,12 +1517,14 @@ function QuantView({gFunding}){
       // preferimos el histórico largo de Binance para closes; CoinGecko queda de respaldo
       if(out.ohlc&&out.ohlc.length>=60){out.closes=out.ohlc.map(k=>k.c);}
       if(!out.closes){try{const k=await jget('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=1000');out.closes=k.map(x=>parseFloat(x[4]));}catch(_){}}
-      // histórico LARGO (paginado, ~hasta 8 años) para el backtest del bot
-      try{let allc=[],end=Date.now();
+      // histórico LARGO (paginado, ~hasta 8 años) para el backtest del bot.
+      // Se cachea: no se vuelve a paginar en cada refresco automático.
+      if(longRef.current){out.longCloses=longRef.current;}
+      else{try{let allc=[],end=Date.now();
         for(let pg=0;pg<3;pg++){const k=await jget('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=1000&endTime='+end,9000);
           if(!Array.isArray(k)||!k.length)break; allc=k.map(x=>parseFloat(x[4])).concat(allc); end=k[0][0]-864e5; if(k.length<1000)break;}
-        if(allc.length>1000)out.longCloses=allc;
-      }catch(_){}
+        if(allc.length>1000){out.longCloses=allc;longRef.current=allc;}
+      }catch(_){}}
       // reintento SECUENCIAL de métricas on-chain: bitcoin-data.com limita las
       // peticiones concurrentes, así que las que fallaron se repiten una a una.
       const ocRetry=[['mvrv','mvrv','mvrv'],['nupl','nupl','nupl'],['zscore','mvrv-zscore','mvrvZscore'],['puell','puell-multiple','puellMultiple'],['sopr','sopr','sopr']];
@@ -1511,7 +1532,10 @@ function QuantView({gFunding}){
         if(!Number.isFinite(out[key])){try{const j=await jget('https://bitcoin-data.com/v1/'+path+'/last',6000);out[key]=parseFloat(j[field]);}catch(_){}}
       }
       if(alive)setQ(out);
-    })();
+    };
+    load();
+    timer=setInterval(load,120000); // análisis automático: se refresca cada 2 min
+    return()=>{alive=false;if(timer)clearInterval(timer);};
   },[]);
 
   const c=useMemo(()=>{
@@ -1561,6 +1585,10 @@ function QuantView({gFunding}){
     const cl0=(x,lim)=>Math.max(-lim,Math.min(lim,x));
     const mvrvB=Number.isFinite(q.mvrv)?cl0((1.7-q.mvrv)*0.0007,0.0011):null;  // infravalorado = alcista
     const fngB=Number.isFinite(q.fng)?(q.fng>=80?-0.0006:q.fng<=20?0.0006:0):null; // contrario en extremos
+    // Opciones (calls/puts): Put/Call ratio → posicionamiento (más calls = alcista)
+    let optPcr=null;
+    if(q.opts&&q.opts.length){let poi=0,coi=0;for(const o of q.opts){const m=o.instrument_name.match(/-([CP])$/);if(!m)continue;if(m[1]==='P')poi+=o.open_interest||0;else coi+=o.open_interest||0;}optPcr=coi>0?poi/coi:null;}
+    const optB=Number.isFinite(optPcr)?cl0((0.85-optPcr)*0.0016,0.0008):null;
     const biases=[
       {k:'Patrones técnicos',v:cl0(Math.log(1+sig10/100)/10,0.003),why:(sig10>=0?'+':'')+sig10.toFixed(1)+'% medio 10d · '+actSt.length+' señal(es)'},
       {k:'Patrones gráficos',v:cl0((cpAvg/100)/20,0.003),why:chartPats.length?chartPats.map(p=>p.t).join(', '):'sin figura clara'},
@@ -1577,6 +1605,8 @@ function QuantView({gFunding}){
     if(shutdown&&shutdown.bias)biases.push({k:'Cierre de gobierno EE.UU.',v:shutdown.bias,why:shutdown.why});
     // Libro de órdenes spot (presión de muy corto plazo)
     if(Number.isFinite(q.obImb))biases.push({k:'Libro de órdenes',v:cl0(q.obImb*0.0015,0.0009),why:(q.obImb>=0?'+':'')+(q.obImb*100).toFixed(0)+'% desequilibrio ('+(q.obImb>=0?'compradores':'vendedores')+')'});
+    // Opciones (calls/puts): posicionamiento del mercado de derivados
+    if(optB!=null)biases.push({k:'Opciones (calls/puts)',v:optB,why:'Put/Call '+optPcr.toFixed(2)+(optPcr<0.7?' (más calls · alcista)':optPcr>1?' (más puts · cobertura)':' (equilibrado)')});
     // Perfil de retorno día a día (path histórico 1..30d) de TODO lo que afecta al
     // precio: patrones técnicos, de velas y figuras gráficas (estas con su movimiento
     // esperado repartido en ~20d). Se convierte en una deriva DISTINTA para cada día.
