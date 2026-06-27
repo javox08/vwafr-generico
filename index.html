@@ -1486,6 +1486,7 @@ function QuantView({gFunding}){
   const [q,setQ]=useState(null);
   const [showBias,setShowBias]=useState(false);
   const longRef=React.useRef(null); // caché del histórico largo (no se re-pagina en cada refresco)
+  const macroRef=React.useRef(null); // caché del ciclo económico (dato anual)
   useEffect(()=>{
     let alive=true, timer=null;
     const jget=(u,ms=8000)=>{const c=new AbortController();const t=setTimeout(()=>c.abort(),ms);
@@ -1524,6 +1525,13 @@ function QuantView({gFunding}){
         for(let pg=0;pg<3;pg++){const k=await jget('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=1000&endTime='+end,9000);
           if(!Array.isArray(k)||!k.length)break; allc=k.map(x=>parseFloat(x[4])).concat(allc); end=k[0][0]-864e5; if(k.length<1000)break;}
         if(allc.length>1000){out.longCloses=allc;longRef.current=allc;}
+      }catch(_){}}
+      // ciclo económico de EE.UU. (sesgo macro de la ruta) — anual, cacheado
+      if(macroRef.current){out.macro=macroRef.current;}
+      else{try{const md={};
+        await Promise.all(MACRO_IND.map(async([,,code])=>{try{const j=await jget('https://api.worldbank.org/v2/country/USA/indicator/'+code+'?format=json&mrv=6',7000);
+          if(Array.isArray(j)&&Array.isArray(j[1])){const s=j[1].filter(d=>d.value!=null).map(d=>({year:+d.date,val:d.value})).sort((x,y)=>x.year-y.year);if(s.length)md[code]=s;}}catch(_){}}));
+        if(Object.keys(md).length){out.macro=analyzeMacro(md);macroRef.current=out.macro;}
       }catch(_){}}
       // reintento SECUENCIAL de métricas on-chain: bitcoin-data.com limita las
       // peticiones concurrentes, así que las que fallaron se repiten una a una.
@@ -1607,6 +1615,9 @@ function QuantView({gFunding}){
     if(Number.isFinite(q.obImb))biases.push({k:'Libro de órdenes',v:cl0(q.obImb*0.0015,0.0009),why:(q.obImb>=0?'+':'')+(q.obImb*100).toFixed(0)+'% desequilibrio ('+(q.obImb>=0?'compradores':'vendedores')+')'});
     // Opciones (calls/puts): posicionamiento del mercado de derivados
     if(optB!=null)biases.push({k:'Opciones (calls/puts)',v:optB,why:'Put/Call '+optPcr.toFixed(2)+(optPcr<0.7?' (más calls · alcista)':optPcr>1?' (más puts · cobertura)':' (equilibrado)')});
+    // Ciclo económico de EE.UU. (risk-on/off): datos macro positivos/negativos inclinan la ruta
+    const macroB=(q.macro&&Number.isFinite(q.macro.score))?cl0(q.macro.score*0.0009,0.0009):null;
+    if(macroB!=null&&macroB!==0)biases.push({k:'Ciclo económico EE.UU.',v:macroB,why:q.macro.phase.t+' · '+(q.macro.score>0?'risk-on (+)':'risk-off (−)')});
     // Perfil de retorno día a día (path histórico 1..30d) de TODO lo que afecta al
     // precio: patrones técnicos, de velas y figuras gráficas (estas con su movimiento
     // esperado repartido en ~20d). Se convierte en una deriva DISTINTA para cada día.
@@ -2312,8 +2323,46 @@ function pibPhase(s){
   else ph={t:'Desaceleración',c:'var(--downDim)',e:'🐌'};
   return {mean,latest,prev,mn,mx,rising,above,pos,...ph};
 }
+// Indicadores del ciclo económico (EE.UU., Banco Mundial · anual). [grupo, nombre,
+// código, signo: +1 = más alto es riesgo-ON para activos de riesgo, -1 = riesgo-OFF]
+const MACRO_IND=[
+  ['Adelantado','Oferta monetaria (M3 amplia)','FM.LBL.BMNY.ZG',1],
+  ['Adelantado','Tipo de interés real','FR.INR.RINR',-1],
+  ['Coincidente','PIB · crecimiento','NY.GDP.MKTP.KD.ZG',1],
+  ['Coincidente','Producción manufacturera','NV.IND.MANF.KD.ZG',1],
+  ['Rezagado','Desempleo','SL.UEM.TOTL.ZS',-1],
+  ['Rezagado','Inflación (IPC)','FP.CPI.TOTL.ZG',-1],
+];
+// Análisis macro: fase del ciclo + puntuación riesgo-on/off (-1..1) a partir de la
+// dirección (variación interanual) de cada indicador. Alimenta la ruta de BTC.
+function analyzeMacro(data){
+  const rows=[]; let score=0,cnt=0;
+  for(const [grp,name,code,sign] of MACRO_IND){
+    const s=data[code];
+    if(!s||s.length<2){rows.push({grp,name,code,val:null});continue;}
+    const latest=s[s.length-1].val, prev=s[s.length-2].val, trend=latest-prev;
+    const contrib=Math.abs(trend)>1e-9?sign*Math.sign(trend):0;
+    score+=contrib;cnt++;
+    rows.push({grp,name,code,val:latest,year:s[s.length-1].year,trend,sig:contrib});
+  }
+  const sc=cnt?score/cnt:0;
+  const gdp=data['NY.GDP.MKTP.KD.ZG'],un=data['SL.UEM.TOTL.ZS'],cp=data['FP.CPI.TOTL.ZG'];
+  const g=gdp&&gdp.length?gdp[gdp.length-1].val:null, gp=gdp&&gdp.length>1?gdp[gdp.length-2].val:null;
+  const u=un&&un.length?un[un.length-1].val:null, up=un&&un.length>1?un[un.length-2].val:null;
+  const inf=cp&&cp.length?cp[cp.length-1].val:null;
+  let phase={t:'Indefinido',c:'var(--dim)',e:'•'};
+  if(g!=null){
+    if(g<0)phase={t:'Recesión',c:'var(--down)',e:'🔻'};
+    else if(inf!=null&&inf>=4&&g>0)phase={t:'Recalentamiento',c:'#F3BA2F',e:'🔥'};
+    else if(u!=null&&up!=null&&u<=up&&g>0)phase={t:'Expansión',c:'var(--up)',e:'🚀'};
+    else if(gp!=null&&g<gp)phase={t:'Desaceleración',c:'var(--downDim)',e:'🐌'};
+    else phase={t:'Recuperación',c:'#3B82F6',e:'📈'};
+  }
+  return {rows,score:sc,phase};
+}
 function PIBView(){
   const [raw,setRaw]=useState(null);
+  const [macro,setMacro]=useState(null);
   const [err,setErr]=useState(false);
   const [sel,setSel]=useState('USA');
   useEffect(()=>{let a=true;
@@ -2321,7 +2370,10 @@ function PIBView(){
     Promise.all([
       fetch(base+'NY.GDP.MKTP.KD.ZG?format=json&per_page=2000&mrv=35').then(r=>r.json()),
       fetch(base+'NY.GDP.MKTP.CD?format=json&per_page=600&mrv=1').then(r=>r.json()).catch(()=>null), // tamaño del PIB (US$) para ordenar
-    ]).then(([gj,lj])=>{if(!a)return;
+      // indicadores del ciclo económico de EE.UU. (motor del riesgo global)
+      ...MACRO_IND.map(([,,code])=>fetch(`https://api.worldbank.org/v2/country/USA/indicator/${code}?format=json&mrv=6`).then(r=>r.json()).catch(()=>null)),
+    ]).then(res=>{if(!a)return;
+      const gj=res[0],lj=res[1];
       if(!Array.isArray(gj)||!Array.isArray(gj[1])){setErr(true);return;}
       const m={};
       for(const d of gj[1]){ if(d.value==null)continue; const k=d.countryiso3code; if(!k)continue;
@@ -2329,7 +2381,12 @@ function PIBView(){
         m[k].series.push({year:+d.date,val:d.value});}
       if(Array.isArray(lj)&&Array.isArray(lj[1]))for(const d of lj[1]){if(d.value!=null&&m[d.countryiso3code])m[d.countryiso3code].gdp=d.value;}
       for(const k in m)m[k].series.sort((x,y)=>x.year-y.year);
-      setRaw(m);}).catch(()=>{if(a)setErr(true);});
+      const macroData={};
+      MACRO_IND.forEach(([,,code],i)=>{const j=res[2+i];
+        if(Array.isArray(j)&&Array.isArray(j[1])){const s=j[1].filter(d=>d.value!=null).map(d=>({year:+d.date,val:d.value})).sort((x,y)=>x.year-y.year);
+          if(s.length)macroData[code]=s;}});
+      setRaw(m); setMacro(analyzeMacro(macroData));
+    }).catch(()=>{if(a)setErr(true);});
     return()=>{a=false;};},[]);
 
   if(err)return(<div style={{textAlign:'center',color:'var(--faint)',fontSize:12,padding:'40px 0'}}>No se pudo cargar el PIB ahora mismo. Vuelve a intentarlo en un momento.</div>);
@@ -2355,8 +2412,8 @@ function PIBView(){
           <div style={{width:32,height:32,borderRadius:10,flexShrink:0,background:'rgba(110,139,255,.15)',
             border:'1px solid rgba(110,139,255,.4)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16}}>🌐</div>
           <div>
-            <div style={{fontSize:17,fontWeight:800,letterSpacing:-.3,lineHeight:1}}>Ciclo económico · PIB</div>
-            <div style={{...eyebrow,fontSize:9}}>crecimiento real · fase del ciclo · automático</div>
+            <div style={{fontSize:17,fontWeight:800,letterSpacing:-.3,lineHeight:1}}>Ciclo económico</div>
+            <div style={{...eyebrow,fontSize:9}}>indicadores macro · fase del ciclo · automático</div>
           </div>
         </div>
         <select value={cur.iso3} onChange={e=>setSel(e.target.value)}
@@ -2438,6 +2495,37 @@ function PIBView(){
           </svg>);
         })()}
       </div>
+
+      {/* INDICADORES DEL CICLO ECONÓMICO (EE.UU.) — adelantados / coincidentes / rezagados */}
+      {macro&&(()=>{const sc=macro.score, ph=macro.phase;
+        const scCol=sc>0.15?'var(--up)':sc<-0.15?'var(--down)':'#F3BA2F';
+        const fmtV=(r)=>r.val==null?'—':(r.val>=0?'+':'')+r.val.toFixed(1)+'%';
+        return(
+        <div style={panel({marginBottom:14,padding:16,background:`radial-gradient(130% 80% at 50% 0%, ${ph.c}0F 0%, var(--panel) 55%)`})}>
+          <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
+            <span style={eyebrow}>Indicadores del ciclo · EE.UU.</span>
+            <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>Banco Mundial · anual</span>
+          </div>
+          <div style={{...flx({justifyContent:'space-between',gap:8}),margin:'8px 0 12px',padding:'10px 12px',borderRadius:10,background:'#0A0D14'}}>
+            <div><div style={{fontSize:8.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:1,fontWeight:600}}>Fase macro</div>
+              <div style={{fontSize:14,fontWeight:800,color:ph.c}}>{ph.e} {ph.t}</div></div>
+            <div style={{textAlign:'right'}}><div style={{fontSize:8.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:1,fontWeight:600}}>Riesgo</div>
+              <div className="mono" style={{fontSize:14,fontWeight:800,color:scCol}}>{sc>0?'risk-ON':sc<0?'risk-OFF':'neutro'}</div></div>
+          </div>
+          {['Adelantado','Coincidente','Rezagado'].map(grp=>(
+            <div key={grp} style={{marginBottom:6}}>
+              <div style={{fontSize:8.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:1,fontWeight:700,marginBottom:3}}>{grp}s</div>
+              {macro.rows.filter(r=>r.grp===grp).map((r,i)=>(
+                <div key={i} style={{...flx({justifyContent:'space-between'}),padding:'5px 0',borderTop:i?'1px solid #12151F':'none'}}>
+                  <span style={{fontSize:11,color:'var(--dim)'}}>{r.sig>0?'▲':r.sig<0?'▼':'·'} {r.name}</span>
+                  <span className="mono" style={{fontSize:10.5,fontWeight:700,color:r.val==null?'var(--faint)':r.sig>0?'var(--up)':r.sig<0?'var(--down)':'var(--txt)'}}>{fmtV(r)}{r.year?<span style={{color:'var(--faint)',fontWeight:400}}> ·{(''+r.year).slice(2)}</span>:''}</span>
+                </div>
+              ))}
+            </div>
+          ))}
+          <p style={{fontSize:9,color:'var(--faint)',marginTop:8,lineHeight:1.5}}>Dato anual del Banco Mundial (con desfase). ▲ = empuja a riesgo-ON, ▼ = a riesgo-OFF. Esta fase y puntuación se <b>aplican como sesgo macro en la ruta cuantitativa de BTC</b>. Algunos indicadores (PMI, claims, nóminas…) no tienen fuente gratuita en vivo.</p>
+        </div>);
+      })()}
 
       {/* PAÍSES EN SU LÍMITE (pico o suelo del ciclo) */}
       <div style={panel({marginBottom:14,padding:16})}>
@@ -2570,7 +2658,7 @@ function App(){
   const TITLE={home:['Funding cripto · top 10 · en vivo','Sentimiento del Mercado'],
     cycle:['Bitcoin · ciclo de mercado','Ciclo de Bitcoin'],
     quant:['BTC · finanzas cuantitativas','Análisis Cuantitativo'],
-    pib:['Macro · ciclo económico mundial','PIB por país']}[view];
+    pib:['Macro · ciclo económico mundial','Ciclo económico']}[view];
 
   return(
     <>
@@ -2599,7 +2687,7 @@ function App(){
 
       {/* NAV apartados */}
       <div style={{...flx({gap:7}),marginBottom:16}}>
-        {[['home','Funding'],['cycle','Ciclo'],['quant','Cuantitativo'],['pib','PIB']].map(([k,label])=>{
+        {[['home','Funding'],['cycle','Ciclo'],['quant','Cuantitativo'],['pib','Macro']].map(([k,label])=>{
           const on=view===k;
           return(
             <button key={k} onClick={()=>setView(k)} style={{flex:1,padding:'9px 2px',borderRadius:10,
