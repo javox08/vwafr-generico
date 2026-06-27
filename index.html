@@ -1053,10 +1053,20 @@ function monteCarlo(rets,price,days,paths,drift,mags){
   const M=(mags&&mags.length)?mags:null, S2=2*0.06*0.06; // núcleo gaussiano σ≈6%
   const pull=v=>{let f=0;for(const m of M){const rel=(m.p-v)/v;f+=m.w*rel*Math.exp(-(rel*rel)/S2);}
     return Math.max(-0.0035,Math.min(0.0035,f*0.5));}; // atracción diaria acotada
+  // BOOTSTRAP POR BLOQUES con peso de recencia: en vez de días sueltos (que rompen
+  // la estructura), se muestrean TRAMOS consecutivos de retornos reales → conserva
+  // la volatilidad agrupada, las tendencias y las colas históricas. El arranque del
+  // bloque favorece la historia reciente (régimen actual): se adapta a lo histórico.
+  const n=rets.length, HL=Math.max(45,Math.min(150,n/3)); // vida media de recencia (días)
+  const pickStart=()=>{let s=n-1-Math.floor(-Math.log(Math.random()+1e-9)*HL);
+    if(s<0)s=(Math.random()*n)|0; return Math.min(n-1,Math.max(0,s));};
   const slices=Array.from({length:days+1},()=>[]),finals=[],finals10=[];
-  for(let p=0;p<paths;p++){let v=price;slices[0].push(v);
-    for(let d=1;d<=days;d++){const dr=darr?(drift[d-1]||0):dc;
-      v*=Math.exp(rets[(Math.random()*rets.length)|0]+dr+(M?pull(v):0));slices[d].push(v);if(d===10)finals10.push(v);}
+  for(let p=0;p<paths;p++){let v=price,bi=n,bl=0;slices[0].push(v);
+    for(let d=1;d<=days;d++){
+      if(bl<=0||bi>=n){bi=pickStart();bl=1+Math.floor(-Math.log(Math.random()+1e-9)*4);} // bloque medio ~5d
+      const r=rets[bi];bi++;bl--;
+      const dr=darr?(drift[d-1]||0):dc;
+      v*=Math.exp(r+dr+(M?pull(v):0));slices[d].push(v);if(d===10)finals10.push(v);}
     finals.push(v);}
   const bands=slices.map(sl=>({p5:qPct(sl,5),p25:qPct(sl,25),p50:qPct(sl,50),p75:qPct(sl,75),p95:qPct(sl,95)}));
   return {bands,finals,finals10};
@@ -1679,7 +1689,7 @@ function QuantView({gFunding}){
           <span style={eyebrow}>Monte Carlo · ruta probable 30d</span>
           <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>700 simulaciones</span>
         </div>
-        <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:10}}>bandas (bootstrap · colas gordas) · <span style={{color:c.drift>0?'var(--up)':c.drift<0?'var(--down)':'var(--faint)'}}>sesgo total {c.drift>=0?'+':''}{(Math.expm1(c.drift)*100).toFixed(2)}%/día</span> · 🧲 imán del mapa de liquidez · toca para ver día y precio</div>
+        <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:10}}>bootstrap por bloques (replica la historia: volatilidad, tendencias y colas, con más peso lo reciente) · <span style={{color:c.drift>0?'var(--up)':c.drift<0?'var(--down)':'var(--faint)'}}>sesgo total {c.drift>=0?'+':''}{(Math.expm1(c.drift)*100).toFixed(2)}%/día</span> · 🧲 imán de liquidez · toca para ver día y precio</div>
         <TVChart series={b.map(x=>x.p50)} H={FH}
           bands={[{hi:b.map(x=>x.p95),lo:b.map(x=>x.p5),fill:'rgba(110,139,255,.12)'},{hi:b.map(x=>x.p75),lo:b.map(x=>x.p25),fill:'rgba(110,139,255,.22)'}]}
           fmt={money} label={i=>i===0?'hoy':'día '+i}/>
