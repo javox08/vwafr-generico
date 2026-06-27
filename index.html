@@ -1135,31 +1135,55 @@ function loadTrade(rec,price){
   return {...st,px,pnl,prog,rr,days:Math.floor((now-st.ts)/86400000),
     stale:openable&&rec.side!==st.side}; // señal cambió pero el trade sigue abierto
 }
-// BACKTEST de la estrategia direccional del bot (tendencia MA50/MA200 + momentum)
-// sobre el histórico real. fee = comisión por lado; fundDaily = coste de funding/día
-// en posición (futuros). Devuelve ROE del periodo, CAGR, drawdown, % aciertos y la
-// proyección compuesta a 20 años.
+// Señal direccional del bot (la MISMA que usa el "trade recomendado"): tendencia
+// (MA50/MA200) + momentum. -1 corto, +1 largo, 0 fuera. Así el backtest mide
+// exactamente la lógica del bot en vivo (coherencia).
+function botSignal(cl,j){
+  if(j<210)return 0;
+  let s50=0,s200=0;for(let m=j-50;m<j;m++)s50+=cl[m];for(let m=j-200;m<j;m++)s200+=cl[m];
+  const ma50=s50/50,ma200=s200/200,px=cl[j-1],mom=cl[j-1]/cl[j-21]-1;
+  if(px>ma50&&ma50>ma200&&mom>0)return 1;
+  if(px<ma50&&ma50<ma200&&mom<0)return -1;
+  return 0;
+}
+// BACKTEST del bot sobre el histórico real, con DIMENSIONADO POR VOLATILIDAD
+// (apalancamiento objetivo) como una institución. fee = comisión por lado;
+// fundDaily = funding/día en posición. Devuelve métricas ajustadas al riesgo
+// (Sharpe/Sortino/Calmar), curva de equity y banda de incertidumbre a 20 años.
 function simulateBot(cl,fee,fundDaily){
-  const n=cl.length; if(n<230)return null;
-  const sma=(j,p)=>{let s=0;for(let m=j-p;m<j;m++)s+=cl[m];return s/p;};
-  let eq=1,pos=0,trades=0,wins=0,entryEq=1,peak=1,maxDD=0;
-  const start=210;
+  const n=cl.length; if(n<260)return null;
+  const lr=[];for(let i=1;i<n;i++)lr.push(Math.log(cl[i]/cl[i-1]));
+  const vol=j=>{let m=0;for(let k=j-20;k<j;k++)m+=lr[k-1];m/=20;let s=0;for(let k=j-20;k<j;k++){const x=lr[k-1]-m;s+=x*x;}return Math.sqrt(s/20);};
+  let eq=1,pos=0,sz=0,trades=0,wins=0,entryEq=1,peak=1,maxDD=0,levSum=0,levN=0;
+  const start=210, dr=[], curve=[];
   for(let j=start;j<n;j++){
-    const ma50=sma(j,50),ma200=sma(j,200),px=cl[j-1],mom=cl[j-1]/cl[j-21]-1;
-    const sig=(px>ma50&&ma50>ma200&&mom>0)?1:(px<ma50&&ma50<ma200&&mom<0)?-1:0;
+    const sig=botSignal(cl,j);
+    const rv=vol(j)||0.02, lev=Math.max(0.25,Math.min(3,0.022/rv)); // objetivo ~2,2%/día de vol
     if(sig!==pos){ // se decide al cierre de j-1 y se mantiene durante el día j
-      if(pos!==0){trades++;if(eq>=entryEq)wins++;eq*=(1-fee);}
-      if(sig!==0){eq*=(1-fee);entryEq=eq;}
-      pos=sig;
+      if(pos!==0){trades++;if(eq>=entryEq)wins++;eq*=(1-fee*Math.abs(sz));}
+      if(sig!==0){eq*=(1-fee*lev);entryEq=eq;}
+      pos=sig; sz=sig*lev;
     }
-    const r=cl[j]/cl[j-1]-1;
-    if(pos!==0)eq*=Math.max(1e-4,1+pos*(r-fundDaily));
+    if(pos!==0){levSum+=Math.abs(sz);levN++;}
+    const eq0=eq, r=cl[j]/cl[j-1]-1;
+    if(pos!==0)eq*=Math.max(1e-4,1+sz*r-sz*fundDaily);
+    dr.push(eq/eq0-1); curve.push(eq);
     if(eq>peak)peak=eq;const dd=(peak-eq)/peak;if(dd>maxDD)maxDD=dd;
   }
   const years=(n-start)/365, roe=(eq-1)*100;
   const cagr=years>0?(Math.pow(Math.max(eq,1e-6),1/years)-1)*100:0;
-  const m20=Math.pow(1+cagr/100,20);
-  return {eq,roe,cagr,years,trades,winRate:trades?wins/trades*100:0,maxDD:maxDD*100,m20,roe20:(m20-1)*100};
+  const mean=qMean(dr), sd=qStd(dr);
+  let dn=0;for(const x of dr)if(x<0)dn+=x*x; const ddv=Math.sqrt(dn/dr.length);
+  const sharpe=sd>0?mean/sd*Math.sqrt(365):0, sortino=ddv>0?mean/ddv*Math.sqrt(365):0;
+  const calmar=maxDD>0?(cagr/100)/maxDD:0, avgLev=levN?levSum/levN:1;
+  // banda de incertidumbre a 20 años: bootstrap por bloques de los retornos diarios del bot
+  const BD=20*365,B=20,P=240,fin=[];
+  if(dr.length>40){for(let p=0;p<P;p++){let e=1,d=0;while(d<BD){const stt=(Math.random()*(dr.length-B))|0;for(let qx=0;qx<B&&d<BD;qx++,d++)e*=(1+dr[stt+qx]);}fin.push(e);}fin.sort((a,b)=>a-b);}
+  const qf=p=>fin.length?fin[Math.min(fin.length-1,Math.floor(p/100*fin.length))]:Math.pow(1+cagr/100,20);
+  const band20={p5:qf(5),p50:qf(50),p95:qf(95)};
+  const stepc=Math.max(1,Math.floor(curve.length/110)),eqCurve=[];for(let k=0;k<curve.length;k+=stepc)eqCurve.push(curve[k]);eqCurve.push(curve[curve.length-1]);
+  return {eq,roe,cagr,years,trades,winRate:trades?wins/trades*100:0,maxDD:maxDD*100,
+    sharpe,sortino,calmar,avgLev,band20,eqCurve,m20:Math.pow(1+cagr/100,20)};
 }
 // Calendario económico (eventos de alto impacto, previstos). Filtra a futuro.
 const ECON=[
@@ -1702,16 +1726,20 @@ function QuantView({gFunding}){
     const macroSoon=ECON.some(e=>{const d=new Date(e[0]+'T13:00:00Z').getTime();return Math.abs(d-nowT)<2*D2;});
     const riskBlock=macroSoon||(shutdown&&shutdown.active);
     const up10=mc.bands[10].p75/price-1, dn10=1-mc.bands[10].p25/price;
+    // dirección = MISMA señal que el backtest (tendencia + momentum) → coherencia bot↔backtest
+    const botSig=botSignal(cl,cl.length), agree=(botSig>0&&drift>0)||(botSig<0&&drift<0);
     let tside='NEUTRAL',treason='';
     if(riskBlock){treason=macroSoon?'Evento macro inminente · mejor esperar':'Cierre de gobierno activo · mejor esperar';}
-    else if(drift>0.0003&&probUp>=53){tside='LONG';treason='Sesgo alcista y probabilidad a favor';}
-    else if(drift<-0.0003&&probUp<=47){tside='SHORT';treason='Sesgo bajista y probabilidad a favor';}
-    else treason='Señal poco clara · sin ventaja estadística';
+    else if(botSig>0){tside='LONG';treason='Tendencia alcista + momentum'+(drift>0?' · la ruta lo confirma':drift<0?' · la ruta no acompaña':'');}
+    else if(botSig<0){tside='SHORT';treason='Tendencia bajista + momentum'+(drift<0?' · la ruta lo confirma':drift>0?' · la ruta no acompaña':'');}
+    else treason='Sin tendencia clara · el bot se queda fuera';
     let tpPct=0,slPct=0;
     if(tside==='LONG'){tpPct=Math.max(0.03,up10);slPct=Math.max(0.02,Math.min(0.12,dn10));}
     else if(tside==='SHORT'){tpPct=Math.max(0.03,dn10);slPct=Math.max(0.02,Math.min(0.12,up10));}
-    const tconf=tside==='NEUTRAL'?0:Math.round(Math.min(90,45+Math.abs(probUp-50)*1.8));
-    const tradeRec={side:tside,tpPct,slPct,reason:treason,conf:tconf};
+    // apalancamiento recomendado por volatilidad (objetivo ~2,2%/día de vol)
+    const recLev=Math.max(0.25,Math.min(3,0.022/(recentVol||0.02)));
+    const tconf=tside==='NEUTRAL'?0:Math.round(Math.min(92,42+Math.abs(probUp-50)*1.5+(agree?12:0)));
+    const tradeRec={side:tside,tpPct,slPct,reason:treason,conf:tconf,lev:recLev};
     const trade=loadTrade(tradeRec,price);
     // ── BACKTEST del bot sobre el histórico largo: sin y con comisiones de Binance ──
     const bcl=(q.longCloses&&q.longCloses.length>=230)?q.longCloses:cl;
@@ -2243,7 +2271,7 @@ function QuantView({gFunding}){
               <span>entrada {money(t.entry)}</span><span>{t.prog.toFixed(0)}% al objetivo</span><span>{t.days}d en trade</span>
             </div>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:12}}>
-              {[['R:R',t.rr.toFixed(1)+':1',t.rr>=1.5?'var(--up)':'#F3BA2F'],['Confianza',c.tradeRec.conf+'%',c.tradeRec.conf>=60?'var(--up)':'#F3BA2F'],['Precio',money(c.price),'var(--txt)']].map((m,i)=>(
+              {[['R:R',t.rr.toFixed(1)+':1',t.rr>=1.5?'var(--up)':'#F3BA2F'],['Apalancamiento',c.tradeRec.lev.toFixed(1)+'×',c.tradeRec.lev<=1.2?'var(--up)':'#F3BA2F'],['Confianza',c.tradeRec.conf+'%',c.tradeRec.conf>=60?'var(--up)':'#F3BA2F']].map((m,i)=>(
                 <div key={i} style={{background:'#0A0D14',borderRadius:8,padding:'8px',textAlign:'center'}}>
                   <div className="mono" style={{fontSize:12,fontWeight:800,color:m[2]}}>{m[1]}</div>
                   <div style={{fontSize:8,color:'var(--dim)'}}>{m[0]}</div>
@@ -2255,44 +2283,57 @@ function QuantView({gFunding}){
         </div>);
       })()}
 
-      {/* ── BACKTEST DEL BOT · RESULTADO A 20 AÑOS ── */}
+      {/* ── BACKTEST DEL BOT (resultado REAL del periodo + métricas de riesgo) ── */}
       {c.sim&&(()=>{
-        const s=c.sim, sc=c.simC;
+        const s=c.sim, sc=c.simC, yr=s.years.toFixed(1);
         const fmtMult=m=>m>=1000?Math.round(m).toLocaleString('es-ES')+'×':m>=10?m.toFixed(0)+'×':m.toFixed(1)+'×';
         const fmtRoe=r=>Math.abs(r)>=1000?(r>=0?'+':'')+Math.round(r).toLocaleString('es-ES')+'%':(r>=0?'+':'')+r.toFixed(0)+'%';
+        const eqc=s.eqCurve||[]; const useC=sc&&sc.eqCurve?sc:s;
         return(
         <div style={panel({marginBottom:14,padding:16,background:'radial-gradient(130% 80% at 50% 0%, rgba(31,224,160,.06) 0%, var(--panel) 55%)'})}>
           <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
-            <span style={eyebrow}>Backtest del bot · ROE a 20 años</span>
-            <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>{s.years.toFixed(1)} años reales</span>
+            <span style={eyebrow}>Backtest del bot · {yr} años reales</span>
+            <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>misma señal que el trade</span>
           </div>
-          <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:12}}>estrategia direccional del bot (tendencia + momentum) sobre el histórico real de BTC. El ROE a 20 años es la <b>proyección compuesta</b> del rendimiento anualizado (CAGR).</div>
-          {/* histórico real */}
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:7,marginBottom:12}}>
-            {[['CAGR',(s.cagr>=0?'+':'')+s.cagr.toFixed(0)+'%/año',s.cagr>=0?'var(--up)':'var(--down)'],
-              ['ROE periodo',fmtRoe(s.roe),s.roe>=0?'var(--up)':'var(--down)'],
-              ['Máx. caída','-'+s.maxDD.toFixed(0)+'%','var(--down)'],
-              ['Aciertos',s.winRate.toFixed(0)+'%','var(--txt)']].map((m,i)=>(
-              <div key={i} style={{background:'#0A0D14',borderRadius:8,padding:'8px 5px',textAlign:'center'}}>
-                <div className="mono" style={{fontSize:11.5,fontWeight:800,color:m[2]}}>{m[1]}</div>
+          <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:10}}>la MISMA estrategia del trade recomendado, con <b>dimensionado por volatilidad</b> (apalancamiento objetivo), sobre <b>{yr} años</b> reales de BTC. Con comisiones de Binance.</div>
+          {/* HERO: ROE real del periodo (con comisiones) */}
+          <div style={{textAlign:'center',padding:'10px 0 6px'}}>
+            <div className="mono" style={{fontSize:30,fontWeight:800,color:(sc?sc.roe:s.roe)>=0?'var(--up)':'var(--down)',lineHeight:1}}>{fmtRoe(sc?sc.roe:s.roe)}</div>
+            <div style={{fontSize:9.5,color:'var(--dim)',marginTop:3}}>ROE en {yr} años (con comisiones) · {fmtMult(sc?sc.eq:s.eq)} la inversión</div>
+          </div>
+          {/* curva de equity (log) */}
+          {useC.eqCurve&&useC.eqCurve.length>3&&(()=>{const cv=useC.eqCurve.map(x=>Math.log(Math.max(1e-6,x)));
+            return <div style={{margin:'8px 0 4px'}}><TVChart series={cv} color="#1FE0A0" H={70} glow
+              fmt={v=>fmtMult(Math.exp(v))} label={i=>'≈ año '+(i/cv.length*s.years).toFixed(1)}/></div>;})()}
+          {/* métricas ajustadas al riesgo */}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:7,margin:'10px 0'}}>
+            {[['CAGR',(useC.cagr>=0?'+':'')+useC.cagr.toFixed(0)+'%/año',useC.cagr>=0?'var(--up)':'var(--down)'],
+              ['Sharpe',useC.sharpe.toFixed(2),useC.sharpe>=1?'var(--up)':useC.sharpe>=0.5?'#F3BA2F':'var(--down)'],
+              ['Calmar',useC.calmar.toFixed(2),useC.calmar>=0.5?'var(--up)':'#F3BA2F'],
+              ['Máx. caída','-'+useC.maxDD.toFixed(0)+'%','var(--down)']].map((m,i)=>(
+              <div key={i} style={{background:'#0A0D14',borderRadius:8,padding:'8px 4px',textAlign:'center'}}>
+                <div className="mono" style={{fontSize:12,fontWeight:800,color:m[2]}}>{m[1]}</div>
                 <div style={{fontSize:7.5,color:'var(--dim)',marginTop:2}}>{m[0]}</div>
               </div>
             ))}
           </div>
-          {/* resultado a 20 años: sin y con comisiones */}
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-            <div style={{background:'rgba(31,224,160,.08)',border:'1px solid rgba(31,224,160,.3)',borderRadius:10,padding:'12px 8px',textAlign:'center'}}>
-              <div style={{fontSize:8.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.8,fontWeight:600}}>20 años · sin comisiones</div>
-              <div className="mono" style={{fontSize:20,fontWeight:800,color:'var(--up)',marginTop:4,lineHeight:1}}>{fmtMult(s.m20)}</div>
-              <div className="mono" style={{fontSize:9.5,color:'var(--dim)',marginTop:3}}>ROE {fmtRoe(s.roe20)}</div>
-            </div>
-            <div style={{background:'#0A0D14',border:'1px solid var(--line2)',borderRadius:10,padding:'12px 8px',textAlign:'center'}}>
-              <div style={{fontSize:8.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.8,fontWeight:600}}>20 años · con comisiones</div>
-              <div className="mono" style={{fontSize:20,fontWeight:800,color:sc&&sc.m20>=1?'var(--up)':'var(--down)',marginTop:4,lineHeight:1}}>{sc?fmtMult(sc.m20):'—'}</div>
-              <div className="mono" style={{fontSize:9.5,color:'var(--dim)',marginTop:3}}>ROE {sc?fmtRoe(sc.roe20):'—'}</div>
-            </div>
+          <div style={{...flx({justifyContent:'space-between'}),fontSize:9,color:'var(--dim)',padding:'0 2px 4px'}} className="mono">
+            <span>aciertos {useC.winRate.toFixed(0)}%</span><span>apalancamiento medio {useC.avgLev.toFixed(1)}×</span><span>Sortino {useC.sortino.toFixed(2)}</span>
           </div>
-          <p style={{fontSize:8.5,color:'var(--faint)',marginTop:10,lineHeight:1.5}}>Comisiones aplicadas: <b>taker de futuros Binance 0,04%/lado</b> (entrada+salida) + <b>funding 0,01%/8h (~0,03%/día)</b> mientras hay posición. Backtest sobre {s.years.toFixed(1)} años; la proyección a 20 años asume que el ritmo se mantiene (muy improbable: BTC no tiene 20 años de histórico fiable y los rendimientos pasados no garantizan los futuros).</p>
+          {/* proyección a 20 años: BANDA de incertidumbre (no un número mágico) */}
+          {useC.band20&&(
+            <div style={{marginTop:8,paddingTop:10,borderTop:'1px solid var(--line2)'}}>
+              <div style={{fontSize:8.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.8,fontWeight:600,marginBottom:6}}>Proyección a 20 años · banda (bootstrap)</div>
+              <div style={{...flx({justifyContent:'space-between'})}}>
+                {[['pesimista (p5)',useC.band20.p5,'var(--down)'],['mediana',useC.band20.p50,'var(--txt)'],['optimista (p95)',useC.band20.p95,'var(--up)']].map((m,i)=>(
+                  <div key={i} style={{textAlign:'center',flex:1}}>
+                    <div className="mono" style={{fontSize:13,fontWeight:800,color:m[2]}}>{fmtMult(m[1])}</div>
+                    <div style={{fontSize:7.5,color:'var(--dim)'}}>{m[0]}</div>
+                  </div>
+                ))}
+              </div>
+            </div>)}
+          <p style={{fontSize:8.5,color:'var(--faint)',marginTop:10,lineHeight:1.5}}>Cifras del periodo <b>real de {yr} años</b> (NO de 20). Comisiones: taker futuros Binance 0,04%/lado + funding ~0,03%/día. La banda a 20 años es un bootstrap de los retornos del bot (rango de escenarios, no una promesa): BTC no tiene 20 años de histórico fiable y rendimientos pasados no garantizan futuros.</p>
         </div>);
       })()}
 
