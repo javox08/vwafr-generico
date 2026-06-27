@@ -1102,6 +1102,38 @@ function loadRoutes(price,bands){
   try{localStorage.setItem('vwafr_routes_v1',JSON.stringify(store));}catch(_){}
   return out;
 }
+// Trade recomendado (paper-trade estilo TradingView): se ABRE con la señal actual
+// (entrada, stop y objetivo), se guarda y va AVANZANDO con el precio (P&L en vivo).
+// Se cierra al tocar objetivo/stop y se ABRE OTRO solo cuando cambia la señal.
+function loadTrade(rec,price){
+  const now=Date.now(); let st=null;
+  try{st=JSON.parse(localStorage.getItem('vwafr_trade_v1'));}catch(_){}
+  const openable=rec.side!=='NEUTRAL';
+  // señal nueva = no hay trade, o la señal cambia de lado (entonces se sustituye).
+  // Un trade cerrado se mantiene visible hasta que llegue una señal de OTRO lado.
+  const needNew=openable&&(!st||st.side!==rec.side);
+  if(needNew){
+    const long=rec.side==='LONG';
+    st={side:rec.side,entry:price,ts:now,closed:false,reason:rec.reason,
+        sl:long?price*(1-rec.slPct):price*(1+rec.slPct),
+        tp:long?price*(1+rec.tpPct):price*(1-rec.tpPct)};
+    try{localStorage.setItem('vwafr_trade_v1',JSON.stringify(st));}catch(_){}
+  }
+  if(st&&!st.closed){ // ¿tocó objetivo o stop?
+    const long=st.side==='LONG';
+    const hitTP=long?price>=st.tp:price<=st.tp, hitSL=long?price<=st.sl:price>=st.sl;
+    if(hitTP||hitSL){st.closed=true;st.result=hitTP?'TP':'SL';st.closePrice=hitTP?st.tp:st.sl;st.closeTs=now;
+      try{localStorage.setItem('vwafr_trade_v1',JSON.stringify(st));}catch(_){}}
+  }
+  if(!st)return {side:'NEUTRAL',empty:true};
+  const long=st.side==='LONG', px=st.closed?st.closePrice:price;
+  const pnl=(long?(px-st.entry):(st.entry-px))/st.entry*100;
+  const span=Math.abs(st.tp-st.entry)||1;
+  const prog=Math.max(-40,Math.min(100,(long?(px-st.entry):(st.entry-px))/span*100));
+  const rr=Math.abs(st.tp-st.entry)/(Math.abs(st.entry-st.sl)||1);
+  return {...st,px,pnl,prog,rr,days:Math.floor((now-st.ts)/86400000),
+    stale:openable&&rec.side!==st.side}; // señal cambió pero el trade sigue abierto
+}
 // Calendario económico (eventos de alto impacto, previstos). Filtra a futuro.
 const ECON=[
   ['2026-06-17','FOMC','Decisión de tipos de la Fed'],['2026-07-14','CPI','Inflación EE.UU. (IPC)'],
@@ -1578,10 +1610,26 @@ function QuantView({gFunding}){
         let mp=null,minp=Infinity;const ks=Object.keys(sk).map(Number).sort((a,b)=>a-b);
         for(const S of ks){let pay=0;for(const K of ks){const oo=sk[K];pay+=oo.c*Math.max(0,S-K)+oo.p*Math.max(0,K-S);}if(pay<minp){minp=pay;mp=S;}}
         optExp={date:big,oi:exp[big].oi,maxPain:mp,days:Math.ceil((big-Date.now())/864e5)};}}
+    // ── TRADE RECOMENDADO (síntesis de todo el análisis) ──
+    const D2=86400000, nowT=Date.now();
+    const macroSoon=ECON.some(e=>{const d=new Date(e[0]+'T13:00:00Z').getTime();return Math.abs(d-nowT)<2*D2;});
+    const riskBlock=macroSoon||(shutdown&&shutdown.active);
+    const up10=mc.bands[10].p75/price-1, dn10=1-mc.bands[10].p25/price;
+    let tside='NEUTRAL',treason='';
+    if(riskBlock){treason=macroSoon?'Evento macro inminente · mejor esperar':'Cierre de gobierno activo · mejor esperar';}
+    else if(drift>0.0003&&probUp>=53){tside='LONG';treason='Sesgo alcista y probabilidad a favor';}
+    else if(drift<-0.0003&&probUp<=47){tside='SHORT';treason='Sesgo bajista y probabilidad a favor';}
+    else treason='Señal poco clara · sin ventaja estadística';
+    let tpPct=0,slPct=0;
+    if(tside==='LONG'){tpPct=Math.max(0.03,up10);slPct=Math.max(0.02,Math.min(0.12,dn10));}
+    else if(tside==='SHORT'){tpPct=Math.max(0.03,dn10);slPct=Math.max(0.02,Math.min(0.12,up10));}
+    const tconf=tside==='NEUTRAL'?0:Math.round(Math.min(90,45+Math.abs(probUp-50)*1.8));
+    const tradeRec={side:tside,tpPct,slPct,reason:treason,conf:tconf};
+    const trade=loadTrade(tradeRec,price);
     return {price,annVol,rsi,ma200,ma50,ma200w,mc,probUp,probUp15,probDn15,var99,cvar99,
       fair,lo,hi,valPct,realized,models,plSup,plRes,H,regime,fund,gf,opt,levels,cyc,patterns,corrE,corrS,corrAvg,optExp,
       route,tomorrow,tomPct,sig10,pdrift,trap,swingHi,swingLo,routes,biases,chartPats,drift,drift30,shutdown,
-      cal,volScale,sigTarget,dvol:q.dvol,obImb:q.obImb,impDaily};
+      cal,volScale,sigTarget,dvol:q.dvol,obImb:q.obImb,impDaily,trade,tradeRec,closes:cl};
   },[q,gFunding]);
 
   const D=86400000, now=Date.now();
@@ -2035,9 +2083,74 @@ function QuantView({gFunding}){
         </p>
       </div>
 
+      {/* ── TRADE RECOMENDADO (paper-trade estilo TradingView) ── */}
+      {(()=>{
+        const t=c.trade, neutral=t.side==='NEUTRAL'||t.empty, long=t.side==='LONG';
+        const col=neutral?'var(--dim)':long?'var(--up)':'var(--down)';
+        const past=(c.closes||[]).slice(-36), fut=c.mc.bands.slice(1,16).map(x=>x.p50);
+        const series=past.concat(fut), n=series.length, splitI=past.length-1;
+        const lv=neutral?[]:[t.entry,t.tp,t.sl], allv=series.concat(lv);
+        const Wc=320,Hc=130,Pd=10; let lo=Math.min(...allv),hi=Math.max(...allv);const pd=((hi-lo)||1)*0.08;lo-=pd;hi+=pd;
+        const X=i=>Pd+i/(n-1)*(Wc-2*Pd), Y=v=>Hc-Pd-((v-lo)/((hi-lo)||1))*(Hc-2*Pd);
+        const pastD='M '+past.map((v,i)=>X(i).toFixed(1)+' '+Y(v).toFixed(1)).join(' L ');
+        const futD='M '+series.slice(splitI).map((v,i)=>X(i+splitI).toFixed(1)+' '+Y(v).toFixed(1)).join(' L ');
+        return(
+        <div style={panel({marginBottom:14,padding:16,borderColor:neutral?'var(--line2)':long?'rgba(31,224,160,.35)':'rgba(255,84,112,.35)'})}>
+          <div style={{...flx({justifyContent:'space-between'}),marginBottom:10}}>
+            <span style={eyebrow}>Trade recomendado</span><span className="mono" style={{fontSize:9,color:'var(--faint)'}}>auto · simulado</span>
+          </div>
+          {neutral?(
+            <div style={{textAlign:'center',padding:'14px 0'}}>
+              <div style={{fontSize:20,fontWeight:800,color:'var(--dim)'}}>⏸ SIN TRADE</div>
+              <div style={{fontSize:11,color:'var(--faint)',marginTop:4}}>{c.tradeRec.reason}</div>
+            </div>
+          ):(<>
+            <div style={{...flx({justifyContent:'space-between'}),marginBottom:10}}>
+              <div style={{...flx({gap:8})}}>
+                <span style={{fontSize:18,fontWeight:800,color:col}}>{long?'▲ LONG':'▼ SHORT'}</span>
+                {t.closed&&<span className="mono" style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:10,background:t.result==='TP'?'rgba(31,224,160,.15)':'rgba(255,84,112,.15)',color:t.result==='TP'?'var(--up)':'var(--down)'}}>{t.result==='TP'?'✓ objetivo':'✗ stop'}</span>}
+                {t.stale&&!t.closed&&<span className="mono" style={{fontSize:9,color:'#F3BA2F'}}>señal cambió</span>}
+              </div>
+              <span className="mono" style={{fontSize:16,fontWeight:800,color:t.pnl>=0?'var(--up)':'var(--down)'}}>{t.pnl>=0?'+':''}{t.pnl.toFixed(1)}%</span>
+            </div>
+            <svg viewBox={`0 0 ${Wc} ${Hc}`} width="100%" style={{display:'block'}}>
+              <line x1={Pd} y1={Y(t.tp).toFixed(1)} x2={Wc-Pd} y2={Y(t.tp).toFixed(1)} stroke="var(--up)" strokeWidth="1" strokeDasharray="4 3" opacity=".85"/>
+              <line x1={Pd} y1={Y(t.entry).toFixed(1)} x2={Wc-Pd} y2={Y(t.entry).toFixed(1)} stroke="var(--faint)" strokeWidth="1" strokeDasharray="2 3"/>
+              <line x1={Pd} y1={Y(t.sl).toFixed(1)} x2={Wc-Pd} y2={Y(t.sl).toFixed(1)} stroke="var(--down)" strokeWidth="1" strokeDasharray="4 3" opacity=".85"/>
+              <text x={Wc-Pd-1} y={(Y(t.tp)-2).toFixed(1)} fill="var(--up)" fontSize="8" textAnchor="end" className="mono">TP {money(t.tp)}</text>
+              <text x={Wc-Pd-1} y={(Y(t.sl)+8).toFixed(1)} fill="var(--down)" fontSize="8" textAnchor="end" className="mono">SL {money(t.sl)}</text>
+              <path d={pastD} fill="none" stroke="#F7931A" strokeWidth="2"/>
+              <path d={futD} fill="none" stroke={col} strokeWidth="1.6" strokeDasharray="4 3" opacity=".7"/>
+              <line x1={X(splitI).toFixed(1)} y1={Pd} x2={X(splitI).toFixed(1)} y2={Hc-Pd} stroke="var(--line2)" strokeWidth="1" strokeDasharray="2 3"/>
+              <circle cx={X(splitI).toFixed(1)} cy={Y(c.price).toFixed(1)} r="3.4" fill={col} stroke="var(--bg)" strokeWidth="2"/>
+            </svg>
+            <div style={{height:7,borderRadius:4,background:'#0A0D14',overflow:'hidden',marginTop:10}}>
+              <div style={{height:'100%',width:Math.max(0,Math.min(100,t.prog))+'%',borderRadius:4,background:t.prog>=0?'linear-gradient(90deg,var(--upDim),var(--up))':'var(--down)'}}/>
+            </div>
+            <div style={{...flx({justifyContent:'space-between'}),marginTop:4,fontSize:8.5,color:'var(--faint)'}} className="mono">
+              <span>entrada {money(t.entry)}</span><span>{t.prog.toFixed(0)}% al objetivo</span><span>{t.days}d en trade</span>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:12}}>
+              {[['R:R',t.rr.toFixed(1)+':1',t.rr>=1.5?'var(--up)':'#F3BA2F'],['Confianza',c.tradeRec.conf+'%',c.tradeRec.conf>=60?'var(--up)':'#F3BA2F'],['Precio',money(c.price),'var(--txt)']].map((m,i)=>(
+                <div key={i} style={{background:'#0A0D14',borderRadius:8,padding:'8px',textAlign:'center'}}>
+                  <div className="mono" style={{fontSize:12,fontWeight:800,color:m[2]}}>{m[1]}</div>
+                  <div style={{fontSize:8,color:'var(--dim)'}}>{m[0]}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{fontSize:9.5,color:'var(--faint)',marginTop:10,lineHeight:1.5}}>{c.tradeRec.reason}. La operación avanza con el precio y se cierra al tocar objetivo o stop; se abre otra cuando cambia la señal.</div>
+          </>)}
+        </div>);
+      })()}
+
       <p style={{fontSize:9.5,color:'var(--faint)',lineHeight:1.5,textAlign:'center',padding:'0 8px',marginBottom:8}}>
-        Análisis automático con datos públicos (CoinGecko · bitcoin-data · alternative.me). Modelos estadísticos, no es consejo financiero.
+        Análisis automático con datos públicos (Binance · Deribit · CoinGecko · bitcoin-data). Modelos estadísticos.
       </p>
+      <div style={{textAlign:'center',padding:'12px 14px',marginBottom:8,borderRadius:10,
+        background:'rgba(255,84,112,.07)',border:'1px solid rgba(255,84,112,.25)'}}>
+        <div style={{fontSize:12,fontWeight:800,color:'var(--down)'}}>⚠️ Esto NO es consejo de inversión</div>
+        <div style={{fontSize:9.5,color:'var(--faint)',marginTop:4,lineHeight:1.5}}>El "trade recomendado" es una simulación automática con fines educativos. Opera bajo tu responsabilidad; puedes perder tu capital.</div>
+      </div>
     </div>
   );
 }
