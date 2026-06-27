@@ -1135,6 +1135,32 @@ function loadTrade(rec,price){
   return {...st,px,pnl,prog,rr,days:Math.floor((now-st.ts)/86400000),
     stale:openable&&rec.side!==st.side}; // señal cambió pero el trade sigue abierto
 }
+// BACKTEST de la estrategia direccional del bot (tendencia MA50/MA200 + momentum)
+// sobre el histórico real. fee = comisión por lado; fundDaily = coste de funding/día
+// en posición (futuros). Devuelve ROE del periodo, CAGR, drawdown, % aciertos y la
+// proyección compuesta a 20 años.
+function simulateBot(cl,fee,fundDaily){
+  const n=cl.length; if(n<230)return null;
+  const sma=(j,p)=>{let s=0;for(let m=j-p;m<j;m++)s+=cl[m];return s/p;};
+  let eq=1,pos=0,trades=0,wins=0,entryEq=1,peak=1,maxDD=0;
+  const start=210;
+  for(let j=start;j<n;j++){
+    const ma50=sma(j,50),ma200=sma(j,200),px=cl[j-1],mom=cl[j-1]/cl[j-21]-1;
+    const sig=(px>ma50&&ma50>ma200&&mom>0)?1:(px<ma50&&ma50<ma200&&mom<0)?-1:0;
+    if(sig!==pos){ // se decide al cierre de j-1 y se mantiene durante el día j
+      if(pos!==0){trades++;if(eq>=entryEq)wins++;eq*=(1-fee);}
+      if(sig!==0){eq*=(1-fee);entryEq=eq;}
+      pos=sig;
+    }
+    const r=cl[j]/cl[j-1]-1;
+    if(pos!==0)eq*=Math.max(1e-4,1+pos*(r-fundDaily));
+    if(eq>peak)peak=eq;const dd=(peak-eq)/peak;if(dd>maxDD)maxDD=dd;
+  }
+  const years=(n-start)/365, roe=(eq-1)*100;
+  const cagr=years>0?(Math.pow(Math.max(eq,1e-6),1/years)-1)*100:0;
+  const m20=Math.pow(1+cagr/100,20);
+  return {eq,roe,cagr,years,trades,winRate:trades?wins/trades*100:0,maxDD:maxDD*100,m20,roe20:(m20-1)*100};
+}
 // Calendario económico (eventos de alto impacto, previstos). Filtra a futuro.
 const ECON=[
   ['2026-06-17','FOMC','Decisión de tipos de la Fed'],['2026-07-14','CPI','Inflación EE.UU. (IPC)'],
@@ -1472,6 +1498,12 @@ function QuantView({gFunding}){
       // preferimos el histórico largo de Binance para closes; CoinGecko queda de respaldo
       if(out.ohlc&&out.ohlc.length>=60){out.closes=out.ohlc.map(k=>k.c);}
       if(!out.closes){try{const k=await jget('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=1000');out.closes=k.map(x=>parseFloat(x[4]));}catch(_){}}
+      // histórico LARGO (paginado, ~hasta 8 años) para el backtest del bot
+      try{let allc=[],end=Date.now();
+        for(let pg=0;pg<3;pg++){const k=await jget('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=1000&endTime='+end,9000);
+          if(!Array.isArray(k)||!k.length)break; allc=k.map(x=>parseFloat(x[4])).concat(allc); end=k[0][0]-864e5; if(k.length<1000)break;}
+        if(allc.length>1000)out.longCloses=allc;
+      }catch(_){}
       // reintento SECUENCIAL de métricas on-chain: bitcoin-data.com limita las
       // peticiones concurrentes, así que las que fallaron se repiten una a una.
       const ocRetry=[['mvrv','mvrv','mvrv'],['nupl','nupl','nupl'],['zscore','mvrv-zscore','mvrvZscore'],['puell','puell-multiple','puellMultiple'],['sopr','sopr','sopr']];
@@ -1640,10 +1672,14 @@ function QuantView({gFunding}){
     const tconf=tside==='NEUTRAL'?0:Math.round(Math.min(90,45+Math.abs(probUp-50)*1.8));
     const tradeRec={side:tside,tpPct,slPct,reason:treason,conf:tconf};
     const trade=loadTrade(tradeRec,price);
+    // ── BACKTEST del bot sobre el histórico largo: sin y con comisiones de Binance ──
+    const bcl=(q.longCloses&&q.longCloses.length>=230)?q.longCloses:cl;
+    const sim=simulateBot(bcl,0,0);                 // sin comisiones
+    const simC=simulateBot(bcl,0.0004,0.0003);      // comisión taker futuros 0.04%/lado + funding 0.03%/día
     return {price,annVol,rsi,ma200,ma50,ma200w,mc,probUp,probUp15,probDn15,var99,cvar99,
       fair,lo,hi,valPct,realized,models,plSup,plRes,H,regime,fund,gf,opt,levels,cyc,patterns,corrE,corrS,corrAvg,optExp,
       route,tomorrow,tomPct,sig10,pdrift,trap,swingHi,swingLo,routes,biases,chartPats,drift,drift30,shutdown,
-      cal,volScale,sigTarget,dvol:q.dvol,obImb:q.obImb,impDaily,trade,tradeRec,closes:cl};
+      cal,volScale,sigTarget,dvol:q.dvol,obImb:q.obImb,impDaily,trade,tradeRec,closes:cl,sim,simC};
   },[q,gFunding]);
 
   const D=86400000, now=Date.now();
@@ -1846,12 +1882,8 @@ function QuantView({gFunding}){
         {(()=>{
           const coneLo=Math.min(...b.map(x=>x.p5)),coneHi=Math.max(...b.map(x=>x.p95));
           const inR=v=>Number.isFinite(v)&&v>=coneLo*0.92&&v<=coneHi*1.08;
-          const t=c.trade, act=t&&!t.empty&&t.side!=='NEUTRAL';
-          const hlines=[
-            inR(c.opt&&c.opt.maxPain)?{v:c.opt.maxPain,c:'#F3BA2F',label:'max pain'}:null,
-            act&&inR(t.tp)?{v:t.tp,c:'var(--up)',label:'TP'}:null,
-            act&&inR(t.sl)?{v:t.sl,c:'var(--down)',label:'SL'}:null,
-          ].filter(Boolean);
+          // solo el max pain de opciones (la operación/trade se quitó del cono)
+          const hlines=[inR(c.opt&&c.opt.maxPain)?{v:c.opt.maxPain,c:'#F3BA2F',label:'max pain'}:null].filter(Boolean);
           return(
           <TVChart series={b.map(x=>x.p50)} H={FH} glow grid hlines={hlines}
             bands={[
@@ -2179,6 +2211,47 @@ function QuantView({gFunding}){
             </div>
             <div style={{fontSize:9.5,color:'var(--faint)',marginTop:10,lineHeight:1.5}}>{c.tradeRec.reason}. La operación avanza con el precio y se cierra al tocar objetivo o stop; se abre otra cuando cambia la señal.</div>
           </>)}
+        </div>);
+      })()}
+
+      {/* ── BACKTEST DEL BOT · RESULTADO A 20 AÑOS ── */}
+      {c.sim&&(()=>{
+        const s=c.sim, sc=c.simC;
+        const fmtMult=m=>m>=1000?Math.round(m).toLocaleString('es-ES')+'×':m>=10?m.toFixed(0)+'×':m.toFixed(1)+'×';
+        const fmtRoe=r=>Math.abs(r)>=1000?(r>=0?'+':'')+Math.round(r).toLocaleString('es-ES')+'%':(r>=0?'+':'')+r.toFixed(0)+'%';
+        return(
+        <div style={panel({marginBottom:14,padding:16,background:'radial-gradient(130% 80% at 50% 0%, rgba(31,224,160,.06) 0%, var(--panel) 55%)'})}>
+          <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
+            <span style={eyebrow}>Backtest del bot · ROE a 20 años</span>
+            <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>{s.years.toFixed(1)} años reales</span>
+          </div>
+          <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:12}}>estrategia direccional del bot (tendencia + momentum) sobre el histórico real de BTC. El ROE a 20 años es la <b>proyección compuesta</b> del rendimiento anualizado (CAGR).</div>
+          {/* histórico real */}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:7,marginBottom:12}}>
+            {[['CAGR',(s.cagr>=0?'+':'')+s.cagr.toFixed(0)+'%/año',s.cagr>=0?'var(--up)':'var(--down)'],
+              ['ROE periodo',fmtRoe(s.roe),s.roe>=0?'var(--up)':'var(--down)'],
+              ['Máx. caída','-'+s.maxDD.toFixed(0)+'%','var(--down)'],
+              ['Aciertos',s.winRate.toFixed(0)+'%','var(--txt)']].map((m,i)=>(
+              <div key={i} style={{background:'#0A0D14',borderRadius:8,padding:'8px 5px',textAlign:'center'}}>
+                <div className="mono" style={{fontSize:11.5,fontWeight:800,color:m[2]}}>{m[1]}</div>
+                <div style={{fontSize:7.5,color:'var(--dim)',marginTop:2}}>{m[0]}</div>
+              </div>
+            ))}
+          </div>
+          {/* resultado a 20 años: sin y con comisiones */}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+            <div style={{background:'rgba(31,224,160,.08)',border:'1px solid rgba(31,224,160,.3)',borderRadius:10,padding:'12px 8px',textAlign:'center'}}>
+              <div style={{fontSize:8.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.8,fontWeight:600}}>20 años · sin comisiones</div>
+              <div className="mono" style={{fontSize:20,fontWeight:800,color:'var(--up)',marginTop:4,lineHeight:1}}>{fmtMult(s.m20)}</div>
+              <div className="mono" style={{fontSize:9.5,color:'var(--dim)',marginTop:3}}>ROE {fmtRoe(s.roe20)}</div>
+            </div>
+            <div style={{background:'#0A0D14',border:'1px solid var(--line2)',borderRadius:10,padding:'12px 8px',textAlign:'center'}}>
+              <div style={{fontSize:8.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.8,fontWeight:600}}>20 años · con comisiones</div>
+              <div className="mono" style={{fontSize:20,fontWeight:800,color:sc&&sc.m20>=1?'var(--up)':'var(--down)',marginTop:4,lineHeight:1}}>{sc?fmtMult(sc.m20):'—'}</div>
+              <div className="mono" style={{fontSize:9.5,color:'var(--dim)',marginTop:3}}>ROE {sc?fmtRoe(sc.roe20):'—'}</div>
+            </div>
+          </div>
+          <p style={{fontSize:8.5,color:'var(--faint)',marginTop:10,lineHeight:1.5}}>Comisiones aplicadas: <b>taker de futuros Binance 0,04%/lado</b> (entrada+salida) + <b>funding 0,01%/8h (~0,03%/día)</b> mientras hay posición. Backtest sobre {s.years.toFixed(1)} años; la proyección a 20 años asume que el ritmo se mantiene (muy improbable: BTC no tiene 20 años de histórico fiable y los rendimientos pasados no garantizan los futuros).</p>
         </div>);
       })()}
 
