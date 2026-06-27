@@ -1053,6 +1053,30 @@ function monteCarlo(rets,price,days,paths,drift){
   const bands=slices.map(sl=>({p5:qPct(sl,5),p25:qPct(sl,25),p50:qPct(sl,50),p75:qPct(sl,75),p95:qPct(sl,95)}));
   return {bands,finals,finals10};
 }
+// Rutas Monte Carlo persistentes: se FIJAN el día que nacen (snapshot de las
+// bandas) y luego cada día se ve cómo avanza el precio real sobre esa ruta.
+// Se reinician al terminar la ruta o cuando faltan pocos días (resetBefore),
+// para que siempre quede recorrido por delante. Guardadas en localStorage.
+function loadRoutes(price,bands){
+  const D=86400000, now=Date.now();
+  let store={}; try{store=JSON.parse(localStorage.getItem('vwafr_routes_v1'))||{};}catch(_){}
+  const specs=[['r7',7,2],['r30',30,6]]; // [clave, días, reiniciar-cuando-faltan]
+  const out={};
+  for(const [key,days,resetBefore] of specs){
+    let r=store[key];
+    const elapsed=r?Math.floor((now-r.start)/D):0;
+    const needReset=!r||!Number.isFinite(r.startPrice)||r.days!==days||elapsed>=days-resetBefore;
+    if(needReset){
+      const sl=bands.slice(0,days+1);
+      r={start:now,startPrice:price,days,
+        p50:sl.map(x=>x.p50),p25:sl.map(x=>x.p25),p75:sl.map(x=>x.p75)};
+      store[key]=r;
+    }
+    out[key]={...r,elapsed:needReset?0:Math.min(elapsed,days),fresh:needReset};
+  }
+  try{localStorage.setItem('vwafr_routes_v1',JSON.stringify(store));}catch(_){}
+  return out;
+}
 // Calendario económico (eventos de alto impacto, previstos). Filtra a futuro.
 const ECON=[
   ['2026-06-17','FOMC','Decisión de tipos de la Fed'],['2026-07-14','CPI','Inflación EE.UU. (IPC)'],
@@ -1119,6 +1143,19 @@ function analyzePatterns(cl){
     [has&&cl[i]>sma(i,200)*1.25,-1,'Lejos sobre la MA200','>25% por encima (sobreextendido)',j=>cl[j]>sma(j,200)*1.25],
     [cl[i]>=maxN(i,Math.min(i,360)),1,'Máximo de 1 año','ruptura de máximos anuales',j=>cl[j]>=maxN(j,Math.min(j,360))],
     [cl[i]<=minN(i,Math.min(i,360)),-1,'Mínimo de 1 año','nuevo suelo anual',j=>cl[j]<=minN(j,Math.min(j,360))],
+    // ── patrones adicionales que sesgan las rutas Monte Carlo ──
+    [has&&cl[i]>sma(i,200)&&cl[i-1]<=sma(i-1,200),1,'Recupera la MA200','reconquista la media de 200 días',j=>cl[j]>sma(j,200)&&cl[j-1]<=sma(j-1,200)],
+    [has&&cl[i]<sma(i,200)&&cl[i-1]>=sma(i-1,200),-1,'Pierde la MA200','pierde la media de 200 días',j=>cl[j]<sma(j,200)&&cl[j-1]>=sma(j-1,200)],
+    [cl[i]>sma(i,50)&&cl[i-1]<=sma(i-1,50),1,'Recupera la MA50','vuelve sobre la media de 50 días',j=>cl[j]>sma(j,50)&&cl[j-1]<=sma(j-1,50)],
+    [minN(i+1,5)>minN(i-4,5)&&maxN(i+1,5)>maxN(i-4,5),1,'Máximos y mínimos crecientes','estructura alcista de corto plazo',j=>minN(j+1,5)>minN(j-4,5)&&maxN(j+1,5)>maxN(j-4,5)],
+    [minN(i+1,5)<minN(i-4,5)&&maxN(i+1,5)<maxN(i-4,5),-1,'Máximos y mínimos decrecientes','estructura bajista de corto plazo',j=>minN(j+1,5)<minN(j-4,5)&&maxN(j+1,5)<maxN(j-4,5)],
+    [cl[i]/cl[i-20]-1>0.12,1,'Momentum fuerte 20d','impulso alcista sostenido',j=>cl[j]/cl[j-20]-1>0.12],
+    [cl[i]/cl[i-3]-1<-0.10,1,'Capitulación 3d','caída brusca (rebote técnico)',j=>cl[j]/cl[j-3]-1<-0.10],
+    [cl[i]/cl[i-5]-1>0.22,-1,'Subida parabólica 5d','sobreextensión (agotamiento)',j=>cl[j]/cl[j-5]-1>0.22],
+    [std(i,20)/sma(i,20)<0.025,cl[i]>sma(i,20)?1:-1,'Compresión de volatilidad','rango estrecho: ruptura inminente',j=>std(j,20)/sma(j,20)<0.025],
+    [cl[i]<=minN(i,20)&&rsi[i]>40,1,'Divergencia alcista RSI','nuevo mínimo sin debilidad en RSI',j=>cl[j]<=minN(j,20)&&rsi[j]>40],
+    [cl[i]>=maxN(i,20)&&rsi[i]<60,-1,'Divergencia bajista RSI','nuevo máximo sin fuerza en RSI',j=>cl[j]>=maxN(j,20)&&rsi[j]<60],
+    [hist[i]>hist[i-1]&&hist[i-1]>hist[i-2]&&hist[i]>0,1,'Histograma MACD acelerando','momentum alcista ganando fuerza',j=>hist[j]>hist[j-1]&&hist[j-1]>hist[j-2]&&hist[j]>0],
   ];
   const out=[];
   for(const d of defs){ if(d[0]){out.push({t:d[2],sig:d[1],d:d[3],st:bt(d[4])});} }
@@ -1182,6 +1219,7 @@ function QuantView({gFunding}){
     const sig10=actSt.length?qMean(actSt.map(p=>p.st.avg)):0;                  // retorno medio histórico 10d de las señales activas
     const pdrift=Math.max(-0.004,Math.min(0.004,Math.log(1+sig10/100)/10*0.7)); // sesgo diario aplicado al Monte Carlo
     const mc=monteCarlo(rets,price,30,700,pdrift), fin=mc.finals;
+    const routes=loadRoutes(price,mc.bands); // 2 rutas persistentes (7d y 30d) con seguimiento diario
     const probUp=fin.filter(v=>v>price).length/fin.length*100;
     const probUp15=fin.filter(v=>v>price*1.15).length/fin.length*100;
     const probDn15=fin.filter(v=>v<price*0.85).length/fin.length*100;
@@ -1243,7 +1281,7 @@ function QuantView({gFunding}){
         optExp={date:big,oi:exp[big].oi,maxPain:mp,days:Math.ceil((big-Date.now())/864e5)};}}
     return {price,annVol,rsi,ma200,ma50,ma200w,mc,probUp,probUp15,probDn15,var99,cvar99,
       fair,lo,hi,valPct,realized,models,plSup,plRes,H,regime,fund,gf,opt,levels,cyc,patterns,corrE,corrS,corrAvg,optExp,
-      route,tomorrow,tomPct,sig10,pdrift,trap,swingHi,swingLo};
+      route,tomorrow,tomPct,sig10,pdrift,trap,swingHi,swingLo,routes};
   },[q,gFunding]);
 
   const D=86400000, now=Date.now();
@@ -1316,28 +1354,39 @@ function QuantView({gFunding}){
         </div>
       </div>
 
-      {/* MINI-RUTA corto plazo (qué hace mañana / 7 días) */}
-      {(()=>{const rt=c.route,lo=Math.min(...rt.map(x=>x.p25)),hi=Math.max(...rt.map(x=>x.p75));
-        const X=d=>d/7*300, Y=v=>62-Math.max(0,Math.min(1,(v-lo)/((hi-lo)||1)))*56;
-        const band='M '+rt.map(x=>`${X(x.d).toFixed(1)} ${Y(x.p75).toFixed(1)}`).join(' L ')+' L '+rt.slice().reverse().map(x=>`${X(x.d).toFixed(1)} ${Y(x.p25).toFixed(1)}`).join(' L ')+' Z';
-        const line='M '+rt.map(x=>`${X(x.d).toFixed(1)} ${Y(x.p50).toFixed(1)}`).join(' L ');
-        const upT=c.tomPct>=0;
-        return(
-        <div style={panel({marginBottom:14,padding:16})}>
-          <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
-            <span style={eyebrow}>Ruta corto plazo · 7 días</span>
-            <span className="mono" style={{fontSize:11,fontWeight:800,color:upT?'var(--up)':'var(--down)'}}>mañana {upT?'▲ +':'▼ '}{c.tomPct.toFixed(1)}% · {money(c.tomorrow.p50)}</span>
-          </div>
-          <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:8}}>mediana diaria + rango probable, ajustada por las señales activas</div>
-          <svg viewBox="0 0 300 70" width="100%" style={{display:'block'}}>
-            <path d={band} fill="rgba(110,139,255,.16)"/>
-            <path d={line} fill="none" stroke="var(--accent)" strokeWidth="2"/>
-            <circle cx={X(1)} cy={Y(c.tomorrow.p50)} r="3.5" fill={upT?'var(--up)':'var(--down)'} stroke="var(--bg)" strokeWidth="2"/>
-          </svg>
-          <div style={{...flx({justifyContent:'space-between'}),marginTop:6,fontSize:9,color:'var(--dim)'}} className="mono">
-            <span>hoy {money(c.price)}</span><span>mañana</span><span>+7d {money(c.route[7].p50)}</span>
-          </div>
-        </div>);})()}
+      {/* RUTAS MONTE CARLO · seguimiento diario (2 rutas que avanzan y se reinician) */}
+      <div style={panel({marginBottom:14,padding:16})}>
+        <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
+          <span style={eyebrow}>Rutas Monte Carlo · seguimiento diario</span>
+          <span className="mono" style={{fontSize:11,fontWeight:800,color:c.tomPct>=0?'var(--up)':'var(--down)'}}>mañana {c.tomPct>=0?'▲ +':'▼ '}{c.tomPct.toFixed(1)}%</span>
+        </div>
+        <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:10}}>la ruta se fija al nacer y avanza cada día; se reinicia al terminar o cuando faltan pocos días · sesgada por los patrones activos</div>
+        {[['Corto plazo · 7d',c.routes.r7],['Medio plazo · 30d',c.routes.r30]].map(([lbl,rt],ri)=>{
+          const days=rt.days,p50=rt.p50,p25=rt.p25,p75=rt.p75,el=rt.elapsed;
+          const all=p25.concat(p75,[c.price]),lo=Math.min(...all),hi=Math.max(...all);
+          const W=300,H=68,X=d=>d/days*W,Y=v=>H-6-Math.max(0,Math.min(1,(v-lo)/((hi-lo)||1)))*(H-12);
+          const band='M '+p75.map((v,i)=>`${X(i).toFixed(1)} ${Y(v).toFixed(1)}`).join(' L ')+' L '+p25.map((v,i)=>[i,v]).reverse().map(([i,v])=>`${X(i).toFixed(1)} ${Y(v).toFixed(1)}`).join(' L ')+' Z';
+          const line='M '+p50.map((v,i)=>`${X(i).toFixed(1)} ${Y(v).toFixed(1)}`).join(' L ');
+          const proj=p50[Math.min(el,days)],dev=proj?(c.price-proj)/proj*100:0,ahead=dev>=0;
+          return(
+          <div key={ri} style={{marginTop:ri?14:6,paddingTop:ri?14:0,borderTop:ri?'1px solid #12151F':'none'}}>
+            <div style={{...flx({justifyContent:'space-between'}),marginBottom:6}}>
+              <span style={{fontSize:11,fontWeight:700,color:'var(--txt)'}}>{lbl}</span>
+              <span className="mono" style={{fontSize:9.5,color:rt.fresh?'var(--dim)':(ahead?'var(--up)':'var(--down)')}}>
+                día {el}/{days} · {rt.fresh?'ruta nueva':(ahead?'sobre ruta +':'bajo ruta ')+(ahead?'':'')+dev.toFixed(1)+'%'}</span>
+            </div>
+            <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{display:'block'}}>
+              <path d={band} fill="rgba(110,139,255,.14)"/>
+              <path d={line} fill="none" stroke="var(--accent)" strokeWidth="2"/>
+              {el>0&&<line x1={X(el).toFixed(1)} y1="2" x2={X(el).toFixed(1)} y2={H-2} stroke="var(--line2)" strokeWidth="1" strokeDasharray="3 3"/>}
+              <circle cx={X(el).toFixed(1)} cy={Y(c.price).toFixed(1)} r="3.5" fill={ahead?'var(--up)':'var(--down)'} stroke="var(--bg)" strokeWidth="2"/>
+            </svg>
+            <div style={{...flx({justifyContent:'space-between'}),marginTop:5,fontSize:9,color:'var(--dim)'}} className="mono">
+              <span>inicio {money(rt.startPrice)}</span><span>hoy {money(c.price)}</span><span>fin {money(p50[days])}</span>
+            </div>
+          </div>);
+        })}
+      </div>
 
       {/* CONTEXTO: régimen + ciclo + funding */}
       <div style={panel({marginBottom:14,padding:16})}>
