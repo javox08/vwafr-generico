@@ -1044,14 +1044,19 @@ const qMean=a=>a.length?a.reduce((s,x)=>s+x,0)/a.length:0;
 const qStd=a=>{const m=qMean(a);return Math.sqrt(qMean(a.map(x=>(x-m)*(x-m))));};
 const qPct=(a,p)=>{const s=[...a].sort((x,y)=>x-y);return s[Math.min(s.length-1,Math.max(0,Math.round(p/100*(s.length-1))))];};
 function qRSI(c,n){const k=c.length;if(k<n+1)return 50;let g=0,l=0;for(let i=k-n;i<k;i++){const ch=c[i]-c[i-1];if(ch>=0)g+=ch;else l-=ch;}const rs=l===0?100:g/l;return 100-100/(1+rs);}
-function monteCarlo(rets,price,days,paths,drift){
+function monteCarlo(rets,price,days,paths,drift,mags){
   // drift puede ser un número (sesgo diario constante) o un ARRAY con un sesgo
   // distinto para cada día 1..N (perfil que sigue la trayectoria de los patrones)
   const darr=Array.isArray(drift), dc=darr?0:(drift||0);
+  // mags: zonas del mapa de liquidez que actúan como IMÁN (el precio tiende a ir
+  // hacia los clústeres de liquidaciones). Cada una: {p:nivel, w:fuerza}.
+  const M=(mags&&mags.length)?mags:null, S2=2*0.06*0.06; // núcleo gaussiano σ≈6%
+  const pull=v=>{let f=0;for(const m of M){const rel=(m.p-v)/v;f+=m.w*rel*Math.exp(-(rel*rel)/S2);}
+    return Math.max(-0.0035,Math.min(0.0035,f*0.5));}; // atracción diaria acotada
   const slices=Array.from({length:days+1},()=>[]),finals=[],finals10=[];
   for(let p=0;p<paths;p++){let v=price;slices[0].push(v);
     for(let d=1;d<=days;d++){const dr=darr?(drift[d-1]||0):dc;
-      v*=Math.exp(rets[(Math.random()*rets.length)|0]+dr);slices[d].push(v);if(d===10)finals10.push(v);}
+      v*=Math.exp(rets[(Math.random()*rets.length)|0]+dr+(M?pull(v):0));slices[d].push(v);if(d===10)finals10.push(v);}
     finals.push(v);}
   const bands=slices.map(sl=>({p5:qPct(sl,5),p25:qPct(sl,25),p50:qPct(sl,50),p75:qPct(sl,75),p95:qPct(sl,95)}));
   return {bands,finals,finals10};
@@ -1238,6 +1243,43 @@ function chartPatterns(cl){
   }
   return out;
 }
+// Patrones de VELAS japonesas (estilo "patrones" de Binance), backtesteados sobre
+// el histórico real con su perfil de retorno a los días 1…30 (alimentan el Monte Carlo).
+function candlePatterns(oh){
+  const n=oh.length,H=10,HM=30; if(n<60)return [];
+  const cl=oh.map(k=>k.c),op=oh.map(k=>k.o),hi=oh.map(k=>k.h),lo=oh.map(k=>k.l);
+  const body=j=>Math.abs(cl[j]-op[j]),rng=j=>hi[j]-lo[j];
+  const upW=j=>hi[j]-Math.max(op[j],cl[j]),dnW=j=>Math.min(op[j],cl[j])-lo[j];
+  const bull=j=>cl[j]>op[j],bear=j=>cl[j]<op[j];
+  const aBody=(j,w=14)=>{let s=0,c=0;for(let m=Math.max(1,j-w);m<j;m++){s+=Math.abs(cl[m]-op[m]);c++;}return c?s/c:0;};
+  const start=Math.min(205,Math.floor(n*0.55));
+  const bt=fn=>{let k=0,win=0,sum=0;const acc=new Array(HM+1).fill(0),cnt=new Array(HM+1).fill(0);
+    for(let j=start;j<n-1;j++){if(fn(j)){k++;
+      for(let h=1;h<=HM&&j+h<n;h++){acc[h]+=(cl[j+h]-cl[j])/cl[j];cnt[h]++;}
+      if(j+H<n){const r=(cl[j+H]-cl[j])/cl[j];sum+=r;if(r>0)win++;}}}
+    if(k<4)return null;
+    const path=[0];let prev=0;for(let h=1;h<=HM;h++){prev=cnt[h]?acc[h]/cnt[h]:prev;path[h]=prev;}
+    return {n:k,win:Math.round(win/(cnt[H]||k)*100),avg:+(path[H]*100).toFixed(1),path};};
+  const i=n-1,defs=[
+    [rng(i)>0&&dnW(i)>2*body(i)&&upW(i)<body(i)&&cl[i-1]<cl[i-3],1,'Martillo','mecha inferior larga tras caída (giro alcista)',j=>rng(j)>0&&dnW(j)>2*body(j)&&upW(j)<body(j)&&cl[j-1]<cl[j-3]],
+    [rng(i)>0&&upW(i)>2*body(i)&&dnW(i)<body(i)&&cl[i-1]>cl[i-3],-1,'Estrella fugaz','mecha superior larga tras subida (giro bajista)',j=>rng(j)>0&&upW(j)>2*body(j)&&dnW(j)<body(j)&&cl[j-1]>cl[j-3]],
+    [bull(i)&&bear(i-1)&&cl[i]>=op[i-1]&&op[i]<=cl[i-1],1,'Envolvente alcista','vela verde engulle a la roja anterior',j=>bull(j)&&bear(j-1)&&cl[j]>=op[j-1]&&op[j]<=cl[j-1]],
+    [bear(i)&&bull(i-1)&&op[i]>=cl[i-1]&&cl[i]<=op[i-1],-1,'Envolvente bajista','vela roja engulle a la verde anterior',j=>bear(j)&&bull(j-1)&&op[j]>=cl[j-1]&&cl[j]<=op[j-1]],
+    [rng(i)>0&&body(i)<0.1*rng(i),0,'Doji','apertura ≈ cierre: indecisión',j=>rng(j)>0&&body(j)<0.1*rng(j)],
+    [bear(i-2)&&body(i-1)<aBody(i-1)*0.6&&bull(i)&&cl[i]>(op[i-2]+cl[i-2])/2,1,'Estrella del amanecer','suelo de 3 velas (giro alcista)',j=>bear(j-2)&&body(j-1)<aBody(j-1)*0.6&&bull(j)&&cl[j]>(op[j-2]+cl[j-2])/2],
+    [bull(i-2)&&body(i-1)<aBody(i-1)*0.6&&bear(i)&&cl[i]<(op[i-2]+cl[i-2])/2,-1,'Estrella del atardecer','techo de 3 velas (giro bajista)',j=>bull(j-2)&&body(j-1)<aBody(j-1)*0.6&&bear(j)&&cl[j]<(op[j-2]+cl[j-2])/2],
+    [bull(i)&&bull(i-1)&&bull(i-2)&&cl[i]>cl[i-1]&&cl[i-1]>cl[i-2],1,'Tres soldados blancos','3 velas verdes seguidas (impulso)',j=>bull(j)&&bull(j-1)&&bull(j-2)&&cl[j]>cl[j-1]&&cl[j-1]>cl[j-2]],
+    [bear(i)&&bear(i-1)&&bear(i-2)&&cl[i]<cl[i-1]&&cl[i-1]<cl[i-2],-1,'Tres cuervos negros','3 velas rojas seguidas (presión)',j=>bear(j)&&bear(j-1)&&bear(j-2)&&cl[j]<cl[j-1]&&cl[j-1]<cl[j-2]],
+    [bull(i)&&body(i)>aBody(i)*1.6&&upW(i)<0.1*body(i)&&dnW(i)<0.1*body(i),1,'Marubozu alcista','vela verde de cuerpo completo (fuerza)',j=>bull(j)&&body(j)>aBody(j)*1.6&&upW(j)<0.1*body(j)&&dnW(j)<0.1*body(j)],
+    [bear(i)&&body(i)>aBody(i)*1.6&&upW(i)<0.1*body(i)&&dnW(i)<0.1*body(i),-1,'Marubozu bajista','vela roja de cuerpo completo (debilidad)',j=>bear(j)&&body(j)>aBody(j)*1.6&&upW(j)<0.1*body(j)&&dnW(j)<0.1*body(j)],
+    [bull(i)&&bear(i-1)&&cl[i]<op[i-1]&&op[i]>cl[i-1]&&body(i)<body(i-1)*0.6,1,'Harami alcista','pausa tras caída (posible giro)',j=>bull(j)&&bear(j-1)&&cl[j]<op[j-1]&&op[j]>cl[j-1]&&body(j)<body(j-1)*0.6],
+    [bear(i)&&bull(i-1)&&op[i]<cl[i-1]&&cl[i]>op[i-1]&&body(i)<body(i-1)*0.6,-1,'Harami bajista','pausa tras subida (posible giro)',j=>bear(j)&&bull(j-1)&&op[j]<cl[j-1]&&cl[j]>op[j-1]&&body(j)<body(j-1)*0.6],
+    [bull(i)&&bear(i-1)&&op[i]<lo[i-1]&&cl[i]>(op[i-1]+cl[i-1])/2&&cl[i]<op[i-1],1,'Línea penetrante','reabsorbe gran parte de la vela roja',j=>bull(j)&&bear(j-1)&&op[j]<lo[j-1]&&cl[j]>(op[j-1]+cl[j-1])/2&&cl[j]<op[j-1]],
+    [bear(i)&&bull(i-1)&&op[i]>hi[i-1]&&cl[i]<(op[i-1]+cl[i-1])/2&&cl[i]>op[i-1],-1,'Nube oscura','tapa gran parte de la vela verde',j=>bear(j)&&bull(j-1)&&op[j]>hi[j-1]&&cl[j]<(op[j-1]+cl[j-1])/2&&cl[j]>op[j-1]],
+  ];
+  const out=[];for(const d of defs){if(d[0])out.push({t:d[2],sig:d[1],d:d[3],st:bt(d[4]),vela:true});}
+  return out;
+}
 // Gráfico interactivo estilo TradingView: cruz (crosshair) que sigue el dedo/ratón
 // y muestra en todo momento el DÍA/FECHA y el PRECIO del punto bajo el cursor.
 function TVChart({series,color='var(--accent)',H=120,area=false,band=null,bands=null,marks=null,hline=null,hlabel='',fmt=v=>v,label=i=>'día '+i}){
@@ -1297,7 +1339,7 @@ function QuantView({gFunding}){
         jget('https://api.alternative.me/fng/?limit=1').then(j=>{out.fng=parseInt(j.data[0].value);out.fngTxt=j.data[0].value_classification;}),
         jget('https://www.deribit.com/api/v2/public/get_book_summary_by_currency?currency=BTC&kind=option').then(j=>{out.opts=j.result;}),
         jget('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1w&limit=300').then(k=>{out.weekly=k.map(x=>parseFloat(x[4]));}),
-        jget('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=90').then(k=>{out.ohlc=k.map(x=>({o:+x[1],h:+x[2],l:+x[3],c:+x[4]}));}),
+        jget('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=365').then(k=>{out.ohlc=k.map(x=>({o:+x[1],h:+x[2],l:+x[3],c:+x[4]}));}),
         jget('https://api.coingecko.com/api/v3/coins/ethereum/market_chart?vs_currency=usd&days=90&interval=daily').then(j=>{out.eth=j.prices.map(p=>p[1]);}),
         jget('https://api.coingecko.com/api/v3/coins/solana/market_chart?vs_currency=usd&days=90&interval=daily').then(j=>{out.sol=j.prices.map(p=>p[1]);}),
       ].map(p=>p.catch(()=>{})));
@@ -1321,8 +1363,9 @@ function QuantView({gFunding}){
     const ma=n=>qMean(cl.slice(-n)), ma200=ma(Math.min(200,cl.length)), ma50=ma(50);
     const ma200w=(q.weekly&&q.weekly.length>=10)?qMean(q.weekly.slice(-Math.min(200,q.weekly.length))):null;
     // ══ SEÑALES QUE SESGAN EL MONTE CARLO (se calculan ANTES de simular) ══
-    // Patrones técnicos (indicadores) con backtest sobre el histórico real
-    const patterns=analyzePatterns(cl);
+    // Patrones técnicos (indicadores) + de velas (estilo Binance); todos con
+    // backtest del retorno a los días 1…30 sobre el histórico real.
+    const patterns=analyzePatterns(cl).concat((q.ohlc&&q.ohlc.length>=60)?candlePatterns(q.ohlc):[]);
     const actSt=patterns.filter(p=>p.st);
     const sig10=actSt.length?qMean(actSt.map(p=>p.st.avg)):0;                  // retorno medio histórico 10d de las señales activas
     // Patrones gráficos clásicos (estilo Binance) con su estadística
@@ -1361,9 +1404,13 @@ function QuantView({gFunding}){
     ];
     if(mvrvB!=null)biases.push({k:'On-chain (MVRV)',v:mvrvB,why:'MVRV '+q.mvrv.toFixed(2)+(q.mvrv<1?' (suelo)':q.mvrv>3.5?' (techo)':'')});
     if(fngB!=null&&fngB!==0)biases.push({k:'Sentimiento',v:fngB,why:'Fear & Greed '+q.fng+(q.fng>=80?' (codicia extrema)':' (miedo extremo)')});
-    // Perfil de retorno día a día de los patrones técnicos (path histórico 1..30d):
-    // se convierte en una deriva DISTINTA para cada día → Monte Carlo más preciso.
-    const actPath=patterns.filter(p=>p.st&&p.st.path);
+    // Perfil de retorno día a día (path histórico 1..30d) de TODO lo que afecta al
+    // precio: patrones técnicos, de velas y figuras gráficas (estas con su movimiento
+    // esperado repartido en ~20d). Se convierte en una deriva DISTINTA para cada día.
+    const geoPaths=chartPats.filter(p=>Number.isFinite(p.avg)).map(p=>{
+      const path=[0];for(let h=1;h<=30;h++)path[h]=(p.avg/100)*Math.min(h,20)/20;
+      return {st:{n:6,path}};});
+    const actPath=patterns.filter(p=>p.st&&p.st.path).concat(geoPaths);
     let cumPath=null;
     if(actPath.length){cumPath=new Array(31).fill(0);let wsum=0;
       for(const p of actPath){const w=Math.min(p.st.n,40);wsum+=w;for(let h=1;h<=30;h++)cumPath[h]+=p.st.path[h]*w;}
@@ -1378,9 +1425,17 @@ function QuantView({gFunding}){
     // deriva TOTAL por día = parte constante + perfil de los patrones en ese día
     const drift30=[];for(let d=1;d<=30;d++)drift30[d-1]=cl0(constOther+(cumPath?patDrift[d]:techDaily),0.008);
     const drift=qMean(drift30); // escalar representativo (para mostrar)
-    // ── Monte Carlo (700 caminos · 30 días) sesgado por TODAS las señales, día a día ──
+    // ── IMÁN del mapa de liquidez: el precio tiende hacia los clústeres de
+    // liquidaciones (niveles de apalancamiento) y hacia los máximos/mínimos recientes.
+    const mags=[];
+    for(const L of [100,50,25,10]){const w=L/100;
+      mags.push({p:price*(1+1/L),w});mags.push({p:price*(1-1/L),w});}
+    if(q.ohlc&&q.ohlc.length>10){const l60=q.ohlc.slice(-60);
+      mags.push({p:Math.max(...l60.map(k=>k.h)),w:0.8});
+      mags.push({p:Math.min(...l60.map(k=>k.l)),w:0.8});}
+    // ── Monte Carlo (700 caminos · 30 días) sesgado por TODAS las señales día a día + imán de liquidez ──
     const pdrift=drift;
-    const mc=monteCarlo(rets,price,30,700,drift30), fin=mc.finals;
+    const mc=monteCarlo(rets,price,30,700,drift30,mags), fin=mc.finals;
     const routes=loadRoutes(price,mc.bands); // 2 rutas persistentes (7d y 30d) con seguimiento diario
     const probUp=fin.filter(v=>v>price).length/fin.length*100;
     const probUp15=fin.filter(v=>v>price*1.15).length/fin.length*100;
@@ -1565,7 +1620,7 @@ function QuantView({gFunding}){
       <div style={panel({marginBottom:14,padding:16})}>
         <div style={{...flx({justifyContent:'space-between'}),marginBottom:12}}>
           <span style={eyebrow}>Patrones detectados · auto</span>
-          <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>tendencia · breakouts</span>
+          <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>indicadores · velas</span>
         </div>
         {c.trap&&(
           <div style={{...flx({gap:8}),marginBottom:10,padding:'9px 11px',borderRadius:9,
@@ -1579,9 +1634,9 @@ function QuantView({gFunding}){
         )}
         {c.patterns.length?c.patterns.map((pt,i)=>(
           <div key={i} style={{...flx({gap:9}),padding:'9px 0',borderTop:i?'1px solid #12151F':'none'}}>
-            <span style={{fontSize:15,color:pt.sig>0?'var(--up)':'var(--down)'}}>{pt.sig>0?'▲':'▼'}</span>
+            <span style={{fontSize:15,color:pt.sig>0?'var(--up)':pt.sig<0?'var(--down)':'var(--faint)'}}>{pt.sig>0?'▲':pt.sig<0?'▼':'◆'}{pt.vela?'🕯️':''}</span>
             <div style={{flex:1,minWidth:0}}>
-              <div style={{fontSize:12.5,fontWeight:700,color:pt.sig>0?'var(--up)':'var(--down)'}}>{pt.t}</div>
+              <div style={{fontSize:12.5,fontWeight:700,color:pt.sig>0?'var(--up)':pt.sig<0?'var(--down)':'var(--txt)'}}>{pt.t}</div>
               <div style={{fontSize:9.5,color:'var(--faint)'}}>{pt.d}</div>
             </div>
             {pt.st?(
@@ -1624,7 +1679,7 @@ function QuantView({gFunding}){
           <span style={eyebrow}>Monte Carlo · ruta probable 30d</span>
           <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>700 simulaciones</span>
         </div>
-        <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:10}}>bandas de probabilidad (bootstrap · colas gordas) · <span style={{color:c.drift>0?'var(--up)':c.drift<0?'var(--down)':'var(--faint)'}}>sesgo total {c.drift>=0?'+':''}{(Math.expm1(c.drift)*100).toFixed(2)}%/día</span> · toca el gráfico para ver día y precio</div>
+        <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:10}}>bandas (bootstrap · colas gordas) · <span style={{color:c.drift>0?'var(--up)':c.drift<0?'var(--down)':'var(--faint)'}}>sesgo total {c.drift>=0?'+':''}{(Math.expm1(c.drift)*100).toFixed(2)}%/día</span> · 🧲 imán del mapa de liquidez · toca para ver día y precio</div>
         <TVChart series={b.map(x=>x.p50)} H={FH}
           bands={[{hi:b.map(x=>x.p95),lo:b.map(x=>x.p5),fill:'rgba(110,139,255,.12)'},{hi:b.map(x=>x.p75),lo:b.map(x=>x.p25),fill:'rgba(110,139,255,.22)'}]}
           fmt={money} label={i=>i===0?'hoy':'día '+i}/>
