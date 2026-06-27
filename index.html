@@ -1104,6 +1104,30 @@ const ECON=[
   ['2026-11-12','CPI','Inflación EE.UU. (IPC)'],['2026-12-09','FOMC','Decisión de tipos de la Fed'],
   ['2026-12-10','CPI','Inflación EE.UU. (IPC)'],['2027-01-13','CPI','Inflación EE.UU. (IPC)'],
 ];
+// Cierres de gobierno de EE.UU. y fechas límite de financiación (riesgo macro).
+// [inicio, fin|null(=solo fecha límite), etiqueta]. Históricamente el mercado
+// aguanta los cierres (efecto pequeño), pero suben la incertidumbre y retrasan
+// los datos macro; el riesgo real está en el desenlace.
+const US_SHUTDOWN=[
+  ['2018-12-22','2019-01-25','cierre 2018-19 (35 días)'],
+  ['2025-10-01','2025-11-13','cierre 2025 (43 días)'],
+  ['2026-01-30',null,'fecha límite de financiación'],
+  ['2026-09-30',null,'fin de año fiscal · financiación'],
+];
+// Estado del cierre de gobierno respecto a HOY: activo, o fecha límite próxima.
+function shutdownState(){
+  const now=Date.now(),D=864e5;
+  for(const [a,b,lab] of US_SHUTDOWN){
+    const ia=Date.parse(a+'T00:00:00Z'), ib=b?Date.parse(b+'T23:59:59Z'):null;
+    if(ib&&now>=ia&&now<=ib){const days=Math.ceil((ib-now)/D);
+      return {active:true,label:lab,daysLeft:days,bias:-0.0008,why:'cierre ACTIVO ('+lab+') · incertidumbre macro'};}
+    if(!ib){const dToDl=Math.ceil((ia-now)/D);
+      if(dToDl>=0&&dToDl<=14)return {active:false,deadline:true,label:lab,daysTo:dToDl,bias:-0.0005,why:'fecha límite en '+dToDl+'d ('+lab+') · riesgo de cierre'};}
+  }
+  // próxima fecha límite (informativo, sin sesgo)
+  let nextDl=null;for(const [a,b,lab] of US_SHUTDOWN){if(!b){const ia=Date.parse(a+'T00:00:00Z');if(ia>now&&(!nextDl||ia<nextDl.ts))nextDl={ts:ia,label:lab,daysTo:Math.ceil((ia-now)/D)};}}
+  return {active:false,deadline:false,bias:0,next:nextDl};
+}
 // Exponente de Hurst (R/S): >0.5 tendencial, <0.5 media-reversivo, ~0.5 aleatorio
 function hurst(s){
   const lags=[8,16,32,64],pts=[];
@@ -1286,6 +1310,12 @@ function candlePatterns(oh){
     [bear(i)&&bull(i-1)&&op[i]<cl[i-1]&&cl[i]>op[i-1]&&body(i)<body(i-1)*0.6,-1,'Harami bajista','pausa tras subida (posible giro)',j=>bear(j)&&bull(j-1)&&op[j]<cl[j-1]&&cl[j]>op[j-1]&&body(j)<body(j-1)*0.6],
     [bull(i)&&bear(i-1)&&op[i]<lo[i-1]&&cl[i]>(op[i-1]+cl[i-1])/2&&cl[i]<op[i-1],1,'Línea penetrante','reabsorbe gran parte de la vela roja',j=>bull(j)&&bear(j-1)&&op[j]<lo[j-1]&&cl[j]>(op[j-1]+cl[j-1])/2&&cl[j]<op[j-1]],
     [bear(i)&&bull(i-1)&&op[i]>hi[i-1]&&cl[i]<(op[i-1]+cl[i-1])/2&&cl[i]>op[i-1],-1,'Nube oscura','tapa gran parte de la vela verde',j=>bear(j)&&bull(j-1)&&op[j]>hi[j-1]&&cl[j]<(op[j-1]+cl[j-1])/2&&cl[j]>op[j-1]],
+    [op[i]>hi[i-1],1,'Hueco alcista','abre por encima del máximo previo (gap up)',j=>op[j]>hi[j-1]],
+    [op[i]<lo[i-1],-1,'Hueco bajista','abre por debajo del mínimo previo (gap down)',j=>op[j]<lo[j-1]],
+    [Math.abs(lo[i]-lo[i-1])<0.001*cl[i]&&cl[i-1]<cl[i-3]&&bull(i),1,'Pinzas de suelo','dos mínimos idénticos tras caída',j=>Math.abs(lo[j]-lo[j-1])<0.001*cl[j]&&cl[j-1]<cl[j-3]&&bull(j)],
+    [Math.abs(hi[i]-hi[i-1])<0.001*cl[i]&&cl[i-1]>cl[i-3]&&bear(i),-1,'Pinzas de techo','dos máximos idénticos tras subida',j=>Math.abs(hi[j]-hi[j-1])<0.001*cl[j]&&cl[j-1]>cl[j-3]&&bear(j)],
+    [bull(i)&&bull(i-1)&&bull(i-2)&&body(i)>aBody(i)*0.7&&cl[i-1]>cl[i-2]&&cl[i]>cl[i-1]&&op[i]<cl[i-1]&&op[i]>op[i-1],1,'Tres métodos alcistas','continuación de tendencia al alza',j=>bull(j)&&bull(j-1)&&bull(j-2)&&body(j)>aBody(j)*0.7&&cl[j-1]>cl[j-2]&&cl[j]>cl[j-1]&&op[j]<cl[j-1]&&op[j]>op[j-1]],
+    [rng(i)>aBody(i)*2.2&&body(i)>aBody(i)*1.4,bull(i)?1:-1,'Vela de gran rango','expansión de volatilidad (impulso)',j=>rng(j)>aBody(j)*2.2&&body(j)>aBody(j)*1.4],
   ];
   const out=[];for(const d of defs){if(d[0])out.push({t:d[2],sig:d[1],d:d[3],st:bt(d[4]),vela:true});}
   return out;
@@ -1398,6 +1428,8 @@ function QuantView({gFunding}){
     // Funding (squeeze risk)
     const gf=Number.isFinite(gFunding)?gFunding:0;
     const fund=gf>0.012?{t:'Riesgo long-squeeze',c:'var(--down)',risk:1}:gf<-0.012?{t:'Posible short-squeeze',c:'var(--up)',risk:0}:{t:'Funding equilibrado',c:'var(--dim)',risk:0};
+    // Cierre de gobierno EE.UU. (riesgo macro)
+    const shutdown=shutdownState();
     // ══ SESGOS DEL MONTE CARLO ══ cada señal aporta una deriva diaria (log-retorno);
     // la suma acotada inclina la simulación y, con ella, las 2 rutas proyectadas.
     const cl0=(x,lim)=>Math.max(-lim,Math.min(lim,x));
@@ -1408,12 +1440,15 @@ function QuantView({gFunding}){
       {k:'Patrones gráficos',v:cl0((cpAvg/100)/20,0.003),why:chartPats.length?chartPats.map(p=>p.t).join(', '):'sin figura clara'},
       {k:'Ciclo (halving)',v:cyc.phase.bias*0.0009,why:cyc.phase.t+' · sesgo '+(cyc.phase.bias>=0?'+':'')+cyc.phase.bias},
       {k:'Régimen / tendencia',v:regime.trend?(tUp?0.0007:tDn?-0.0007:0):0,why:regime.t+' (Hurst '+H.toFixed(2)+')'},
-      {k:'Valoración',v:cl0(valPct/100*0.012,0.0009),why:(valPct>=0?'+':'')+valPct.toFixed(0)+'% vs precio justo'},
       {k:'Funding',v:cl0(-gf*0.02,0.0012),why:(gf>=0?'+':'')+gf.toFixed(4)+'% · '+fund.t},
       {k:'RSI',v:rsi>70?-0.0006:rsi<30?0.0006:0,why:'RSI '+rsi.toFixed(0)+(rsi>70?' (sobrecompra)':rsi<30?' (sobreventa)':' (neutral)')},
     ];
+    // Nota: la VALORACIÓN (precio objetivo) se ha quitado del sesgo a 30 días: es una
+    // referencia a ~1 año y en un mercado bajista no se alcanza en un mes.
     if(mvrvB!=null)biases.push({k:'On-chain (MVRV)',v:mvrvB,why:'MVRV '+q.mvrv.toFixed(2)+(q.mvrv<1?' (suelo)':q.mvrv>3.5?' (techo)':'')});
     if(fngB!=null&&fngB!==0)biases.push({k:'Sentimiento',v:fngB,why:'Fear & Greed '+q.fng+(q.fng>=80?' (codicia extrema)':' (miedo extremo)')});
+    // Cierre de gobierno de EE.UU. (riesgo macro): activo o fecha límite próxima
+    if(shutdown&&shutdown.bias)biases.push({k:'Cierre de gobierno EE.UU.',v:shutdown.bias,why:shutdown.why});
     // Perfil de retorno día a día (path histórico 1..30d) de TODO lo que afecta al
     // precio: patrones técnicos, de velas y figuras gráficas (estas con su movimiento
     // esperado repartido en ~20d). Se convierte en una deriva DISTINTA para cada día.
@@ -1491,7 +1526,7 @@ function QuantView({gFunding}){
         optExp={date:big,oi:exp[big].oi,maxPain:mp,days:Math.ceil((big-Date.now())/864e5)};}}
     return {price,annVol,rsi,ma200,ma50,ma200w,mc,probUp,probUp15,probDn15,var99,cvar99,
       fair,lo,hi,valPct,realized,models,plSup,plRes,H,regime,fund,gf,opt,levels,cyc,patterns,corrE,corrS,corrAvg,optExp,
-      route,tomorrow,tomPct,sig10,pdrift,trap,swingHi,swingLo,routes,biases,chartPats,drift,drift30};
+      route,tomorrow,tomPct,sig10,pdrift,trap,swingHi,swingLo,routes,biases,chartPats,drift,drift30,shutdown};
   },[q,gFunding]);
 
   const D=86400000, now=Date.now();
@@ -1508,8 +1543,8 @@ function QuantView({gFunding}){
   );
 
   // veredicto scorecard
-  const go = c.probUp>55 && !macroWindow && c.rsi<78 && c.cvar99>-12 && !c.fund.risk && c.cyc.phase.bias>=0;
-  const goReason = macroWindow?'Ventana de evento macro (riesgo)':c.fund.risk?'Funding alto: riesgo long-squeeze':c.cyc.phase.bias<0?'Ciclo en fase bajista (Bear)':c.rsi>=78?'RSI sobrecomprado':c.probUp<=55?'Probabilidad alcista baja':c.cvar99<=-12?'Riesgo de cola elevado':'Estadística + ciclo favorables';
+  const go = c.probUp>55 && !macroWindow && !c.shutdown.active && c.rsi<78 && c.cvar99>-12 && !c.fund.risk && c.cyc.phase.bias>=0;
+  const goReason = macroWindow?'Ventana de evento macro (riesgo)':c.shutdown.active?'Cierre de gobierno EE.UU. activo (incertidumbre)':c.fund.risk?'Funding alto: riesgo long-squeeze':c.cyc.phase.bias<0?'Ciclo en fase bajista (Bear)':c.rsi>=78?'RSI sobrecomprado':c.probUp<=55?'Probabilidad alcista baja':c.cvar99<=-12?'Riesgo de cola elevado':'Estadística + ciclo favorables';
   const valState = c.valPct>15?{t:'INFRAVALORADO',col:'var(--up)'}:c.valPct<-15?{t:'SOBREVALORADO',col:'var(--down)'}:{t:'EN VALOR JUSTO',col:'#F3BA2F'};
   // fan chart (Monte Carlo) — se dibuja con TVChart (crosshair día/precio)
   const FH=128, b=c.mc.bands;
@@ -1908,8 +1943,20 @@ function QuantView({gFunding}){
             </div>
           );
         })}
+        {/* Cierre de gobierno EE.UU. */}
+        {(()=>{const s=c.shutdown;const col=s.active?'var(--down)':s.deadline?'#F3BA2F':'var(--dim)';
+          return(
+          <div style={{...flx({justifyContent:'space-between'}),padding:'9px 0',borderTop:'1px solid #12151F',marginTop:2}}>
+            <div style={{...flx({gap:8})}}>
+              <span style={{fontSize:9,fontWeight:800,color:'#07090E',background:col,borderRadius:5,padding:'2px 6px'}}>USA</span>
+              <span style={{fontSize:11.5,color:'var(--dim)'}}>Cierre de gobierno</span>
+            </div>
+            <span className="mono" style={{fontSize:10.5,fontWeight:s.active||s.deadline?700:400,color:col}}>
+              {s.active?('ACTIVO · '+s.daysLeft+'d'):s.deadline?('límite en '+s.daysTo+'d'):s.next?('límite '+s.next.daysTo+'d'):'sin cierre'}
+            </span>
+          </div>);})()}
         <p style={{fontSize:9.5,color:'var(--faint)',lineHeight:1.5,marginTop:10}}>
-          En las 48h alrededor de estos eventos la volatilidad se dispara. El modelo fuerza <b style={{color:'var(--down)'}}>NO-GO</b> en esa ventana.
+          En las 48h alrededor de estos eventos la volatilidad se dispara. El modelo fuerza <b style={{color:'var(--down)'}}>NO-GO</b> en esa ventana. Los <b>cierres de gobierno</b> de EE.UU. añaden incertidumbre y retrasan datos macro.
         </p>
       </div>
 
@@ -2012,18 +2059,18 @@ function PIBView(){
       <div style={panel({marginBottom:14,padding:16})}>
         <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
           <span style={eyebrow}>Ciclo del PIB · pasado y futuro</span>
-          <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>{vals.length} años + 5 proy.</span>
+          <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>{vals.length} años + 6 proy.</span>
         </div>
         <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:8}}><span style={{color:'#FF5C8A',fontWeight:700}}>● rosa</span> = pasado/actual · <span style={{color:'#5B9BFF',fontWeight:700}}>● azul</span> = futuro proyectado · la onda de fondo es el ciclo económico (expansión → pico → crisis → recuperación)</div>
         {(()=>{
           const ROSE='#FF5C8A',BLUE='#5B9BFF';
-          const hs=cur.series.slice(-Math.min(cur.series.length,22));
-          const FUT=5,proj=[]; let g=p.latest,vel=(p.latest-p.prev)*0.6;
+          const hs=cur.series; // todo el histórico disponible (vista alejada, como la pizarra)
+          const FUT=6,proj=[]; let g=p.latest,vel=(p.latest-p.prev)*0.6;
           const hMin=Math.min(...hs.map(d=>d.val)),hMax=Math.max(...hs.map(d=>d.val));
           for(let k=1;k<=FUT;k++){const acc=-0.14*(g-p.mean)-0.4*vel; vel+=acc; g+=vel;
             g=Math.max(hMin-2,Math.min(hMax+2,g)); proj.push({year:hs[hs.length-1].year+k,val:g});}
           const all=hs.concat(proj),n=all.length,splitI=hs.length-1;
-          const Wc=320,Hc=160,Pd=12;
+          const Wc=320,Hc=170,Pd=12;
           const sc=all.map(d=>d.val).concat([p.mean]); let lo=Math.min(...sc),hi=Math.max(...sc);
           const pad=((hi-lo)||1)*0.2; lo-=pad; hi+=pad;
           const X=i=>Pd+i/(n-1)*(Wc-2*Pd), Y=v=>Hc-Pd-((v-lo)/((hi-lo)||1))*(Hc-2*Pd);
