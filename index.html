@@ -1363,6 +1363,23 @@ function evalBots(bcl){
     return {...bt,s:full,is,oos,mo,pf:gl>0?gp/gl:(gp>0?99:0),srD:mo.sd>0?mo.mean/mo.sd:0,T:(full.ret||[]).length};
   }).filter(Boolean);
   if(!rows.length)return null;
+  // ── BOT "FUTURO" (meta-conjunto): combina TODOS los bots. Al que es rentable lo
+  // COPIA; al que no, lo INVIERTE (tradea lo contrario). Se construye a partir del
+  // array de bots, así que cualquier bot que se añada en el futuro entra solo. La
+  // orientación (copiar/invertir) se decide con la rentabilidad del periodo (sesgo
+  // que la columna "fuera de muestra" del walk-forward sirve para vigilar).
+  const orient=rows.map(r=>({sig:r.sig,name:r.name,cagr:r.s.cagr,o:r.s.cagr>=0?1:-1}));
+  const metaSig=(cl,j)=>{let s=0,nn=0;for(const it of orient){const v=it.sig(cl,j);if(v===0)continue;s+=it.o*v;nn++;}
+    return nn>0?Math.max(-1,Math.min(1,s/nn*1.3)):0;};
+  const metaBot={id:'future',name:'Futuro (meta-conjunto)',tipo:'Ensemble adaptativo · '+orient.length+' bots',
+    obj:'Combina todos los bots: copia al rentable, invierte al no rentable. Los bots nuevos se añaden solos.',
+    hyp:'Conjunto de TODOS los bots. A cada uno: si es rentable en el periodo, se copia su señal; si no, se invierte (se tradea lo contrario). La posición es el voto medio ponderado por dirección. Se reconstruye desde el array de estrategias, así que cualquier bot futuro se incorpora automáticamente.',
+    sig:metaSig,members:orient};
+  const mfull=simulateBot(bcl,FEE,FUND,SLIP,metaSig);
+  if(mfull){const mis=simulateBot(bcl.slice(0,halfI),FEE,FUND,SLIP,metaSig);
+    const moos=simulateBot(bcl.slice(Math.max(0,halfI-210)),FEE,FUND,SLIP,metaSig);
+    const mmo=moments(mfull.ret||[]); let mgp=0,mgl=0; for(const x of (mfull.ret||[])){if(x>0)mgp+=x;else mgl-=x;}
+    rows.push({...metaBot,s:mfull,is:mis,oos:moos,mo:mmo,pf:mgl>0?mgp/mgl:(mgp>0?99:0),srD:mmo.sd>0?mmo.mean/mmo.sd:0,T:(mfull.ret||[]).length});}
   // Deflated Sharpe: SR0 = Sharpe máximo ESPERADO de K pruebas independientes bajo H0
   const srs=rows.map(r=>r.srD), V=moments(srs).sd**2, K=rows.length, g=0.5772156649;
   const SR0=Math.sqrt(Math.max(V,1e-12))*((1-g)*normInv(1-1/K)+g*normInv(1-1/(K*Math.E)));
@@ -2836,7 +2853,7 @@ function BotsView({gFunding}){
     const oosOk=r.oos&&r.oos.sharpe>=0.4&&r.oos.cagr>0, noDecay=r.oos&&r.is&&r.oos.cagr>0&&r.oos.sharpe>=0.55*r.is.sharpe;
     return [
       ['Objetivo definido',true,r.obj],
-      ['Datos point-in-time · sin look-ahead',true,'la señal solo usa cierres hasta ayer (j−1); timestamps alineados, sin anticipación'],
+      ['Datos point-in-time · sin look-ahead',r.id!=='future',r.id==='future'?'la señal diaria sí usa solo datos hasta ayer, PERO la orientación (copiar/invertir) se decide con la rentabilidad de todo el periodo → sesgo optimista; mira la 2ª mitad (fuera de muestra) para juzgarlo':'la señal solo usa cierres hasta ayer (j−1); timestamps alineados, sin anticipación'],
       ['Features con hipótesis económica',true,r.hyp],
       ['Backtest realista con costes',true,'comisión 0,04% + funding 0,03%/día + slippage 0,05%/lado · dimensionado por volatilidad'],
       ['Control de overfitting',oosOk&&r.dsr>=0.9,'walk-forward OOS Sharpe '+r.oos.sharpe.toFixed(2)+' · Deflated Sharpe '+(r.dsr*100).toFixed(0)+'% (López de Prado)'],
@@ -3032,6 +3049,15 @@ function BotsView({gFunding}){
                 </div>}
                 {rawSig===0&&<div style={{fontSize:8.5,color:'var(--faint)',marginTop:3}}>el bot está fuera del mercado con la señal actual.</div>}
               </div>
+              {r.members&&<div style={{background:'#0A0D14',borderRadius:10,padding:'9px 10px',marginBottom:10}}>
+                <div style={{fontSize:9,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.6,fontWeight:700,marginBottom:6}}>Qué hace con cada bot</div>
+                {r.members.map((m,k)=>(
+                  <div key={k} style={{...flx({justifyContent:'space-between'}),padding:'3px 0'}}>
+                    <span style={{fontSize:9.5,color:'var(--dim)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',marginRight:8}}>{m.name}</span>
+                    <span className="mono" style={{fontSize:8.5,fontWeight:700,color:m.o>0?'var(--up)':'var(--down)',flexShrink:0}}>{m.o>0?'copia':'invierte'} · {(m.cagr>=0?'+':'')+m.cagr.toFixed(0)}%/año</span>
+                  </div>))}
+                <div style={{fontSize:8,color:'var(--faint)',marginTop:6,lineHeight:1.5}}>Copia al rentable, invierte al que pierde. Los bots nuevos se añaden solos.</div>
+              </div>}
               {checklist(r).map((it,k)=>(
                 <div key={k} style={{...flx({gap:8}),padding:'5px 0',alignItems:'flex-start'}}>
                   <span style={{fontSize:12,color:it[1]?'var(--up)':'#F3BA2F',flexShrink:0,lineHeight:1.4}}>{it[1]?'✓':'⚠'}</span>
