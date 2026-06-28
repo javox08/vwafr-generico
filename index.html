@@ -3107,6 +3107,31 @@ function BotsView({gFunding}){
         </div>
       </div>
 
+      {/* CONSENSO DE LOS BOTS · qué opinan los 40 ahora mismo (breadth) */}
+      {(()=>{let lo=0,sh=0,fl=0;for(const r of ev.rows){if(r.id==='future')continue;const s=r.sig(cl,cl.length);if(s>0)lo++;else if(s<0)sh++;else fl++;}
+        const tot=lo+sh+fl||1, loP=lo/tot*100, shP=sh/tot*100, net=lo-sh;
+        const col=net>tot*0.15?'var(--up)':net<-tot*0.15?'var(--down)':'#F3BA2F';
+        const txt=net>tot*0.15?'mayoría LARGOS':net<-tot*0.15?'mayoría CORTOS':'sin consenso claro';
+        return(
+        <div style={panel({marginBottom:14,padding:'14px 16px'})}>
+          <div style={{...flx({justifyContent:'space-between'}),marginBottom:9}}>
+            <span style={eyebrow}>Consenso de los bots</span>
+            <span className="mono" style={{fontSize:10.5,fontWeight:800,color:col}}>{txt}</span>
+          </div>
+          <div style={{display:'flex',height:10,borderRadius:5,overflow:'hidden',background:'#0A0D14'}}>
+            <div style={{width:loP+'%',background:'var(--up)'}}/>
+            <div style={{width:(100-loP-shP)+'%',background:'#2A2F3E'}}/>
+            <div style={{width:shP+'%',background:'var(--down)'}}/>
+          </div>
+          <div style={{...flx({justifyContent:'space-between'}),marginTop:7,fontSize:9.5}} className="mono">
+            <span style={{color:'var(--up)',fontWeight:700}}>▲ {lo} largos</span>
+            <span style={{color:'var(--faint)'}}>{fl} fuera</span>
+            <span style={{color:'var(--down)',fontWeight:700}}>{sh} cortos ▼</span>
+          </div>
+          <div style={{fontSize:8.5,color:'var(--faint)',marginTop:7,lineHeight:1.5}}>Cuántas de las {tot} estrategias están largas, cortas o fuera ahora mismo. Un consenso amplio refuerza la dirección; dividido = incertidumbre.</div>
+        </div>);
+      })()}
+
       {/* BOT LÍDER (más rentable) */}
       <div style={panel({marginBottom:14,padding:16,background:'radial-gradient(130% 80% at 50% 0%, rgba(31,224,160,.08) 0%, var(--panel) 55%)',borderColor:'rgba(31,224,160,.35)'})}>
         <div style={{...flx({justifyContent:'space-between'}),marginBottom:6}}>
