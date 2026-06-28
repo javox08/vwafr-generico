@@ -1305,6 +1305,18 @@ const BOTS=[
    obj:'Extremos de RSI(14): comprar sobreventa, vender sobrecompra.',
    hyp:'Las sobre-reacciones de corto plazo revierten: largo en RSI<30 (pánico) y corto en RSI>70 (euforia).',
    sig:(cl,j)=>{if(j<20)return 0;const r=rsiAt(cl,j-1);return r<30?1:r>70?-1:0;}},
+  {id:'cycle',name:'Ciclo (acumular abajo · soltar arriba)',tipo:'Rotación de ciclo',
+   obj:'Posición según la fase del ciclo: entrar con todo cerca del mínimo, aligerar cerca del ATH probable, salir cuando empieza a caer.',
+   hyp:'BTC se mueve por ciclos. Cerca de un ATH probable (precio muy por encima de la MA200) conviene PROMEDIAR la salida; cuando empieza a caer desde máximos, salir del todo; y esperar al MÍNIMO del ciclo (precio barato / caída profunda) para entrar con todo. Posición fraccionada = promedio.',
+   sig:(cl,j)=>{if(j<220)return 0; const px=cl[j-1];
+     let ath=0;for(let m=0;m<j;m++)if(cl[m]>ath)ath=cl[m]; // máximo histórico hasta ayer
+     const ma200=maAt(cl,j,200), mayer=ma200>0?px/ma200:1, dd=ath>0?px/ath-1:0;
+     if(mayer<0.85||dd<=-0.55) return 1;        // MÍNIMO del ciclo (barato / caída profunda): todo dentro
+     if(mayer>=2.5) return 0.25;                // ATH muy probable: promedia la salida (deja 1/4)
+     if(mayer>=2.1) return 0.5;                 // sobre-extendido: empieza a aligerar (1/2)
+     if(dd<=-0.12&&mayer>1.15) return -0.5;     // empieza a caer desde máximos estando caro: mete todo a la salida
+     if(px>ma200) return 1;                     // markup en tendencia: largo
+     return 0;}},
 ];
 // momentos de una serie (media, desviación, asimetría, curtosis) para el Deflated Sharpe
 function moments(a){const n=a.length||1,m=qMean(a);let s2=0,s3=0,s4=0;
@@ -2969,6 +2981,10 @@ function BotsView({gFunding}){
         </div>
         <div style={{fontSize:9,color:'var(--faint)',marginBottom:10,lineHeight:1.5}}>Toca un bot para ver cómo cumple los <b>innegociables</b>. Deflated Sharpe = probabilidad de que el Sharpe sea real tras descontar que se han probado {ev.K} estrategias.</div>
         {ev.rows.map((r,i)=>{const open=openId===r.id, rob=r.oos&&r.oos.sharpe>=0.4&&r.oos.cagr>0&&r.dsr>=0.9;
+          const lt=botLiveTrade(cl,r), rawSig=r.sig(cl,cl.length);
+          const frac=Math.abs(rawSig), fracTxt=(frac>0&&frac<1)?' '+Math.round(frac*100)+'%':'';
+          const sCol=rawSig>0?'var(--up)':rawSig<0?'var(--down)':'var(--faint)';
+          const entry=c.price, tp=rawSig>0?entry*(1+lt.tpPct):entry*(1-lt.tpPct), sl2=rawSig>0?entry*(1-lt.slPct):entry*(1+lt.slPct);
           return(
           <div key={r.id} style={{borderTop:i?'1px solid #12151F':'none',padding:'10px 0'}}>
             <div onClick={()=>setOpenId(open?null:r.id)} style={{...flx({gap:8}),cursor:'pointer'}}>
@@ -2978,7 +2994,10 @@ function BotsView({gFunding}){
                   <span style={{fontSize:12,fontWeight:700,color:'var(--txt)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{r.name}</span>
                   <span className="mono" style={{fontSize:7.5,fontWeight:700,color:rob?'var(--up)':'#F3BA2F',padding:'1px 5px',borderRadius:7,background:'rgba(255,255,255,.04)',flexShrink:0}}>{rob?'✓ robusto':'⚠ frágil'}</span>
                 </div>
-                <div className="mono" style={{fontSize:8.5,color:'var(--faint)',marginTop:1}}>Sharpe {r.s.sharpe.toFixed(2)} · DD -{r.s.maxDD.toFixed(0)}% · DSR {(r.dsr*100).toFixed(0)}%</div>
+                <div style={{...flx({gap:6}),marginTop:2}}>
+                  <span className="mono" style={{fontSize:8.5,fontWeight:800,color:sCol,padding:'1px 5px',borderRadius:7,background:'rgba(255,255,255,.04)',flexShrink:0}}>{rawSig>0?'▲ LONG':rawSig<0?'▼ SHORT':'— fuera'}{fracTxt}</span>
+                  <span className="mono" style={{fontSize:8,color:'var(--faint)'}}>Sharpe {r.s.sharpe.toFixed(2)} · DD -{r.s.maxDD.toFixed(0)}%</span>
+                </div>
               </div>
               <div style={{textAlign:'right',flexShrink:0}}>
                 <div className="mono" style={{fontSize:14,fontWeight:800,color:r.s.cagr>=0?'var(--up)':'var(--down)'}}>{(r.s.cagr>=0?'+':'')+r.s.cagr.toFixed(0)}%<span style={{fontSize:8}}>/año</span></div>
@@ -2986,6 +3005,20 @@ function BotsView({gFunding}){
               </div>
             </div>
             {open&&<div style={{marginTop:10,paddingLeft:28}}>
+              {/* TRADE QUE RECOMIENDA AHORA MISMO ESTE BOT */}
+              <div style={{background:rawSig===0?'#0A0D14':rawSig>0?'rgba(31,224,160,.06)':'rgba(255,84,112,.06)',border:`1px solid ${rawSig===0?'var(--line2)':rawSig>0?'rgba(31,224,160,.25)':'rgba(255,84,112,.25)'}`,borderRadius:10,padding:'9px 10px',marginBottom:10}}>
+                <div style={{...flx({justifyContent:'space-between'}),marginBottom:rawSig===0?0:5}}>
+                  <span style={{fontSize:9,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.6,fontWeight:700}}>Trade que recomienda ahora</span>
+                  <span className="mono" style={{fontSize:11,fontWeight:800,color:sCol}}>{rawSig>0?'▲ LONG':rawSig<0?'▼ SHORT':'— sin trade'}{fracTxt}</span>
+                </div>
+                {rawSig!==0&&<div style={{...flx({justifyContent:'space-between'}),fontSize:9}} className="mono">
+                  <span style={{color:'var(--faint)'}}>entrada {money(entry)}</span>
+                  <span style={{color:'var(--up)'}}>TP {money(tp)}</span>
+                  <span style={{color:'var(--down)'}}>SL {money(sl2)}</span>
+                  <span style={{color:'var(--dim)'}}>{lt.lev.toFixed(1)}× · R:R 1.6</span>
+                </div>}
+                {rawSig===0&&<div style={{fontSize:8.5,color:'var(--faint)',marginTop:3}}>el bot está fuera del mercado con la señal actual.</div>}
+              </div>
               {checklist(r).map((it,k)=>(
                 <div key={k} style={{...flx({gap:8}),padding:'5px 0',alignItems:'flex-start'}}>
                   <span style={{fontSize:12,color:it[1]?'var(--up)':'#F3BA2F',flexShrink:0,lineHeight:1.4}}>{it[1]?'✓':'⚠'}</span>
