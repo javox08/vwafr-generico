@@ -32,19 +32,50 @@ async function maybeSend(env) {
 }
 
 async function sendOnce(env) {
-  const token = env.TELEGRAM_TOKEN;
-  const chats = (env.CHAT_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
-  if (!token || !chats.length) return 0;
   const text = await buildMessage();
   if (!text) return 0;
-  for (const chat of chats) {
-    await fetch('https://api.telegram.org/bot' + token + '/sendMessage', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chat, text, disable_web_page_preview: true })
-    }).catch(() => {});
+  let count = 0;
+  // ── Telegram ──
+  const token = env.TELEGRAM_TOKEN;
+  const chats = (env.CHAT_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+  if (token && chats.length) {
+    for (const chat of chats) {
+      await fetch('https://api.telegram.org/bot' + token + '/sendMessage', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chat, text, disable_web_page_preview: true })
+      }).catch(() => {});
+      count++;
+    }
   }
-  return chats.length;
+  // ── X / Twitter (opcional) ──
+  if (env.X_API_KEY && env.X_API_SECRET && env.X_ACCESS_TOKEN && env.X_ACCESS_SECRET) {
+    const ok = await postX(env, text.slice(0, 270)).catch(() => false);
+    if (ok) count++;
+  }
+  return count;
+}
+
+// Publica un tweet con OAuth 1.0a (firma HMAC-SHA1 con Web Crypto del Worker).
+async function postX(env, text) {
+  const url = 'https://api.twitter.com/2/tweets';
+  const enc = s => encodeURIComponent(s).replace(/[!*'()]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+  const oauth = {
+    oauth_consumer_key: env.X_API_KEY,
+    oauth_nonce: Math.random().toString(36).slice(2) + Date.now(),
+    oauth_signature_method: 'HMAC-SHA1',
+    oauth_timestamp: Math.floor(Date.now() / 1000) + '',
+    oauth_token: env.X_ACCESS_TOKEN,
+    oauth_version: '1.0'
+  };
+  const params = Object.keys(oauth).sort().map(k => enc(k) + '=' + enc(oauth[k])).join('&');
+  const base = 'POST&' + enc(url) + '&' + enc(params); // cuerpo JSON no entra en la firma (API v2)
+  const signingKey = enc(env.X_API_SECRET) + '&' + enc(env.X_ACCESS_SECRET);
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(signingKey), { name: 'HMAC', hash: 'SHA-1' }, false, ['sign']);
+  const sigBuf = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(base));
+  oauth.oauth_signature = btoa(String.fromCharCode(...new Uint8Array(sigBuf)));
+  const header = 'OAuth ' + Object.keys(oauth).sort().map(k => enc(k) + '="' + enc(oauth[k]) + '"').join(', ');
+  const r = await fetch(url, { method: 'POST', headers: { 'Authorization': header, 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+  return r.ok;
 }
 
 // Formateo de dinero estilo español ($1.234) sin depender de Intl.

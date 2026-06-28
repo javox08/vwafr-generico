@@ -35,6 +35,24 @@ el plan Free de Cloudflare Workers.
    navegador la URL del worker que te dio `wrangler deploy` y añade `/send`:
    `https://vwafr-telegram.TU-SUBDOMINIO.workers.dev/send`
 
+## Publicar también en X (Twitter) — opcional
+El worker puede **tuitear** el mismo mensaje. Necesitas una cuenta de
+desarrollador (https://developer.x.com) con una App con permisos **Read and
+Write** y los 4 datos de OAuth 1.0a:
+
+```bash
+wrangler secret put X_API_KEY          # API Key (consumer key)
+wrangler secret put X_API_SECRET       # API Key Secret
+wrangler secret put X_ACCESS_TOKEN     # Access Token
+wrangler secret put X_ACCESS_SECRET    # Access Token Secret
+wrangler deploy
+```
+
+Con esos 4 secretos, cada envío también se publica en X. Si no los pones, solo
+manda por Telegram. **Ojo al límite del plan Free de X (~500 posts/mes):** con
+~1/hora te pasarías; sube el `cron` (p. ej. `0 */2 * * *`, cada 2 h) o baja la
+probabilidad de envío en `worker.js`.
+
 ## Ajustes
 - **Frecuencia**: en `wrangler.toml`, `crons`. Por defecto `*/20 * * * *` (cada
   20 min) y el worker envía con ~34% de probabilidad → ~1/hora irregular. Para
