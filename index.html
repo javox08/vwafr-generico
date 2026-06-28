@@ -1114,6 +1114,71 @@ function loadRoutes(price,bands){
   try{localStorage.setItem('vwafr_routes_v1',JSON.stringify(store));}catch(_){}
   return out;
 }
+// RSI puntual en el día j (sobre las 14 variaciones que terminan en j).
+function rsiAt(cl,j){if(j<15)return 50;let g=0,l=0;for(let k=j-13;k<=j;k++){const ch=cl[k]-cl[k-1];if(ch>=0)g+=ch;else l-=ch;}
+  const rs=l===0?100:g/l;return 100-100/(1+rs);}
+// FIABILIDAD de una señal direccional derivada del precio (information coefficient):
+// recorre todo el histórico y compara el signo de la señal con el retorno futuro a
+// H días. Devuelve hit-rate, IC y un PESO de confianza en [0,1] (encogido por tamaño
+// de muestra) con el que se pondera su aportación a la deriva del Monte Carlo. Así una
+// señal que históricamente no acierta apenas inclina la ruta (anti-sobreajuste).
+function signalIC(cl,sigFn,H){
+  let n=0,hit=0,sx=0,sy=0,sxy=0,sxx=0,syy=0;
+  for(let j=210;j<cl.length-H;j++){
+    const s=sigFn(cl,j); if(!s)continue; const fwd=cl[j+H]/cl[j]-1; if(fwd===0)continue;
+    n++; if(Math.sign(s)===Math.sign(fwd))hit++;
+    sx+=s;sy+=fwd;sxy+=s*fwd;sxx+=s*s;syy+=fwd*fwd;
+  }
+  if(n<20)return {n,hit:0,rate:0.5,ic:0,w:0.4}; // sin muestra: prior tibio
+  const rate=hit/n, vx=sxx/n-(sx/n)**2, vy=syy/n-(sy/n)**2;
+  const ic=(sxy/n-(sx/n)*(sy/n))/(Math.sqrt(vx*vy)||1e-9);
+  const edge=Math.max(0,(rate-0.5)*2), shr=n/(n+60); // ventaja sobre el azar, encogida
+  return {n,hit,rate,ic,w:Math.max(0.15,Math.min(1,edge*shr+0.15))};
+}
+// DEBIASING ONLINE: cierra el lazo sobre la MEDIANA. Compara el sesgo diario que el
+// modelo predijo ayer con el retorno REAL de hoy y mantiene una EWMA lenta (~30d) del
+// error; devuelve una corrección (mitad del sesgo, acotada) para restar a la deriva.
+// Solo pliega el error una vez al día (≥20h) para no perseguir ruido.
+function debiasRead(price){
+  const now=Date.now(); let s=null;
+  try{s=JSON.parse(localStorage.getItem('vwafr_debias_v1'));}catch(_){}
+  let ewma=(s&&Number.isFinite(s.ewma))?s.ewma:0, n=(s&&s.n)||0;
+  const fresh=!s||(now-(s.ts||0))>=20*3600*1000;
+  if(fresh&&s&&Number.isFinite(s.price)&&Number.isFinite(s.predLogRet)&&price>0&&s.price>0){
+    const err=Math.log(price/s.price)-s.predLogRet; const a=2/(30+1);
+    ewma=ewma*(1-a)+err*a; n++; // + = el modelo se quedó corto (real subió más)
+  }
+  return {ewma,n,fresh,adj:Math.max(-0.0012,Math.min(0.0012,ewma*0.5))};
+}
+function debiasCommit(price,predLogRet,db){
+  if(!db.fresh)return;
+  try{localStorage.setItem('vwafr_debias_v1',JSON.stringify({ts:Date.now(),price,predLogRet,ewma:db.ewma,n:db.n}));}catch(_){}
+}
+// SKILL SCORE (CRPS/Brier): cada día puntúa la ruta FIJA de 30d contra el precio real.
+// - pinball loss (≈CRPS) de los cuantiles p25/p50/p75 del modelo frente a un baseline
+//   "sin cambios" (precio de inicio); skill = 1 − modelo/baseline (>0 ⇒ bate al azar).
+// - acierto direccional (signo de la mediana) y cobertura de la banda 50%.
+// Acumula en EWMA y solo puntúa una vez por (ruta, día).
+function loadSkill(route,price){
+  let s=null; try{s=JSON.parse(localStorage.getItem('vwafr_skill_v1'));}catch(_){}
+  s=s||{mp:0,bp:0,hit:0,cov:0,n:0,key:''};
+  if(route&&!route.fresh&&route.elapsed>=1&&route.p50&&price>0){
+    const day=Math.min(route.elapsed,route.days), key=route.start+'#'+day;
+    if(key!==s.key&&Number.isFinite(route.p50[day])){
+      const q25=route.p25[day],q50=route.p50[day],q75=route.p75[day],base=route.startPrice;
+      const pin=(q,tau)=>{const e=price-q;return e>=0?tau*e:(tau-1)*e;};
+      const mp=(pin(q25,.25)+pin(q50,.5)+pin(q75,.75))/3;
+      const bp=(pin(base,.25)+pin(base,.5)+pin(base,.75))/3; const a=2/(40+1);
+      s.mp=s.n?s.mp*(1-a)+mp*a:mp; s.bp=s.n?s.bp*(1-a)+bp*a:bp;
+      const dirOk=Math.sign(q50-base)===Math.sign(price-base)?1:0;
+      const inBand=(price>=Math.min(q25,q75)&&price<=Math.max(q25,q75))?1:0;
+      s.hit=s.n?s.hit*(1-a)+dirOk*a:dirOk; s.cov=s.n?s.cov*(1-a)+inBand*a:inBand;
+      s.n++; s.key=key;
+      try{localStorage.setItem('vwafr_skill_v1',JSON.stringify(s));}catch(_){}
+    }
+  }
+  return {...s,skill:s.bp>0?(1-s.mp/s.bp):0};
+}
 // Trade recomendado (paper-trade estilo TradingView): se ABRE con la señal actual
 // (entrada, stop y objetivo), se guarda y va AVANZANDO con el precio (P&L en vivo).
 // Se cierra al tocar objetivo/stop y se ABRE OTRO solo cuando cambia la señal.
@@ -1668,6 +1733,20 @@ function QuantView({gFunding}){
     let optPcr=null;
     if(q.opts&&q.opts.length){let poi=0,coi=0;for(const o of q.opts){const m=o.instrument_name.match(/-([CP])$/);if(!m)continue;if(m[1]==='P')poi+=o.open_interest||0;else coi+=o.open_interest||0;}optPcr=coi>0?poi/coi:null;}
     const optB=Number.isFinite(optPcr)?cl0((0.85-optPcr)*0.0016,0.0008):null;
+    // FIABILIDAD por señal (peso de confianza en [0,1]): las señales derivadas del
+    // precio se backtestean ONLINE (IC/hit-rate sobre el histórico); las externas
+    // (snapshot sin serie histórica) llevan un prior tibio. El peso atenúa cuánto
+    // inclina cada señal la ruta → las que no aciertan apenas mueven la deriva.
+    const icTrend=signalIC(cl,botSignal,21), icRsi=signalIC(cl,(c2,j)=>{const r=rsiAt(c2,j);return r>70?-1:r<30?1:0;},10);
+    const SIGW={'Patrones (técnicos/velas/figuras)':0.85,'Régimen / tendencia':icTrend.w,'RSI':icRsi.w,
+      'Ciclo (halving)':0.6,'Funding':0.55,'On-chain (MVRV)':0.6,'Sentimiento':0.5,
+      'Cierre de gobierno EE.UU.':0.45,'Libro de órdenes':0.55,'Opciones (calls/puts)':0.55,'Ciclo económico EE.UU.':0.5};
+    // Buckets ~ortogonales: dentro de cada uno se combinan por MEDIA ponderada por
+    // confianza (no suma) para no doble-contar señales correlacionadas (p.ej. funding,
+    // libro, opciones y sentimiento miden lo mismo); luego se suman entre buckets.
+    const BUCKET={'Régimen / tendencia':'tendencia','Ciclo (halving)':'tendencia','RSI':'reversión',
+      'Funding':'posicion','Libro de órdenes':'posicion','Opciones (calls/puts)':'posicion','Sentimiento':'posicion',
+      'On-chain (MVRV)':'onchain','Ciclo económico EE.UU.':'macro','Cierre de gobierno EE.UU.':'macro'};
     const biases=[
       {k:'Patrones (técnicos/velas/figuras)',v:cl0(Math.log(1+sig10/100)/10,0.003),why:actSt.length+' técnicos/velas + '+chartPats.filter(p=>p.st).length+' figuras (todos backtesteados)'},
       {k:'Ciclo (halving)',v:cyc.phase.bias*0.0009,why:cyc.phase.t+' · sesgo '+(cyc.phase.bias>=0?'+':'')+cyc.phase.bias},
@@ -1702,9 +1781,22 @@ function QuantView({gFunding}){
     const techDaily=cumPath?qMean(patDrift.slice(1,31)):cl0(Math.log(1+sig10/100)/10,0.003);
     biases[0].v=techDaily;
     if(cumPath)biases[0].why+=' · perfil día a día (1-30d)';
-    const constOther=biases.reduce((s,b)=>s+b.v,0)-techDaily; // demás sesgos (constantes)
-    // deriva TOTAL por día = parte constante + perfil de los patrones en ese día
-    const drift30=[];for(let d=1;d<=30;d++)drift30[d-1]=cl0(constOther+(cumPath?patDrift[d]:techDaily),0.008);
+    // CONFIANZA por señal (peso) — IC online para las de precio, prior para las externas
+    for(const b of biases)b.w=SIGW[b.k]!=null?SIGW[b.k]:0.5;
+    // COMBINACIÓN POR BUCKETS: cada bucket = media ponderada por confianza de sus
+    // señales (anti doble-conteo), atenuada por la confianza media del bucket; los
+    // buckets (≈ortogonales) se suman. Los Patrones van aparte (perfil día a día).
+    const bk={};
+    for(const b of biases){const g=BUCKET[b.k]; if(!g)continue; (bk[g]||(bk[g]=[])).push(b);}
+    let constOther=0;
+    for(const g in bk){const arr=bk[g]; let ws=0,vs=0;
+      for(const b of arr){const w=b.w!=null?b.w:0.5; ws+=w; vs+=b.v*w;}
+      const mean=ws>0?vs/ws:0, avgW=arr.length?ws/arr.length:0;
+      constOther+=mean*avgW;} // media ponderada × fiabilidad media del bucket
+    // DEBIASING ONLINE: corrección que cierra el lazo sobre la mediana (sesgo EWMA)
+    const db=debiasRead(price);
+    // deriva TOTAL por día = parte constante (buckets) + perfil de patrones + corrección
+    const drift30=[];for(let d=1;d<=30;d++)drift30[d-1]=cl0(constOther+(cumPath?patDrift[d]:techDaily)+db.adj,0.008);
     const drift=qMean(drift30); // escalar representativo (para mostrar)
     // ── IMÁN del mapa de liquidez: el precio tiende hacia los clústeres de
     // liquidaciones (niveles de apalancamiento) y hacia los máximos/mínimos recientes.
@@ -1719,6 +1811,8 @@ function QuantView({gFunding}){
     const pdrift=drift;
     const mc=monteCarlo(rets,price,30,700,drift30,mags,volScale), fin=mc.finals;
     const routes=loadRoutes(price,mc.bands); // 2 rutas persistentes (7d y 30d) con seguimiento diario
+    debiasCommit(price,drift30[0],db); // guarda la predicción de hoy para evaluarla mañana
+    const skill=loadSkill(routes.r30,price); // marcador CRPS/Brier de la ruta 30d vs precio real
     const probUp=fin.filter(v=>v>price).length/fin.length*100;
     const probUp15=fin.filter(v=>v>price*1.15).length/fin.length*100;
     const probDn15=fin.filter(v=>v<price*0.85).length/fin.length*100;
@@ -1798,7 +1892,7 @@ function QuantView({gFunding}){
     return {price,annVol,rsi,ma200,ma50,ma200w,mc,probUp,probUp15,probDn15,var99,cvar99,
       fair,lo,hi,valPct,realized,models,plSup,plRes,H,regime,fund,gf,opt,levels,cyc,patterns,corrE,corrS,corrAvg,optExp,
       route,tomorrow,tomPct,sig10,pdrift,trap,swingHi,swingLo,routes,biases,chartPats,drift,drift30,shutdown,
-      cal,volScale,sigTarget,dvol:q.dvol,obImb:q.obImb,impDaily,trade,tradeRec,closes:cl,sim,simC,simIS,simOOS,h4Sig};
+      cal,volScale,sigTarget,dvol:q.dvol,obImb:q.obImb,impDaily,trade,tradeRec,closes:cl,sim,simC,simIS,simOOS,h4Sig,db,skill};
   },[q,gFunding]);
 
   const D=86400000, now=Date.now();
@@ -2050,6 +2144,26 @@ function QuantView({gFunding}){
             </div>
             <p style={{fontSize:9,color:'var(--faint)',marginTop:7,lineHeight:1.5}}>Sobre el histórico, el precio real a 10d cayó dentro de cada banda este % de las veces. Cuanto más cerca del objetivo, mejor calibrado el cono.</p>
           </div>);})()}
+        {/* SKILL SCORE EN VIVO (CRPS/Brier): la ruta real vs el precio que va saliendo */}
+        {c.skill&&c.skill.n>=1&&(()=>{const sk=c.skill, skPct=sk.skill*100, beats=sk.skill>0;
+          return(
+          <div style={{marginTop:11,paddingTop:11,borderTop:'1px solid var(--line2)'}}>
+            <div style={{...flx({justifyContent:'space-between'}),marginBottom:6}}>
+              <span style={{fontSize:9.5,color:'var(--faint)',fontWeight:600,letterSpacing:.5,textTransform:'uppercase'}}>Marcador en vivo · {sk.n} días</span>
+              <span className="mono" style={{fontSize:9.5,fontWeight:700,color:beats?'var(--up)':'#F3BA2F'}}>{beats?'✓ bate al azar':'aún sin ventaja'}</span>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
+              {[['Skill (CRPS)',(skPct>=0?'+':'')+skPct.toFixed(0)+'%',beats?'var(--up)':'var(--down)'],
+                ['Dirección',(sk.hit*100).toFixed(0)+'%',sk.hit>0.5?'var(--up)':'var(--down)'],
+                ['Banda 50%',(sk.cov*100).toFixed(0)+'%','var(--txt)']].map((m,i)=>(
+                <div key={i} style={{background:'#0A0D14',borderRadius:8,padding:'8px 7px',textAlign:'center'}}>
+                  <div className="mono" style={{fontSize:13,fontWeight:800,color:m[2]}}>{m[1]}</div>
+                  <div style={{fontSize:8,color:'var(--dim)',marginTop:2}}>{m[0]}</div>
+                </div>
+              ))}
+            </div>
+            <p style={{fontSize:9,color:'var(--faint)',marginTop:7,lineHeight:1.5}}>Cada día se puntúa la ruta fija de 30d contra el precio real. <b>Skill</b> = cuánto bate el cono a un pronóstico "sin cambios" (&gt;0 = mejor que el azar) · <b>Dirección</b> = acierto del signo de la mediana · <b>Banda 50%</b> = veces dentro del rango central (ideal ~50%).</p>
+          </div>);})()}
         {/* EXPLICACIÓN: todos los sesgos que inclinan el Monte Carlo */}
         <div onClick={()=>setShowBias(s=>!s)} style={{...flx({justifyContent:'space-between'}),marginTop:12,paddingTop:11,
           borderTop:'1px solid var(--line2)',cursor:'pointer'}}>
@@ -2057,19 +2171,31 @@ function QuantView({gFunding}){
           <span className="mono" style={{fontSize:9.5,color:'var(--faint)'}}>{c.biases.length} señales</span>
         </div>
         {showBias&&<div style={{marginTop:10}}>
-          <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:8,lineHeight:1.5}}>Cada señal aporta una deriva diaria; la suma inclina la simulación. Los patrones se aplican <b>día a día</b> (retorno histórico a 1, 2, 3 … 30 días).</div>
-          {c.biases.slice().sort((a,b)=>Math.abs(b.v)-Math.abs(a.v)).map((bi,i)=>{
-            const pd=Math.expm1(bi.v)*100, pos=bi.v>=0;
+          <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:8,lineHeight:1.5}}>Cada señal aporta una deriva diaria <b>ponderada por su fiabilidad</b> (acierto histórico); las correlacionadas se agrupan en buckets y se promedian para no doble-contar. Los patrones se aplican <b>día a día</b> (1, 2, 3 … 30 días).</div>
+          {c.biases.slice().sort((a,b)=>Math.abs(b.v*(b.w??1))-Math.abs(a.v*(a.w??1))).map((bi,i)=>{
+            const pd=Math.expm1(bi.v)*100, pos=bi.v>=0, wp=Math.round((bi.w!=null?bi.w:0.5)*100);
             return(
             <div key={i} style={{...flx({gap:8}),padding:'7px 0',borderTop:i?'1px solid #12151F':'none'}}>
               <span style={{fontSize:13,width:14,color:Math.abs(bi.v)<1e-6?'var(--faint)':pos?'var(--up)':'var(--down)'}}>{Math.abs(bi.v)<1e-6?'·':pos?'▲':'▼'}</span>
               <div style={{flex:1,minWidth:0}}>
-                <div style={{fontSize:11.5,fontWeight:700,color:'var(--txt)'}}>{bi.k}</div>
+                <div style={{...flx({gap:6})}}>
+                  <span style={{fontSize:11.5,fontWeight:700,color:'var(--txt)'}}>{bi.k}</span>
+                  <span className="mono" style={{fontSize:8,fontWeight:700,color:wp>=60?'var(--up)':wp>=45?'#F3BA2F':'var(--faint)',padding:'1px 5px',borderRadius:7,background:'rgba(255,255,255,.04)',flexShrink:0}}>fiab {wp}%</span>
+                </div>
                 <div style={{fontSize:9,color:'var(--faint)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{bi.why}</div>
               </div>
               <span className="mono" style={{fontSize:10.5,fontWeight:700,color:Math.abs(bi.v)<1e-6?'var(--faint)':pos?'var(--up)':'var(--down)'}}>{pos?'+':''}{pd.toFixed(3)}%/d</span>
             </div>);
           })}
+          {c.db&&Math.abs(c.db.adj)>1e-6&&(
+            <div style={{...flx({gap:8}),padding:'7px 0',borderTop:'1px solid #12151F'}}>
+              <span style={{fontSize:13,width:14,color:c.db.adj>=0?'var(--up)':'var(--down)'}}>{c.db.adj>=0?'▲':'▼'}</span>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:11.5,fontWeight:700,color:'var(--txt)'}}>Auto-corrección (debiasing)</div>
+                <div style={{fontSize:9,color:'var(--faint)'}}>aprendida del error real vs predicho · {c.db.n} días</div>
+              </div>
+              <span className="mono" style={{fontSize:10.5,fontWeight:700,color:c.db.adj>=0?'var(--up)':'var(--down)'}}>{c.db.adj>=0?'+':''}{(Math.expm1(c.db.adj)*100).toFixed(3)}%/d</span>
+            </div>)}
           <div style={{...flx({justifyContent:'space-between'}),marginTop:9,paddingTop:9,borderTop:'1px solid var(--line2)'}}>
             <span style={{fontSize:11,fontWeight:800,color:'var(--txt)'}}>Sesgo total / día</span>
             <span className="mono" style={{fontSize:12,fontWeight:800,color:c.drift>=0?'var(--up)':'var(--down)'}}>{c.drift>=0?'+':''}{(Math.expm1(c.drift)*100).toFixed(3)}%</span>
