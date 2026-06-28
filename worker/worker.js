@@ -32,7 +32,7 @@ async function maybeSend(env) {
 }
 
 async function sendOnce(env) {
-  const text = await buildMessage();
+  const text = await buildMessage(env);
   if (!text) return 0;
   let count = 0;
   // ── Telegram ──
@@ -85,10 +85,10 @@ function money(v) {
   return '$' + (v < 0 ? '-' : '') + s;
 }
 
-async function buildMessage() {
+async function buildMessage(env) {
   try {
-    const k = await fetch('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=220').then(r => r.json());
-    if (!Array.isArray(k) || k.length < 60) return null;
+    const k = await fetch('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=1000').then(r => r.json());
+    if (!Array.isArray(k) || k.length < 260) return null;
     const cl = k.map(x => parseFloat(x[4]));
     const n = cl.length, price = cl[n - 1];
     const rets = []; for (let i = 1; i < n; i++) rets.push(Math.log(cl[i] / cl[i - 1]));
@@ -107,12 +107,9 @@ async function buildMessage() {
     }
     const probUp = Math.round(up / N * 100), touchPct = Math.round(touch / N * 100);
 
-    // Señal simple de "bots": tendencia (MA50/MA200) + momentum 21d.
-    const sma = p => { let s = 0; for (let i = n - p; i < n; i++) s += cl[i]; return s / p; };
-    const trendUp = sma(50) > sma(200), mom = price / cl[n - 22] - 1;
-    const side = (trendUp && mom > 0) ? 'LONG' : (!trendUp && mom < 0) ? 'SHORT' : null;
-
-    // Entrada / TP / SL por volatilidad (desviación de los retornos recientes).
+    // SEÑAL DE LOS BOTS: consenso de varias estrategias (trade SOLO eso de los bots).
+    const con = botConsensus(cl);
+    const side = con.side;
     let entry = null, tp = null, sl = null;
     if (side) {
       let mu = 0; for (const r of recent) mu += r; mu /= recent.length;
@@ -123,14 +120,74 @@ async function buildMessage() {
       sl = side === 'LONG' ? price * (1 - slPct) : price * (1 + slPct);
     }
 
+    // FIGURA GRÁFICA más reciente + probabilidad backtesteada.
+    const fig = detectFigure(cl);
+
+    const mom = price / cl[n - 22] - 1;
     const pool = [
       '🔮 Nuevo cono BTC: posibilidad del ' + touchPct + '% de tocar ' + money(lvl) + ' en 30 días.',
       '📊 BTC ' + money(price) + ' · ' + probUp + '% de probabilidad de subir a 30 días.',
       '📈 BTC ' + money(price) + ' · sesgo ' + (mom >= 0 ? '+' : '') + (mom * 100).toFixed(1) + '% (momentum 21d).'
     ];
-    if (side) pool.push('🤖 Señal de los bots: ' + side + ' (tendencia ' + (trendUp ? 'alcista' : 'bajista') + ').');
+    if (side) pool.push('🤖 Bots (' + con.long + '▲/' + con.short + '▼ de ' + con.n + '): ' + side + '.');
     if (side) pool.push('🤖 Operación bots: ' + side + ' · entrada ' + money(entry) + ' · 🎯 TP ' + money(tp) + ' · 🛑 SL ' + money(sl) + '.');
+    if (fig) pool.push('📐 Posible ' + fig.name + (fig.forming ? ' (en formación)' : ' (confirmada)') + ': objetivo ' + money(fig.target) + ' · ' + fig.prob + '% de acierto histórico.');
+
     const tail = ['', '', ' ⚡', ' 🟠', ' #BTC'][(Math.random() * 5) | 0];
-    return pool[(Math.random() * pool.length) | 0] + tail + '\n\n⚠️ No es consejo financiero.';
+    let msg = pool[(Math.random() * pool.length) | 0] + tail;
+    // promo de Bitunix (APY) en ~1 de cada 3 mensajes
+    if (Math.random() < 0.34) {
+      const apy = (env && env.BITUNIX_APY) ? env.BITUNIX_APY : 'hasta 20%';
+      msg += '\n\n💰 Gana ' + apy + ' APY en Bitunix · código ffcczq · https://www.bitunix.com/register?inviteCode=ffcczq';
+    }
+    return msg + '\n\n⚠️ No es consejo financiero.';
   } catch (e) { return null; }
+}
+
+// Consenso de varias estrategias de bots (subconjunto representativo de las 40).
+function botConsensus(cl) {
+  const n = cl.length, j = n;
+  const ma = p => { let s = 0; for (let i = j - p; i < j; i++) s += cl[i]; return s / p; };
+  const mom = k => cl[j - 1] / cl[j - 1 - k] - 1;
+  const rsi = () => { let g = 0, l = 0; for (let i = j - 14; i < j; i++) { const ch = cl[i] - cl[i - 1]; if (ch >= 0) g += ch; else l -= ch; } const rs = l === 0 ? 100 : g / l; return 100 - 100 / (1 + rs); };
+  const up200 = cl[j - 1] > ma(200);
+  const s = [];
+  s.push(ma(50) > ma(200) ? 1 : -1);                                  // cruce 50/200
+  s.push(ma(20) > ma(100) ? 1 : -1);                                  // cruce 20/100
+  s.push(ma(10) > ma(50) ? 1 : -1);                                   // cruce 10/50
+  s.push(cl[j - 1] > ma(100) ? 1 : -1);                               // precio vs MA100
+  s.push(mom(60) > 0.02 ? 1 : mom(60) < -0.02 ? -1 : 0);              // momentum 60d
+  s.push(mom(20) > 0.04 ? 1 : mom(20) < -0.04 ? -1 : 0);              // momentum 20d
+  s.push(mom(120) > 0 ? 1 : -1);                                      // momentum 120d
+  { let hi = -1e18, lo = 1e18; for (let i = j - 55; i < j; i++) { if (cl[i] > hi) hi = cl[i]; if (cl[i] < lo) lo = cl[i]; } s.push(cl[j - 1] > (hi + lo) / 2 ? 1 : -1); } // Donchian 55
+  { const r = rsi(); let x = r < 30 ? 1 : r > 70 ? -1 : 0; x = up200 ? Math.max(0, x) : Math.min(0, x); s.push(x); } // RSI a favor de tendencia
+  { const my = cl[j - 1] / ma(200); s.push(my < 0.8 ? 1 : my > 2.4 ? -1 : 0); } // Mayer
+  let long = 0, short = 0; for (const x of s) { if (x > 0) long++; else if (x < 0) short++; }
+  const tot = s.length, net = (long - short) / tot;
+  return { side: net > 0.15 ? 'LONG' : net < -0.15 ? 'SHORT' : null, long, short, n: tot, net };
+}
+
+// Detecta la figura gráfica más reciente (ruptura de rango / doble techo-suelo)
+// y su probabilidad = acierto histórico a 10 días sobre el propio histórico.
+function detectFigure(cl) {
+  const n = cl.length, W = 4, R = 20, H = 10;
+  const maxN = (j, w) => { let v = -1e18; for (let k = Math.max(0, j - w); k < j; k++) if (cl[k] > v) v = cl[k]; return v; };
+  const minN = (j, w) => { let v = 1e18; for (let k = Math.max(0, j - w); k < j; k++) if (cl[k] < v) v = cl[k]; return v; };
+  const near = (a, b, t) => Math.abs(a - b) / ((a + b) / 2) < t;
+  const PH = [], PL = [];
+  for (let i = W; i < n - W; i++) { let h = 1, l = 1; for (let kk = i - W; kk <= i + W; kk++) { if (cl[kk] > cl[i]) h = 0; if (cl[kk] < cl[i]) l = 0; } if (h) PH.push(i); if (l) PL.push(i); }
+  const recent = (arr, j, m) => { const o = []; for (let z = arr.length - 1; z >= 0 && o.length < m; z--) if (arr[z] <= j - W) o.unshift(arr[z]); return o; };
+  const rangeUp = j => { const d = maxN(j, 25); return (cl[j] > d && cl[j - 1] <= d) ? { target: cl[j] * 1.1 } : null; };
+  const rangeDn = j => { const d = minN(j, 25); return (cl[j] < d && cl[j - 1] >= d) ? { target: cl[j] * 0.9 } : null; };
+  const dTop = j => { const h = recent(PH, j, 2); if (h.length < 2 || !near(cl[h[0]], cl[h[1]], 0.05)) return null; const v = Math.min(cl[h[0]], cl[h[1]]), top = (cl[h[0]] + cl[h[1]]) / 2; if ((top - v) / v < 0.04) return null; return (cl[j] < v && cl[j - 1] >= v) ? { target: v - (top - v) } : null; };
+  const dBot = j => { const l = recent(PL, j, 2); if (l.length < 2 || !near(cl[l[0]], cl[l[1]], 0.05)) return null; const v = Math.max(cl[l[0]], cl[l[1]]), bot = (cl[l[0]] + cl[l[1]]) / 2; if ((v - bot) / bot < 0.04) return null; return (cl[j] > v && cl[j - 1] <= v) ? { target: v + (v - bot) } : null; };
+  const cands = [['Ruptura de rango ↑', 1, rangeUp], ['Ruptura de rango ↓', -1, rangeDn], ['Doble techo', -1, dTop], ['Doble suelo', 1, dBot]];
+  for (const [name, dir, fn] of cands) {
+    let trig = null; for (let j = n - 1; j >= n - R; j--) { const r = fn(j); if (r) { trig = r; break; } }
+    if (!trig) continue;
+    let k = 0, win = 0; for (let j = 60; j < n - H; j++) { if (fn(j)) { k++; if (((cl[j + H] - cl[j]) / cl[j]) * dir > 0) win++; } }
+    if (k < 3) continue;
+    return { name, dir, forming: false, target: trig.target, prob: Math.round(win / k * 100) };
+  }
+  return null;
 }

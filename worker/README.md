@@ -8,7 +8,13 @@ el plan Free de Cloudflare Workers.
 ~1 mensaje por hora (horario irregular), por ejemplo:
 - 🔮 *Nuevo cono BTC: posibilidad del 22% de tocar $66.000 en 30 días.*
 - 📊 *BTC $60.000 · 55% de probabilidad de subir a 30 días.*
-- 🤖 *Señal de los bots: LONG (tendencia alcista).*
+- 🤖 *Operación bots: LONG · entrada $60.000 · 🎯 TP $63.500 · 🛑 SL $57.800.* (consenso de los bots)
+- 📐 *Posible Ruptura de rango ↑ (confirmada): objetivo $66.000 · 68% de acierto histórico.*
+- 💰 *Gana hasta 20% APY en Bitunix · código ffcczq* (promo, en ~1 de cada 3)
+
+Y termina siempre con *⚠️ No es consejo financiero.* La señal de operación es el
+**consenso de varias estrategias de bots** (no una sola). Cambia el texto del APY
+en `wrangler.toml` (`BITUNIX_APY`).
 
 ## Pasos (una vez, ~5 minutos)
 

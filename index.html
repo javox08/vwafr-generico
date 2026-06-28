@@ -1590,13 +1590,19 @@ function tgMessage(){
   if(Number.isFinite(ins.p50)&&Number.isFinite(ins.medPct))pool.push('🎯 Cono 30d: mediana ~'+m(ins.p50)+' ('+(ins.medPct>=0?'+':'')+ins.medPct+'%).');
   if(Number.isFinite(ins.tomPct))pool.push('📈 BTC mañana: sesgo '+(ins.tomPct>=0?'+':'')+ins.tomPct+'% según el modelo.');
   if(ins.regime)pool.push('🧭 Régimen actual de BTC: '+ins.regime+'.');
+  // figura gráfica con objetivo y probabilidad
+  if(ins.figName&&Number.isFinite(ins.figTarget))
+    pool.push('📐 Posible '+ins.figName+(ins.figForming?' (en formación)':' (confirmada)')+': objetivo '+m(ins.figTarget)+(Number.isFinite(ins.figProb)?' · '+ins.figProb+'% de acierto histórico':'')+'.');
   if(bot.side&&bot.side!=='NEUTRAL')pool.push('🤖 Operación de los bots rentables: '+bot.side+' ('+bot.nLong+'▲/'+bot.nShort+'▼), confianza '+bot.conf+'%.');
   if(bot.side&&bot.side!=='NEUTRAL'&&Number.isFinite(bot.tp)&&Number.isFinite(bot.sl))
     pool.push('🤖 Operación bots: '+bot.side+' · entrada '+m(bot.entry)+' · 🎯 TP '+m(bot.tp)+' · 🛑 SL '+m(bot.sl)+'.');
   if(Number.isFinite(bot.megaCagr))pool.push('🤖 El conjunto de bots rentables rinde '+(bot.megaCagr>=0?'+':'')+bot.megaCagr+'%/año en backtest.');
   if(!pool.length)return null;
   const tail=['','',' ⚡',' 🟠',' #BTC',' 📲'][Math.floor(Math.random()*6)];
-  return pool[Math.floor(Math.random()*pool.length)]+tail+'\n\n⚠️ No es consejo financiero.';
+  let msg=pool[Math.floor(Math.random()*pool.length)]+tail;
+  // promo de Bitunix (APY) en ~1 de cada 3 mensajes
+  if(Math.random()<0.34)msg+='\n\n💰 Opera e ingresa intereses (APY) en Bitunix · código ffcczq · '+BITUNIX;
+  return msg+'\n\n⚠️ No es consejo financiero.';
 }
 // Calendario económico (eventos de alto impacto, previstos). Filtra a futuro.
 const ECON=[
@@ -2224,9 +2230,14 @@ function QuantView({gFunding}){
     try{const step=price>50000?5000:price>10000?2000:price>2000?500:100;
       const tlevel=Math.round(price*1.1/step)*step, N=mc.maxes.length;
       const tpc=N?Math.round(mc.maxes.filter(v=>v>=tlevel).length/N*100):null;
+      // figura gráfica más relevante (confirmada antes que en formación, mayor |movimiento|)
+      const figs=(chartPats||[]).filter(f=>f.st&&Number.isFinite(f.target));
+      const tf=figs.slice().sort((a,b)=>((a.forming?1:0)-(b.forming?1:0))||(Math.abs(b.avg||0)-Math.abs(a.avg||0)))[0];
       saveInsight({price:+price.toFixed(0),probUp:+probUp.toFixed(0),tomPct:+tomPct.toFixed(1),
         p50:+mc.bands[30].p50.toFixed(0),medPct:+((mc.bands[30].p50/price-1)*100).toFixed(1),
-        regime:regime.t,touchPrice:tlevel,touchPct:tpc});
+        regime:regime.t,touchPrice:tlevel,touchPct:tpc,
+        figName:tf?tf.t:null,figTarget:tf?Math.round(tf.target):null,figProb:tf&&tf.win!=null?tf.win:null,
+        figForming:tf?!!tf.forming:null,figSig:tf?tf.sig:null});
     }catch(_){}
     // ── Opciones (Deribit) ──
     let opt=null;

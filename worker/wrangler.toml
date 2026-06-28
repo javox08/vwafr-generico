@@ -11,6 +11,9 @@ crons = ["*/20 * * * *"]
 # Puedes ponerlos aquí o en el panel de Cloudflare (Settings → Variables).
 [vars]
 CHAT_IDS = ""
+# APY que se anuncia de Bitunix en el promo (texto libre).
+BITUNIX_APY = "hasta 20%"
 
-# El token NO va aquí (es secreto). Se pone con:
-#   npx wrangler secret put TELEGRAM_TOKEN
+# Secretos (NO van aquí). Se ponen con wrangler secret put NOMBRE:
+#   TELEGRAM_TOKEN                                   (obligatorio para Telegram)
+#   X_API_KEY X_API_SECRET X_ACCESS_TOKEN X_ACCESS_SECRET   (opcional, para X)
