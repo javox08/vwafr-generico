@@ -41,6 +41,48 @@ en `wrangler.toml` (`BITUNIX_APY`).
    navegador la URL del worker que te dio `wrangler deploy` y añade `/send`:
    `https://vwafr-telegram.TU-SUBDOMINIO.workers.dev/send`
 
+## Aviso cuando cambia la ruta (con SL/TP y enlace al bot)
+El worker publica un aviso especial **cada vez que la operación de los bots
+cambia** (de lado, o el TP/SL se mueve), con la entrada, 🎯 TP, 🛑 SL y un enlace
+al bot. Para no repetir, necesita un **KV** donde recordar el último estado:
+
+```bash
+wrangler kv namespace create VWAFR_KV
+# pega el id que te da en wrangler.toml, descomentando el bloque [[kv_namespaces]]
+wrangler deploy
+```
+El enlace al bot se configura en `BOT_URL` (wrangler.toml).
+
+## Publicar en LinkedIn — opcional
+Necesitas un **access token** de LinkedIn con permiso `w_member_social` y tu URN:
+
+```bash
+wrangler secret put LINKEDIN_TOKEN     # access token (caduca ~60 días)
+wrangler secret put LINKEDIN_AUTHOR    # urn:li:person:XXXX  (o urn:li:organization:YYYY)
+wrangler deploy
+```
+Conseguir el token: crea una app en https://www.linkedin.com/developers, pide el
+producto "Share on LinkedIn" y haz el OAuth para obtener el token (guía de
+LinkedIn). El URN de persona lo da el endpoint `/v2/userinfo` (campo `sub`).
+
+## Bot que TRADEA en Bitunix la señal de los 25 bots — opcional y avanzado
+Cuando cambia la ruta, el worker puede **abrir la operación en Bitunix Futures**
+(market + TP/SL) con la señal del consenso de los bots. **Por seguridad va en
+DRY-RUN**: no opera hasta que pongas `BITUNIX_TRADE = "live"`.
+
+```bash
+wrangler secret put BITUNIX_API_KEY
+wrangler secret put BITUNIX_API_SECRET
+# en wrangler.toml: BITUNIX_SYMBOL, BITUNIX_QTY y BITUNIX_TRADE = "live"
+wrangler deploy
+```
+
+> ⚠️ **Es dinero real.** La firma y el endpoint (`/api/v1/futures/trade/place_order`,
+> HMAC-SHA256) están puestos según la API de Bitunix, pero **verifícalos con la
+> doc oficial y prueba con el tamaño mínimo** antes de operar en serio. No es
+> consejo financiero; puedes perder tu capital. Empieza con `BITUNIX_QTY` muy
+> pequeño y vigila las primeras órdenes.
+
 ## Publicar también en X (Twitter) — opcional
 El worker puede **tuitear** el mismo mensaje. Necesitas una cuenta de
 desarrollador (https://developer.x.com) con una App con permisos **Read and

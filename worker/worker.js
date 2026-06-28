@@ -14,45 +14,104 @@
 // ───────────────────────────────────────────────────────────────────────────
 
 export default {
-  async scheduled(event, env, ctx) {
-    ctx.waitUntil(maybeSend(env));
-  },
+  async scheduled(event, env, ctx) { ctx.waitUntil(run(env, false)); },
   async fetch(req, env) {
     const url = new URL(req.url);
-    if (url.pathname === '/send') { const n = await sendOnce(env); return new Response('enviado a ' + n + ' destino(s)'); }
-    return new Response('VWAFR Telegram worker OK · usa /send para una prueba');
+    if (url.pathname === '/send') { const n = await run(env, true); return new Response('ok · publicado en ' + n + ' canal(es)'); }
+    return new Response('VWAFR worker OK · /send para una prueba');
   }
 };
 
-// El cron dispara cada ~20 min; enviamos con ~34% de probabilidad → de media
-// ~1 mensaje/hora, con horario IRREGULAR (no se nota que es un bot).
-async function maybeSend(env) {
-  if (Math.random() > 0.34) return 0;
-  return sendOnce(env);
+// Núcleo: calcula el análisis, detecta si la RUTA del bot cambió (lado o TP/SL) y,
+// en ese caso, publica SIEMPRE un aviso de "ruta actualizada" (con SL/TP y enlace);
+// si no, manda un mensaje normal de vez en cuando (~1/hora irregular). Difunde a
+// Telegram, X y LinkedIn. Requiere un namespace KV (VWAFR_KV) para detectar cambios.
+async function run(env, force) {
+  const d = await analyze(env);
+  if (!d) return 0;
+  const kv = env.VWAFR_KV;
+  let last = null;
+  if (kv) { try { last = JSON.parse(await kv.get('op') || 'null'); } catch (_) {} }
+  const changed = d.side && (!last || last.side !== d.side ||
+    (d.tp && last.tp && Math.abs(d.tp / last.tp - 1) > 0.005) ||
+    (d.sl && last.sl && Math.abs(d.sl / last.sl - 1) > 0.005));
+  let sent = 0;
+  if (changed) {
+    sent = await broadcast(env, updateText(env, d));   // aviso de ruta actualizada
+    await bitunixTrade(env, d).catch(() => {});         // ejecuta en Bitunix (si está activo)
+  } else if (force || Math.random() < 0.34) {
+    sent = await broadcast(env, normalText(env, d));    // mensaje normal
+  }
+  if (kv && d.side) { try { await kv.put('op', JSON.stringify({ side: d.side, tp: d.tp, sl: d.sl, ts: Date.now() })); } catch (_) {} }
+  return sent;
 }
 
-async function sendOnce(env) {
-  const text = await buildMessage(env);
+// Difunde el mismo texto a todos los canales configurados (Telegram, X, LinkedIn).
+async function broadcast(env, text) {
   if (!text) return 0;
   let count = 0;
-  // ── Telegram ──
-  const token = env.TELEGRAM_TOKEN;
-  const chats = (env.CHAT_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
-  if (token && chats.length) {
-    for (const chat of chats) {
-      await fetch('https://api.telegram.org/bot' + token + '/sendMessage', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: chat, text, disable_web_page_preview: true })
-      }).catch(() => {});
-      count++;
-    }
+  const token = env.TELEGRAM_TOKEN, chats = (env.CHAT_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+  if (token && chats.length) for (const chat of chats) {
+    await fetch('https://api.telegram.org/bot' + token + '/sendMessage', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: chat, text, disable_web_page_preview: true }) }).catch(() => {});
+    count++;
   }
-  // ── X / Twitter (opcional) ──
-  if (env.X_API_KEY && env.X_API_SECRET && env.X_ACCESS_TOKEN && env.X_ACCESS_SECRET) {
-    const ok = await postX(env, text.slice(0, 270)).catch(() => false);
-    if (ok) count++;
-  }
+  if (env.X_API_KEY && env.X_API_SECRET && env.X_ACCESS_TOKEN && env.X_ACCESS_SECRET) { if (await postX(env, text.slice(0, 270)).catch(() => false)) count++; }
+  if (env.LINKEDIN_TOKEN && env.LINKEDIN_AUTHOR) { if (await postLinkedIn(env, text).catch(() => false)) count++; }
   return count;
+}
+
+// Aviso cuando la RUTA del bot cambia: lado, entrada, TP, SL y enlace al bot.
+function updateText(env, d) {
+  const url = env.BOT_URL || 'https://vwafr-generico.pages.dev/';
+  return '🔄 Ruta actualizada · Operación de los bots rentables\n' +
+    (d.side === 'LONG' ? '▲ LONG' : '▼ SHORT') + ' BTC ' + money(d.entry) + '\n' +
+    '🎯 TP ' + money(d.tp) + '  ·  🛑 SL ' + money(d.sl) + '\n' +
+    '👉 Ver el bot: ' + url +
+    '\n\n⚠️ No es consejo financiero.';
+}
+
+// Publica en LinkedIn (UGC Posts API) con un access token del usuario (w_member_social).
+async function postLinkedIn(env, text) {
+  const body = {
+    author: env.LINKEDIN_AUTHOR, lifecycleState: 'PUBLISHED',
+    specificContent: { 'com.linkedin.ugc.ShareContent': { shareCommentary: { text }, shareMediaCategory: 'NONE' } },
+    visibility: { 'com.linkedin.ugc.MemberNetworkVisibility': 'PUBLIC' }
+  };
+  const r = await fetch('https://api.linkedin.com/v2/ugcPosts', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + env.LINKEDIN_TOKEN, 'Content-Type': 'application/json', 'X-Restli-Protocol-Version': '2.0.0' },
+    body: JSON.stringify(body)
+  });
+  return r.ok;
+}
+
+// ── TRADING EN BITUNIX (opcional) ─────────────────────────────────────────────
+// Ejecuta la señal del CONSENSO de los bots en Bitunix Futures cuando cambia la
+// ruta. Por SEGURIDAD va en DRY-RUN salvo que pongas BITUNIX_TRADE = "live".
+// IMPORTANTE: verifica endpoints/firma con la doc oficial y PRUEBA con tamaño
+// mínimo antes de operar en serio. Es dinero real: puedes perderlo.
+async function bitunixTrade(env, d) {
+  if (!env.BITUNIX_API_KEY || !env.BITUNIX_API_SECRET || !d.side) return;
+  if ((env.BITUNIX_TRADE || '').toLowerCase() !== 'live') return; // DRY-RUN por defecto
+  const base = 'https://fapi.bitunix.com', path = '/api/v1/futures/trade/place_order';
+  const bodyObj = {
+    symbol: env.BITUNIX_SYMBOL || 'BTCUSDT',
+    side: d.side === 'LONG' ? 'BUY' : 'SELL', tradeSide: 'OPEN', orderType: 'MARKET',
+    qty: '' + (env.BITUNIX_QTY || '0.001'),
+    tpPrice: '' + Math.round(d.tp), slPrice: '' + Math.round(d.sl)
+  };
+  const bodyStr = JSON.stringify(bodyObj), ts = Date.now() + '', nonce = Math.random().toString(36).slice(2);
+  const sign = await hmacHex(env.BITUNIX_API_SECRET, nonce + ts + env.BITUNIX_API_KEY + bodyStr);
+  await fetch(base + path, {
+    method: 'POST',
+    headers: { 'api-key': env.BITUNIX_API_KEY, 'nonce': nonce, 'timestamp': ts, 'sign': sign, 'Content-Type': 'application/json' },
+    body: bodyStr
+  }).catch(() => {});
+}
+async function hmacHex(secret, msg) {
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(msg));
+  return [...new Uint8Array(sig)].map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
 // Publica un tweet con OAuth 1.0a (firma HMAC-SHA1 con Web Crypto del Worker).
@@ -85,7 +144,8 @@ function money(v) {
   return '$' + (v < 0 ? '-' : '') + s;
 }
 
-async function buildMessage(env) {
+// Calcula el análisis ligero de BTC y la operación del consenso de los bots.
+async function analyze(env) {
   try {
     const k = await fetch('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=1000').then(r => r.json());
     if (!Array.isArray(k) || k.length < 260) return null;
@@ -101,13 +161,13 @@ async function buildMessage(env) {
     let up = 0, touch = 0;
     for (let p = 0; p < N; p++) {
       let v = price, mx = price;
-      for (let d = 0; d < days; d++) { v *= Math.exp(recent[(Math.random() * recent.length) | 0]); if (v > mx) mx = v; }
+      for (let dd = 0; dd < days; dd++) { v *= Math.exp(recent[(Math.random() * recent.length) | 0]); if (v > mx) mx = v; }
       if (v > price) up++;
       if (mx >= lvl) touch++;
     }
     const probUp = Math.round(up / N * 100), touchPct = Math.round(touch / N * 100);
 
-    // SEÑAL DE LOS BOTS: consenso de varias estrategias (trade SOLO eso de los bots).
+    // SEÑAL DE LOS BOTS: consenso de varias estrategias (la operación de los 25 bots).
     const con = botConsensus(cl);
     const side = con.side;
     let entry = null, tp = null, sl = null;
@@ -119,29 +179,30 @@ async function buildMessage(env) {
       tp = side === 'LONG' ? price * (1 + tpPct) : price * (1 - tpPct);
       sl = side === 'LONG' ? price * (1 - slPct) : price * (1 + slPct);
     }
-
-    // FIGURA GRÁFICA más reciente + probabilidad backtesteada.
     const fig = detectFigure(cl);
-
     const mom = price / cl[n - 22] - 1;
-    const pool = [
-      '🔮 Nuevo cono BTC: posibilidad del ' + touchPct + '% de tocar ' + money(lvl) + ' en 30 días.',
-      '📊 BTC ' + money(price) + ' · ' + probUp + '% de probabilidad de subir a 30 días.',
-      '📈 BTC ' + money(price) + ' · sesgo ' + (mom >= 0 ? '+' : '') + (mom * 100).toFixed(1) + '% (momentum 21d).'
-    ];
-    if (side) pool.push('🤖 Bots (' + con.long + '▲/' + con.short + '▼ de ' + con.n + '): ' + side + '.');
-    if (side) pool.push('🤖 Operación bots: ' + side + ' · entrada ' + money(entry) + ' · 🎯 TP ' + money(tp) + ' · 🛑 SL ' + money(sl) + '.');
-    if (fig) pool.push('📐 Posible ' + fig.name + (fig.forming ? ' (en formación)' : ' (confirmada)') + ': objetivo ' + money(fig.target) + ' · ' + fig.prob + '% de acierto histórico.');
-
-    const tail = ['', '', ' ⚡', ' 🟠', ' #BTC'][(Math.random() * 5) | 0];
-    let msg = pool[(Math.random() * pool.length) | 0] + tail;
-    // promo de Bitunix (APY) en ~1 de cada 3 mensajes
-    if (Math.random() < 0.34) {
-      const apy = (env && env.BITUNIX_APY) ? env.BITUNIX_APY : 'hasta 20%';
-      msg += '\n\n💰 Gana ' + apy + ' APY en Bitunix · código ffcczq · https://www.bitunix.com/register?inviteCode=ffcczq';
-    }
-    return msg + '\n\n⚠️ No es consejo financiero.';
+    return { price, probUp, touchPct, lvl, mom, con, side, entry, tp, sl, fig };
   } catch (e) { return null; }
+}
+
+// Mensaje "normal" (rotación de variantes) a partir del análisis.
+function normalText(env, d) {
+  const con = d.con, side = d.side, fig = d.fig;
+  const pool = [
+    '🔮 Nuevo cono BTC: posibilidad del ' + d.touchPct + '% de tocar ' + money(d.lvl) + ' en 30 días.',
+    '📊 BTC ' + money(d.price) + ' · ' + d.probUp + '% de probabilidad de subir a 30 días.',
+    '📈 BTC ' + money(d.price) + ' · sesgo ' + (d.mom >= 0 ? '+' : '') + (d.mom * 100).toFixed(1) + '% (momentum 21d).'
+  ];
+  if (side) pool.push('🤖 Bots (' + con.long + '▲/' + con.short + '▼ de ' + con.n + '): ' + side + '.');
+  if (side) pool.push('🤖 Operación bots: ' + side + ' · entrada ' + money(d.entry) + ' · 🎯 TP ' + money(d.tp) + ' · 🛑 SL ' + money(d.sl) + '.');
+  if (fig) pool.push('📐 Posible ' + fig.name + (fig.forming ? ' (en formación)' : ' (confirmada)') + ': objetivo ' + money(fig.target) + ' · ' + fig.prob + '% de acierto histórico.');
+  const tail = ['', '', ' ⚡', ' 🟠', ' #BTC'][(Math.random() * 5) | 0];
+  let msg = pool[(Math.random() * pool.length) | 0] + tail;
+  if (Math.random() < 0.34) {
+    const apy = (env && env.BITUNIX_APY) ? env.BITUNIX_APY : 'hasta 20%';
+    msg += '\n\n💰 Gana ' + apy + ' APY en Bitunix · código ffcczq · https://www.bitunix.com/register?inviteCode=ffcczq';
+  }
+  return msg + '\n\n⚠️ No es consejo financiero.';
 }
 
 // Consenso de varias estrategias de bots (subconjunto representativo de las 40).

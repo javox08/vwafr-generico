@@ -13,7 +13,21 @@ crons = ["*/20 * * * *"]
 CHAT_IDS = ""
 # APY que se anuncia de Bitunix en el promo (texto libre).
 BITUNIX_APY = "hasta 20%"
+# Enlace al bot que se incluye en el aviso de "ruta actualizada".
+BOT_URL = "https://vwafr-generico.pages.dev/"
+# Trading real en Bitunix: "dry" (no opera, por defecto) o "live" (opera de verdad).
+BITUNIX_TRADE = "dry"
+BITUNIX_SYMBOL = "BTCUSDT"
+BITUNIX_QTY = "0.001"
+
+# KV para detectar cambios de ruta y avisar solo cuando cambia (créalo y pega el id):
+#   npx wrangler kv namespace create VWAFR_KV
+# [[kv_namespaces]]
+# binding = "VWAFR_KV"
+# id = "PEGA_AQUI_EL_ID"
 
 # Secretos (NO van aquí). Se ponen con wrangler secret put NOMBRE:
-#   TELEGRAM_TOKEN                                   (obligatorio para Telegram)
-#   X_API_KEY X_API_SECRET X_ACCESS_TOKEN X_ACCESS_SECRET   (opcional, para X)
+#   TELEGRAM_TOKEN                                          (Telegram)
+#   X_API_KEY X_API_SECRET X_ACCESS_TOKEN X_ACCESS_SECRET   (X / Twitter)
+#   LINKEDIN_TOKEN LINKEDIN_AUTHOR                          (LinkedIn)
+#   BITUNIX_API_KEY BITUNIX_API_SECRET                      (trading, solo si live)
