@@ -1305,18 +1305,31 @@ const BOTS=[
    obj:'Extremos de RSI(14): comprar sobreventa, vender sobrecompra.',
    hyp:'Las sobre-reacciones de corto plazo revierten: largo en RSI<30 (pánico) y corto en RSI>70 (euforia).',
    sig:(cl,j)=>{if(j<20)return 0;const r=rsiAt(cl,j-1);return r<30?1:r>70?-1:0;}},
-  {id:'cycle',name:'Ciclo (acumular abajo · soltar arriba)',tipo:'Rotación de ciclo',
-   obj:'Posición según la fase del ciclo: entrar con todo cerca del mínimo, aligerar cerca del ATH probable, salir cuando empieza a caer.',
-   hyp:'BTC se mueve por ciclos. Cerca de un ATH probable (precio muy por encima de la MA200) conviene PROMEDIAR la salida; cuando empieza a caer desde máximos, salir del todo; y esperar al MÍNIMO del ciclo (precio barato / caída profunda) para entrar con todo. Posición fraccionada = promedio.',
+  {id:'cycle',name:'Ciclo (long abajo · short arriba)',tipo:'Rotación de ciclo · long+short',
+   obj:'Acumula LONG promediando cerca del mínimo, cierra el largo cerca del ATH y mete SHORT en el techo / la caída. Tradea las dos direcciones.',
+   hyp:'BTC se mueve por ciclos. Cerca del MÍNIMO (precio barato vs MA200 / caída profunda) se acumula LONG promediando; en el markup se mantiene largo; cerca de un ATH probable (muy sobre-extendido) se cierra el largo y se empieza a meter SHORT; y según cae desde máximos se promedia el corto. Posición fraccionada = promedio; opera largo Y corto.',
    sig:(cl,j)=>{if(j<220)return 0; const px=cl[j-1];
      let ath=0;for(let m=0;m<j;m++)if(cl[m]>ath)ath=cl[m]; // máximo histórico hasta ayer
      const ma200=maAt(cl,j,200), mayer=ma200>0?px/ma200:1, dd=ath>0?px/ath-1:0;
-     if(mayer<0.85||dd<=-0.55) return 1;        // MÍNIMO del ciclo (barato / caída profunda): todo dentro
-     if(mayer>=2.5) return 0.25;                // ATH muy probable: promedia la salida (deja 1/4)
-     if(mayer>=2.1) return 0.5;                 // sobre-extendido: empieza a aligerar (1/2)
-     if(dd<=-0.12&&mayer>1.15) return -0.5;     // empieza a caer desde máximos estando caro: mete todo a la salida
-     if(px>ma200) return 1;                     // markup en tendencia: largo
+     // —— SUELO: acumular LONG promediando ——
+     if(mayer<0.75||dd<=-0.6) return 1;             // mínimo profundo: todo LONG
+     if(mayer<0.95&&dd<=-0.4) return 0.66;          // cerca del suelo: promedia LONG
+     // —— TECHO/ATH: cerrar largo y meter SHORT ——
+     if(mayer>=2.6) return -1;                      // ATH extremo: SHORT con todo
+     if(mayer>=2.2) return -0.5;                    // cerca del ATH: cierra largo y empieza SHORT
+     if(dd<=-0.15&&dd>-0.4&&mayer>1.3) return -0.66;// cae desde máximos estando caro: promedia SHORT
+     // —— MARKUP: largo en tendencia ——
+     if(px>ma200) return 1;
      return 0;}},
+  {id:'quant',name:'Cuantitativo (multifactor)',tipo:'Análisis cuantitativo',
+   obj:'Score direccional compuesto que tradea el sesgo de la ruta del análisis cuantitativo (con los factores calculables del precio).',
+   hyp:'Replica la deriva que inclina la ruta del Cuantitativo usando los factores de precio: tendencia (MA50/200 + momentum), momentum temporal 60d, régimen (precio vs MA200) y RSI contrarian en extremos. La suma ponderada dimensiona la posición (más convicción = más tamaño), como la deriva inclina el cono.',
+   sig:(cl,j)=>{if(j<210)return 0;
+     const trend=botSignal(cl,j), px=cl[j-1], ma200=maAt(cl,j,200);
+     const m60=cl[j-60]?cl[j-1]/cl[j-60]-1:0, tsmom=m60>0.03?1:m60<-0.03?-1:0;
+     const reg=px>ma200?1:-1, r=rsiAt(cl,j-1), rsiC=r>72?-1:r<28?1:0;
+     const score=0.4*trend+0.28*tsmom+0.17*reg+0.15*rsiC;
+     return Math.abs(score)<0.2?0:Math.max(-1,Math.min(1,score*1.4));}},
 ];
 // momentos de una serie (media, desviación, asimetría, curtosis) para el Deflated Sharpe
 function moments(a){const n=a.length||1,m=qMean(a);let s2=0,s3=0,s4=0;
@@ -2790,7 +2803,7 @@ function BotsView({gFunding}){
     const load=async()=>{
       let closes=longRef.current;
       if(!closes){try{let allc=[],end=Date.now();
-        for(let pg=0;pg<3;pg++){const k=await jget('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=1000&endTime='+end);
+        for(let pg=0;pg<5;pg++){const k=await jget('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=1000&endTime='+end);
           if(!Array.isArray(k)||!k.length)break; allc=k.map(x=>parseFloat(x[4])).concat(allc); end=k[0][0]-864e5; if(k.length<1000)break;}
         if(allc.length>800){closes=allc;longRef.current=allc;}
       }catch(_){}}
@@ -2804,7 +2817,7 @@ function BotsView({gFunding}){
   },[]);
   const c=useMemo(()=>{
     if(!cl||cl.length<300)return null;
-    const price=cl[cl.length-1], bcl=cl.slice(-(210+6*365));
+    const price=cl[cl.length-1], bcl=cl.slice(-(210+9*365)); // ~9 años de prueba (todo el histórico fiable de BTC)
     const ev=evalBots(bcl); if(!ev)return null;
     const top=ev.rows[0], live=botLiveTrade(cl,top), trade=loadTrade(live,price);
     return {price,ev,top,live,trade,yr:ev.years.toFixed(1)};
