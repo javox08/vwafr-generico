@@ -1544,14 +1544,21 @@ function evalBots(bcl){
 }
 // Trade en vivo de un bot: su señal ACTUAL → operación (entrada/stop/objetivo) con
 // dimensionado por volatilidad. Reutiliza la persistencia y el track record reales.
-function botLiveTrade(cl,bt){
+function botLiveTrade(cl,bt,ohlc){
   const price=cl[cl.length-1], sig=bt.sig(cl,cl.length);
   const side=sig>0?'LONG':sig<0?'SHORT':'NEUTRAL';
   const lr=[];for(let i=Math.max(1,cl.length-25);i<cl.length;i++)lr.push(Math.log(cl[i]/cl[i-1]));
-  const vol=qStd(lr)||0.03, lev=Math.max(0.25,Math.min(3,0.022/vol));
-  const slPct=Math.min(0.12,Math.max(0.02,1.4*vol*Math.sqrt(5))), tpPct=slPct*1.6;
+  let vol=qStd(lr)||0.03, atrFrac=null;
+  // ATR(14) sobre el rango REAL (high-low) si hay OHLC → stops a distancia de volatilidad
+  // real, no solo cierre-a-cierre (capta mejor los gaps y mechas de BTC).
+  if(ohlc&&ohlc.length>=15){let tr=0,cc=0;for(let i=ohlc.length-14;i<ohlc.length;i++){const pc=ohlc[i-1].c;
+    tr+=Math.max(ohlc[i].h-ohlc[i].l,Math.abs(ohlc[i].h-pc),Math.abs(ohlc[i].l-pc));cc++;}
+    atrFrac=cc?(tr/cc)/price:null; if(atrFrac)vol=Math.max(vol,atrFrac);}
+  const lev=Math.max(0.25,Math.min(3,0.022/vol));
+  const slPct=atrFrac!=null?Math.min(0.12,Math.max(0.02,2.0*atrFrac)):Math.min(0.12,Math.max(0.02,1.4*vol*Math.sqrt(5)));
+  const tpPct=slPct*1.6;
   const conf=side==='NEUTRAL'?0:Math.round(45+(bt.dsr!=null?bt.dsr*45:0));
-  return {side,tpPct,slPct,lev,conf,reason:bt.name+' · '+bt.tipo};
+  return {side,tpPct,slPct,lev,conf,reason:bt.name+' · '+bt.tipo,atr:atrFrac};
 }
 // Calendario económico (eventos de alto impacto, previstos). Filtra a futuro.
 const ECON=[
@@ -3021,7 +3028,10 @@ function BotsView({gFunding}){
   const [openId,setOpenId]=useState(null);
   const [loadedAt,setLoadedAt]=useState(0); // frescura de datos
   const [showGloss,setShowGloss]=useState(false); // glosario de métricas
+  const [pinId,setPinId]=useState(()=>{try{return localStorage.getItem('vwafr_pinbot')||'';}catch(_){return '';}}); // bot fijado para el trade en vivo
   const evRef=React.useRef({len:0,ev:null}); // cachea el backtest de los 40 bots (1×/día)
+  const ohlcRef=React.useRef(null); // OHLC reciente para ATR (stops por volatilidad real)
+  const setPin=id=>{setPinId(id);try{id?localStorage.setItem('vwafr_pinbot',id):localStorage.removeItem('vwafr_pinbot');}catch(_){}};
   const longRef=React.useRef(null);
   useEffect(()=>{
     let alive=true,timer=null;
@@ -3034,9 +3044,10 @@ function BotsView({gFunding}){
           if(!Array.isArray(k)||!k.length)break; allc=k.map(x=>parseFloat(x[4])).concat(allc); end=k[0][0]-864e5; if(k.length<1000)break;}
         if(allc.length>800){closes=allc;longRef.current=allc;}
       }catch(_){}}
-      // refresca el último cierre para que la señal en vivo sea actual
-      if(closes){try{const k=await jget('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=2',7000);
-        if(Array.isArray(k)&&k.length){closes=closes.slice();closes[closes.length-1]=parseFloat(k[k.length-1][4]);}}catch(_){}}
+      // refresca las últimas velas (OHLC, para ATR) y el último cierre en vivo
+      if(closes){try{const k=await jget('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=30',7000);
+        if(Array.isArray(k)&&k.length){closes=closes.slice();closes[closes.length-1]=parseFloat(k[k.length-1][4]);
+          ohlcRef.current=k.map(x=>({h:parseFloat(x[2]),l:parseFloat(x[3]),c:parseFloat(x[4])}));}}catch(_){}}
       if(alive&&closes){setCl(closes);setLoadedAt(Date.now());}
     };
     load(); timer=setInterval(load,120000);
@@ -3049,9 +3060,11 @@ function BotsView({gFunding}){
     // aparecer una vela diaria nueva, no en cada refresco de precio (cada 2 min)
     if(evRef.current.len!==bcl.length){evRef.current={len:bcl.length,ev:evalBots(bcl)};}
     const ev=evRef.current.ev; if(!ev)return null;
-    const top=ev.rows[0], live=botLiveTrade(cl,top), trade=loadTrade(live,price);
-    return {price,ev,top,live,trade,yr:ev.years.toFixed(1)};
-  },[cl]);
+    // el trade en vivo lo manda el bot FIJADO (si existe) o, por defecto, el líder
+    const driver=(pinId&&ev.rows.find(r=>r.id===pinId))||ev.rows[0];
+    const top=ev.rows[0], live=botLiveTrade(cl,driver,ohlcRef.current), trade=loadTrade(live,price);
+    return {price,ev,top,driver,live,trade,yr:ev.years.toFixed(1)};
+  },[cl,pinId]);
   if(!c)return(
     <div style={{textAlign:'center',padding:'60px 0',color:'var(--faint)'}}>
       <div style={{display:'inline-block',animation:'spin 1s linear infinite',fontSize:22}}>↻</div>
@@ -3152,13 +3165,18 @@ function BotsView({gFunding}){
 
       {/* TRADE EN VIVO del bot líder */}
       <div style={panel({marginBottom:14,padding:16,borderColor:neutral?'var(--line2)':long?'rgba(31,224,160,.35)':'rgba(255,84,112,.35)'})}>
+        <div style={{...flx({justifyContent:'space-between'}),marginBottom:8}}>
+          <span style={eyebrow}>Trade en vivo · {c.driver.id===top.id?'bot líder':'bot fijado'}</span>
+          <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>auto · simulado</span>
+        </div>
         <div style={{...flx({justifyContent:'space-between'}),marginBottom:10}}>
-          <span style={eyebrow}>Trade en vivo · bot líder</span><span className="mono" style={{fontSize:9,color:'var(--faint)'}}>auto · simulado</span>
+          <span style={{fontSize:11,fontWeight:700,color:'var(--txt)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{c.driver.name}</span>
+          {pinId&&<span onClick={()=>setPin('')} className="mono" style={{fontSize:8.5,color:'var(--accent)',cursor:'pointer',flexShrink:0,marginLeft:8}}>✕ quitar fijado</span>}
         </div>
         {neutral?(
           <div style={{textAlign:'center',padding:'14px 0'}}>
             <div style={{fontSize:20,fontWeight:800,color:'var(--dim)'}}>⏸ SIN TRADE</div>
-            <div style={{fontSize:11,color:'var(--faint)',marginTop:4}}>{top.name}: sin señal clara ahora mismo</div>
+            <div style={{fontSize:11,color:'var(--faint)',marginTop:4}}>{c.driver.name}: sin señal clara ahora mismo</div>
           </div>
         ):(<>
           <div style={{...flx({justifyContent:'space-between'}),marginBottom:10}}>
@@ -3185,7 +3203,7 @@ function BotsView({gFunding}){
                 <div style={{fontSize:8,color:'var(--dim)'}}>{m[0]}</div>
               </div>))}
           </div>
-          <div style={{fontSize:9.5,color:'var(--faint)',marginTop:10,lineHeight:1.5}}>{top.name}. La operación avanza con el precio y se cierra al tocar objetivo o stop; se abre otra cuando cambia la señal.</div>
+          <div style={{fontSize:9.5,color:'var(--faint)',marginTop:10,lineHeight:1.5}}>{c.driver.name}. {c.live.atr!=null?'Stop a distancia de ATR ('+(c.live.atr*100).toFixed(1)+'%/día de rango real). ':''}La operación avanza con el precio y se cierra al tocar objetivo o stop.</div>
         </>)}
       </div>
 
@@ -3285,7 +3303,7 @@ function BotsView({gFunding}){
                 </div>
                 <div style={{...flx({gap:6}),marginTop:2}}>
                   <span className="mono" style={{fontSize:8.5,fontWeight:800,color:sCol,padding:'1px 5px',borderRadius:7,background:'rgba(255,255,255,.04)',flexShrink:0}}>{rawSig>0?'▲ LONG':rawSig<0?'▼ SHORT':'— fuera'}{fracTxt}</span>
-                  <span className="mono" style={{fontSize:8,color:'var(--faint)'}}>Sharpe {r.s.sharpe.toFixed(2)} · DD -{r.s.maxDD.toFixed(0)}%</span>
+                  <span className="mono" style={{fontSize:8,color:'var(--faint)'}}>Sharpe {r.s.sharpe.toFixed(2)} · DD -{r.s.maxDD.toFixed(0)}% · {(r.s.trades/Math.max(1,r.s.years)).toFixed(0)} op/año</span>
                 </div>
               </div>
               <div style={{textAlign:'right',flexShrink:0}}>
@@ -3333,6 +3351,11 @@ function BotsView({gFunding}){
                     <div className="mono" style={{fontSize:8,color:'var(--dim)',marginTop:1}}>Sharpe {s2.sharpe.toFixed(2)}</div>
                   </div>):<div key={k}/>) }
               </div>
+              {r.id!=='future'&&<div onClick={()=>setPin(pinId===r.id?'':r.id)} style={{...flx({justifyContent:'center',gap:6}),marginTop:9,padding:'8px',borderRadius:9,cursor:'pointer',
+                background:pinId===r.id?'rgba(31,224,160,.12)':'#0A0D14',border:`1px solid ${pinId===r.id?'rgba(31,224,160,.35)':'var(--line2)'}`}}>
+                <span style={{fontSize:11}}>📌</span>
+                <span style={{fontSize:10,fontWeight:700,color:pinId===r.id?'var(--up)':'var(--dim)'}}>{pinId===r.id?'Fijado para el trade en vivo ✓':'Fijar este bot para el trade en vivo'}</span>
+              </div>}
             </div>}
           </div>);
         })}
