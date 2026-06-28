@@ -1931,6 +1931,7 @@ function QuantView({gFunding}){
   const [q,setQ]=useState(null);
   const [loadedAt,setLoadedAt]=useState(0); // frescura de datos
   const [showBias,setShowBias]=useState(false);
+  const [tgt,setTgt]=useState(''); // calculadora de probabilidad de tocar un precio
   const longRef=React.useRef(null); // caché del histórico largo (no se re-pagina en cada refresco)
   const macroRef=React.useRef(null); // caché del ciclo económico (dato anual)
   useEffect(()=>{
@@ -2508,6 +2509,32 @@ function QuantView({gFunding}){
           </div>
         </div>}
       </div>
+
+      {/* CALCULADORA: probabilidad de TOCAR un precio en 30d (primer-paso Monte Carlo) */}
+      {c.mc&&c.mc.maxes&&(()=>{const tv=parseFloat((tgt||'').replace(/[^0-9.]/g,''));
+        const valid=Number.isFinite(tv)&&tv>0, up=valid&&tv>=c.price;
+        const N=c.mc.maxes.length;
+        const touch=!valid?null:up?c.mc.maxes.filter(v=>v>=tv).length/N*100:c.mc.mins.filter(v=>v<=tv).length/N*100;
+        const pct=valid?((tv/c.price-1)*100):0;
+        return(
+        <div style={panel({marginBottom:14,padding:16})}>
+          <div style={{...flx({justifyContent:'space-between'}),marginBottom:10}}>
+            <span style={eyebrow}>¿Tocará mi precio?</span>
+            <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>primer-paso · 30d</span>
+          </div>
+          <div style={{...flx({gap:8})}}>
+            <span className="mono" style={{fontSize:13,color:'var(--faint)'}}>$</span>
+            <input value={tgt} onChange={e=>setTgt(e.target.value)} inputMode="decimal" placeholder={Math.round(c.price*1.1).toLocaleString('es-ES')}
+              style={{flex:1,background:'#0A0D14',border:'1px solid var(--line2)',borderRadius:9,color:'var(--txt)',
+                fontSize:15,fontWeight:700,padding:'10px 12px',fontFamily:'JetBrains Mono,monospace',outline:'none',minWidth:0}}/>
+          </div>
+          {valid&&<div style={{textAlign:'center',marginTop:12}}>
+            <div className="mono" style={{fontSize:30,fontWeight:800,lineHeight:1,color:up?'var(--up)':'var(--down)'}}>{touch.toFixed(0)}%</div>
+            <div style={{fontSize:10,color:'var(--dim)',marginTop:5}}>probabilidad de {up?'SUBIR a':'CAER a'} {money(tv)} ({pct>=0?'+':''}{pct.toFixed(1)}%) en algún momento de los próximos 30 días</div>
+          </div>}
+          {!valid&&<div style={{fontSize:9.5,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Escribe un precio objetivo y verás la probabilidad de que BTC lo <b>toque</b> (no solo de que cierre ahí) en 30 días, según las {N} trayectorias simuladas.</div>}
+        </div>);
+      })()}
 
       {/* TABLA DE PROBABILIDAD DE OBJETIVOS */}
       <div style={panel({marginBottom:14,padding:16})}>
