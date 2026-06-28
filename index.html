@@ -1771,7 +1771,7 @@ function cycleModel(athLive){
 // perfil que alimenta el Monte Carlo. La dirección sale de la estadística real.
 function chartPatterns(cl){
   const n=cl.length; if(n<150)return [];
-  const W=4,HM=60,H10=10,R=6;
+  const W=4,HM=60,H10=10,R=20; // ventana de "reciente" ampliada (≈3-4 semanas)
   const PH=[],PL=[];
   for(let i=W;i<n-W;i++){let h=true,l=true;for(let k=i-W;k<=i+W;k++){if(cl[k]>cl[i])h=false;if(cl[k]<cl[i])l=false;}if(h)PH.push(i);if(l)PL.push(i);}
   const recent=(arr,j,m)=>{const o=[];for(let z=arr.length-1;z>=0&&o.length<m;z--){if(arr[z]<=j-W)o.unshift(arr[z]);}return o;};
@@ -1792,6 +1792,19 @@ function chartPatterns(cl){
   const triDesc=j=>{const h=recent(PH,j,3),l=recent(PL,j,3);if(h.length<3||l.length<2)return null;const sh=slope(h.map(x=>[x,cl[x]])),sl=slope(l.map(x=>[x,cl[x]]));if(!(sh<-0.0008&&Math.abs(sl)<0.0008))return null;const d=minN(j,20);return(cl[j]<d&&cl[j-1]>=d)?{target:cl[j]*0.9}:null;};
   const rangeUp=j=>{const d=maxN(j,25);return(cl[j]>d&&cl[j-1]<=d&&(maxN(j,25)-minN(j,25))/cl[j]<0.18)?{target:cl[j]*1.1}:null;};
   const rangeDn=j=>{const d=minN(j,25);return(cl[j]<d&&cl[j-1]>=d&&(maxN(j,25)-minN(j,25))/cl[j]<0.18)?{target:cl[j]*0.92}:null;};
+  // detectores de FIGURA EN FORMACIÓN: la estructura ya está y el precio se acerca al
+  // disparo (aún no ha roto). Devuelven {target} si la figura se está formando ahora.
+  const px=cl[n-1];
+  const fDTop=()=>{const h=recent(PH,n-1,2);if(h.length<2||!near(cl[h[0]],cl[h[1]],0.05))return null;const v=minR(h[0],h[1]),top=(cl[h[0]]+cl[h[1]])/2;if((top-v)/v<0.04)return null;return(px>v&&px<=v*1.07)?{target:v-(top-v)}:null;};
+  const fDBot=()=>{const l=recent(PL,n-1,2);if(l.length<2||!near(cl[l[0]],cl[l[1]],0.05))return null;const v=maxR(l[0],l[1]),bot=(cl[l[0]]+cl[l[1]])/2;if((v-bot)/bot<0.04)return null;return(px<v&&px>=v*0.93)?{target:v+(v-bot)}:null;};
+  const fTTop=()=>{const h=recent(PH,n-1,3);if(h.length<3||!near(cl[h[0]],cl[h[1]],0.045)||!near(cl[h[1]],cl[h[2]],0.045))return null;const v=minR(h[0],h[2]),top=(cl[h[0]]+cl[h[1]]+cl[h[2]])/3;if((top-v)/v<0.04)return null;return(px>v&&px<=v*1.07)?{target:v-(top-v)}:null;};
+  const fTBot=()=>{const l=recent(PL,n-1,3);if(l.length<3||!near(cl[l[0]],cl[l[1]],0.045)||!near(cl[l[1]],cl[l[2]],0.045))return null;const v=maxR(l[0],l[2]),bot=(cl[l[0]]+cl[l[1]]+cl[l[2]])/3;if((v-bot)/bot<0.04)return null;return(px<v&&px>=v*0.93)?{target:v+(v-bot)}:null;};
+  const fHch=()=>{const h=recent(PH,n-1,3);if(h.length<3)return null;const L=cl[h[0]],Hd=cl[h[1]],Rr=cl[h[2]];if(!(Hd>L*1.02&&Hd>Rr*1.02&&near(L,Rr,0.06)))return null;const neck=minR(h[0],h[2]);return(px>neck&&px<=neck*1.07)?{target:neck-(Hd-neck)}:null;};
+  const fHchInv=()=>{const l=recent(PL,n-1,3);if(l.length<3)return null;const L=cl[l[0]],Hd=cl[l[1]],Rr=cl[l[2]];if(!(Hd<L*0.98&&Hd<Rr*0.98&&near(L,Rr,0.06)))return null;const neck=maxR(l[0],l[2]);return(px<neck&&px>=neck*0.93)?{target:neck+(neck-Hd)}:null;};
+  const fTriAsc=()=>{const h=recent(PH,n-1,3),l=recent(PL,n-1,3);if(h.length<2||l.length<3)return null;const sh=slope(h.map(x=>[x,cl[x]])),sl=slope(l.map(x=>[x,cl[x]]));if(!(Math.abs(sh)<0.0008&&sl>0.0008))return null;const d=maxN(n-1,20);return(px<=d&&px>=d*0.93)?{target:px*1.12}:null;};
+  const fTriDesc=()=>{const h=recent(PH,n-1,3),l=recent(PL,n-1,3);if(h.length<3||l.length<2)return null;const sh=slope(h.map(x=>[x,cl[x]])),sl=slope(l.map(x=>[x,cl[x]]));if(!(sh<-0.0008&&Math.abs(sl)<0.0008))return null;const d=minN(n-1,20);return(px>=d&&px<=d*1.07)?{target:px*0.9}:null;};
+  const fRangeUp=()=>{const d=maxN(n-1,25);return(px<=d&&px>=d*0.95&&(maxN(n-1,25)-minN(n-1,25))/px<0.18)?{target:px*1.1}:null;};
+  const fRangeDn=()=>{const d=minN(n-1,25);return(px>=d&&px<=d*1.05&&(maxN(n-1,25)-minN(n-1,25))/px<0.18)?{target:px*0.92}:null;};
   let muD=0;for(let j=1;j<n;j++)muD+=(cl[j]-cl[j-1])/cl[j-1];muD/=(n-1);
   const start=Math.max(60,Math.floor(n*0.25));
   const bt=(fn,sgn)=>{let k=0,win=0;const acc=new Array(HM+1).fill(0),cnt=new Array(HM+1).fill(0);
@@ -1801,23 +1814,25 @@ function chartPatterns(cl){
     const shr=k/(k+6),pathX=path.map((v,h)=>(v-muD*h)*shr); const pw=win/k;
     return {n:k,win:Math.round(pw*100),ci:Math.round(Math.sqrt(pw*(1-pw)/Math.max(1,k))*196),avg:+(path[Math.min(20,HM)]*100).toFixed(1),path,pathX};};
   const figs=[
-    ['Doble techo',-1,'dos máximos al mismo nivel: ruptura del cuello',dTop],
-    ['Doble suelo',1,'dos mínimos al mismo nivel: ruptura del cuello',dBot],
-    ['Triple techo',-1,'tres máximos al mismo nivel: ruptura',tTop],
-    ['Triple suelo',1,'tres mínimos al mismo nivel: ruptura',tBot],
-    ['Hombro-cabeza-hombro',-1,'techo de reversión (3 picos): pierde el cuello',hch],
-    ['HCH invertido',1,'suelo de reversión (3 valles): rompe el cuello',hchInv],
-    ['Triángulo ascendente',1,'máximos planos + mínimos al alza · ruptura ↑',triAsc],
-    ['Triángulo descendente',-1,'máximos a la baja + mínimos planos · ruptura ↓',triDesc],
-    ['Ruptura de rango ↑',1,'sale del rango lateral por arriba',rangeUp],
-    ['Ruptura de rango ↓',-1,'sale del rango lateral por abajo',rangeDn],
+    ['Doble techo',-1,'dos máximos al mismo nivel: ruptura del cuello',dTop,fDTop],
+    ['Doble suelo',1,'dos mínimos al mismo nivel: ruptura del cuello',dBot,fDBot],
+    ['Triple techo',-1,'tres máximos al mismo nivel: ruptura',tTop,fTTop],
+    ['Triple suelo',1,'tres mínimos al mismo nivel: ruptura',tBot,fTBot],
+    ['Hombro-cabeza-hombro',-1,'techo de reversión (3 picos): pierde el cuello',hch,fHch],
+    ['HCH invertido',1,'suelo de reversión (3 valles): rompe el cuello',hchInv,fHchInv],
+    ['Triángulo ascendente',1,'máximos planos + mínimos al alza · ruptura ↑',triAsc,fTriAsc],
+    ['Triángulo descendente',-1,'máximos a la baja + mínimos planos · ruptura ↓',triDesc,fTriDesc],
+    ['Ruptura de rango ↑',1,'sale del rango lateral por arriba',rangeUp,fRangeUp],
+    ['Ruptura de rango ↓',-1,'sale del rango lateral por abajo',rangeDn,fRangeDn],
   ];
   const out=[];
-  for(const [t,sig,d,fn] of figs){
-    let trig=null;for(let j=n-1;j>=Math.max(start,n-R);j--){const r=fn(j);if(r){trig=r;break;}}
+  for(const [t,sig,d,fn,ffn] of figs){
+    let trig=null,forming=false;
+    for(let j=n-1;j>=Math.max(start,n-R);j--){const r=fn(j);if(r){trig=r;break;}} // confirmada (rotura reciente)
+    if(!trig&&ffn){const fr=ffn();if(fr){trig=fr;forming=true;}}                    // o en formación (cerca del disparo)
     if(!trig)continue;
     const st=bt(fn,sig);
-    out.push({t,sig,d,target:trig.target,st,win:st?st.win:null,avg:st?st.avg:null});
+    out.push({t,sig,d,target:trig.target,forming,st,win:st?st.win:null,avg:st?st.avg:null});
   }
   return out;
 }
@@ -2082,7 +2097,7 @@ function QuantView({gFunding}){
     // Perfil de retorno día a día (path histórico 1..30d) de TODO lo que afecta al
     // precio: patrones técnicos, de velas y figuras gráficas. AHORA las figuras
     // también traen su perfil REAL backtesteado sobre BTC (1…60d), igual que el resto.
-    const actPath=patterns.filter(p=>p.st&&p.st.path).concat(chartPats.filter(p=>p.st&&p.st.path));
+    const actPath=patterns.filter(p=>p.st&&p.st.path).concat(chartPats.filter(p=>p.st&&p.st.path&&!p.forming)); // las figuras EN FORMACIÓN no inclinan el cono hasta confirmar
     let cumPath=null;
     if(actPath.length){cumPath=new Array(31).fill(0);let wsum=0;
       for(const p of actPath){const w=Math.min(p.st.n,40),pa=p.st.pathX||p.st.path;wsum+=w;for(let h=1;h<=30;h++)cumPath[h]+=pa[h]*w;}
@@ -2379,7 +2394,11 @@ function QuantView({gFunding}){
           <div key={i} style={{...flx({gap:9}),padding:'10px 0',borderTop:i?'1px solid #12151F':'none'}}>
             <span style={{fontSize:16,color:pt.sig>0?'var(--up)':pt.sig<0?'var(--down)':'var(--faint)'}}>{pt.sig>0?'▲':pt.sig<0?'▼':'◆'}</span>
             <div style={{flex:1,minWidth:0}}>
-              <div style={{fontSize:12.5,fontWeight:700,color:pt.sig>0?'var(--up)':pt.sig<0?'var(--down)':'var(--txt)'}}>{pt.t}</div>
+              <div style={{...flx({gap:6})}}>
+                <span style={{fontSize:12.5,fontWeight:700,color:pt.sig>0?'var(--up)':pt.sig<0?'var(--down)':'var(--txt)'}}>{pt.t}</span>
+                <span className="mono" style={{fontSize:7.5,fontWeight:700,flexShrink:0,padding:'1px 5px',borderRadius:7,
+                  color:pt.forming?'#F3BA2F':'var(--up)',background:'rgba(255,255,255,.04)'}}>{pt.forming?'⏳ en formación':'✓ confirmada'}</span>
+              </div>
               <div style={{fontSize:9.5,color:'var(--faint)'}}>{pt.d}</div>
               <div className="mono" style={{fontSize:9.5,color:'var(--dim)',marginTop:2}}>objetivo {money(pt.target)}</div>
             </div>
@@ -2389,7 +2408,7 @@ function QuantView({gFunding}){
             </div>
           </div>
         )):<div style={{fontSize:11,color:'var(--faint)',textAlign:'center',padding:'8px 0'}}>Sin figuras gráficas claras ahora mismo.</div>}
-        <p style={{fontSize:9,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Figuras detectadas por pivotes de swing (dobles/triples techos y suelos, hombro-cabeza-hombro, triángulos, rupturas de rango). <b>Backtesteadas sobre BTC real</b>: cada figura se busca en todo el histórico y se mide su retorno real a 1…60 días. <b>Objetivo</b> = proyección por amplitud · <b>%</b> = acierto histórico medido. Alimentan el cono.</p>
+        <p style={{fontSize:9,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Figuras detectadas por pivotes de swing (dobles/triples techos y suelos, hombro-cabeza-hombro, triángulos, rupturas de rango). <b style={{color:'var(--up)'}}>✓ confirmada</b> = ya rompió (alimenta el cono). <b style={{color:'#F3BA2F'}}>⏳ en formación</b> = la estructura está y el precio se acerca al disparo (aún no confirma, no inclina el cono). <b>Backtesteadas sobre BTC real</b> a 1…60 días · <b>objetivo</b> = proyección por amplitud · <b>%</b> = acierto histórico ±margen.</p>
       </div>
 
       {/* MONTE CARLO · cono de probabilidad (grado institucional) */}
@@ -3134,17 +3153,24 @@ function BotsView({gFunding}){
         </div>
       </div>
 
-      {/* CONSENSO DE LOS BOTS · qué opinan los 40 ahora mismo (breadth) */}
-      {(()=>{let lo=0,sh=0,fl=0;for(const r of ev.rows){if(r.id==='future')continue;const s=r.sig(cl,cl.length);if(s>0)lo++;else if(s<0)sh++;else fl++;}
-        const tot=lo+sh+fl||1, loP=lo/tot*100, shP=sh/tot*100, net=lo-sh;
+      {/* CONSENSO DE LOS BOTS RENTABLES · qué opinan los que aguantan fuera de muestra */}
+      {(()=>{
+        // solo los bots RENTABLES (rentables fuera de muestra); si no hubiera, los de CAGR>0
+        let elig=ev.rows.filter(r=>r.id!=='future'&&r.oos&&r.oos.cagr>0&&r.oos.sharpe>=0);
+        if(elig.length<3)elig=ev.rows.filter(r=>r.id!=='future'&&r.s.cagr>0);
+        const longs=[],shorts=[]; let fl=0;
+        for(const r of elig){const s=r.sig(cl,cl.length);if(s>0)longs.push(r);else if(s<0)shorts.push(r);else fl++;}
+        const lo=longs.length,sh=shorts.length,tot=lo+sh+fl||1,loP=lo/tot*100,shP=sh/tot*100,net=lo-sh;
         const col=net>tot*0.15?'var(--up)':net<-tot*0.15?'var(--down)':'#F3BA2F';
         const txt=net>tot*0.15?'mayoría LARGOS':net<-tot*0.15?'mayoría CORTOS':'sin consenso claro';
+        const names=arr=>arr.slice().sort((a,b)=>b.s.cagr-a.s.cagr).map(r=>r.name).join(' · ')||'—';
         return(
         <div style={panel({marginBottom:14,padding:'14px 16px'})}>
-          <div style={{...flx({justifyContent:'space-between'}),marginBottom:9}}>
-            <span style={eyebrow}>Consenso de los bots</span>
+          <div style={{...flx({justifyContent:'space-between'}),marginBottom:3}}>
+            <span style={eyebrow}>Consenso · bots rentables</span>
             <span className="mono" style={{fontSize:10.5,fontWeight:800,color:col}}>{txt}</span>
           </div>
+          <div style={{fontSize:8.5,color:'var(--faint)',marginBottom:9}}>solo los {elig.length} bots que aguantan fuera de muestra (los que de verdad funcionan)</div>
           <div style={{display:'flex',height:10,borderRadius:5,overflow:'hidden',background:'#0A0D14'}}>
             <div style={{width:loP+'%',background:'var(--up)'}}/>
             <div style={{width:(100-loP-shP)+'%',background:'#2A2F3E'}}/>
@@ -3155,7 +3181,16 @@ function BotsView({gFunding}){
             <span style={{color:'var(--faint)'}}>{fl} fuera</span>
             <span style={{color:'var(--down)',fontWeight:700}}>{sh} cortos ▼</span>
           </div>
-          <div style={{fontSize:8.5,color:'var(--faint)',marginTop:7,lineHeight:1.5}}>Cuántas de las {tot} estrategias están largas, cortas o fuera ahora mismo. Un consenso amplio refuerza la dirección; dividido = incertidumbre.</div>
+          <div style={{marginTop:9,display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+            <div style={{background:'rgba(31,224,160,.06)',border:'1px solid rgba(31,224,160,.2)',borderRadius:9,padding:'8px 9px'}}>
+              <div style={{fontSize:8,color:'var(--up)',fontWeight:700,textTransform:'uppercase',letterSpacing:.5,marginBottom:3}}>▲ En LONG</div>
+              <div style={{fontSize:9,color:'var(--dim)',lineHeight:1.5}}>{names(longs)}</div>
+            </div>
+            <div style={{background:'rgba(255,84,112,.06)',border:'1px solid rgba(255,84,112,.2)',borderRadius:9,padding:'8px 9px'}}>
+              <div style={{fontSize:8,color:'var(--down)',fontWeight:700,textTransform:'uppercase',letterSpacing:.5,marginBottom:3}}>▼ En SHORT</div>
+              <div style={{fontSize:9,color:'var(--dim)',lineHeight:1.5}}>{names(shorts)}</div>
+            </div>
+          </div>
         </div>);
       })()}
 
