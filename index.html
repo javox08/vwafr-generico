@@ -1294,6 +1294,11 @@ function rollStat(cl,j,n){let s=0,s2=0,hi=-Infinity,lo=Infinity;const a=Math.max
   const c=Math.max(1,j-a),mean=s/c,vr=Math.max(0,s2/c-mean*mean);return {mean,sd:Math.sqrt(vr),hi,lo};}
 // retorno a k días en j (cierres hasta j-1)
 function momAt(cl,j,k){return (j>k&&cl[j-1-k]>0)?cl[j-1]/cl[j-1-k]-1:0;}
+// REVERSIÓN A FAVOR DE LA TENDENCIA: una señal de reversión (s) solo se opera en el
+// sentido de la tendencia mayor (MA200). En alcista se COMPRAN las caídas (no se
+// shortea la euforia); en bajista se VENDEN los rebotes. Evita el error letal de
+// ponerse corto contra un mercado estructuralmente alcista como BTC.
+function revFilter(cl,j,s){if(!s)return 0;const up=cl[j-1]>maAt(cl,j,200);return up?Math.max(0,s):Math.min(0,s);}
 // ── 40 BOTS diversificados (tendencia, momentum, reversión, osciladores, rupturas,
 //    volatilidad, ciclo/valoración y compuestos). Todos: señal solo con datos hasta j-1.
 const BOTS=[
@@ -1344,33 +1349,33 @@ const BOTS=[
    hyp:'ROC corto: un cambio fuerte a 10d señala impulso direccional inmediato.',
    sig:(cl,j)=>{if(j<14)return 0;const m=momAt(cl,j,10);return m>0.03?1:m<-0.03?-1:0;}},
   // ——— REVERSIÓN A LA MEDIA / OSCILADORES ———
-  {id:'rsi',name:'Reversión RSI (30/70)',tipo:'Reversión',obj:'Extremos de RSI(14).',
-   hyp:'Las sobre-reacciones revierten: largo en RSI<30 (pánico), corto en RSI>70 (euforia).',
-   sig:(cl,j)=>{if(j<20)return 0;const r=rsiAt(cl,j-1);return r<30?1:r>70?-1:0;}},
+  {id:'rsi',name:'Reversión RSI (30/70)',tipo:'Reversión',obj:'Extremos de RSI(14), a favor de la tendencia.',
+   hyp:'Las sobre-reacciones revierten, PERO solo a favor de la tendencia mayor: en alcista compra el pánico (RSI<30) y no shortea; en bajista vende la euforia (RSI>70). Evita pelear contra el mercado.',
+   sig:(cl,j)=>{if(j<20)return 0;const r=rsiAt(cl,j-1);return revFilter(cl,j,r<30?1:r>70?-1:0);}},
   {id:'rsicross',name:'RSI cruce 50',tipo:'Momentum',obj:'RSI por encima/debajo de 50.',
    hyp:'El RSI sobre 50 indica impulso comprador; por debajo, vendedor. Versión momentum del RSI.',
    sig:(cl,j)=>{if(j<20)return 0;return rsiAt(cl,j-1)>50?1:-1;}},
-  {id:'bollrev',name:'Reversión Bollinger (2σ)',tipo:'Reversión',obj:'Bandas de Bollinger 20·2σ.',
-   hyp:'Tocar la banda superior (2σ) sugiere sobrecompra → corto; la inferior, sobreventa → largo. Reversión a la media.',
-   sig:(cl,j)=>{if(j<24)return 0;const px=cl[j-1],r=rollStat(cl,j,20);if(r.sd===0)return 0;const z=(px-r.mean)/r.sd;return z>2?-1:z<-2?1:0;}},
-  {id:'zscore',name:'Z-score 30d',tipo:'Reversión',obj:'Desviación estandarizada a 30d.',
-   hyp:'Cuando el precio se aleja >1,5σ de su media de 30d, tiende a volver. Reversión estadística.',
-   sig:(cl,j)=>{if(j<34)return 0;const px=cl[j-1],r=rollStat(cl,j,30);if(r.sd===0)return 0;const z=(px-r.mean)/r.sd;return z>1.5?-1:z<-1.5?1:0;}},
-  {id:'stoch',name:'Estocástico (14)',tipo:'Reversión',obj:'%K en zona de la ventana.',
-   hyp:'%K>80 = cerca del máximo del rango (sobrecompra) → corto; %K<20 → largo. Oscilador de rango.',
-   sig:(cl,j)=>{if(j<18)return 0;const r=rollStat(cl,j,14),px=cl[j-1];if(r.hi===r.lo)return 0;const k=(px-r.lo)/(r.hi-r.lo)*100;return k>80?-1:k<20?1:0;}},
-  {id:'williams',name:'Williams %R (14)',tipo:'Reversión',obj:'%R de Larry Williams.',
-   hyp:'%R por encima de -20 = sobrecompra → corto; por debajo de -80 = sobreventa → largo.',
-   sig:(cl,j)=>{if(j<18)return 0;const r=rollStat(cl,j,14),px=cl[j-1];if(r.hi===r.lo)return 0;const wr=(r.hi-px)/(r.hi-r.lo)*-100;return wr>-20?-1:wr<-80?1:0;}},
-  {id:'cci',name:'CCI (20)',tipo:'Reversión',obj:'Commodity Channel Index.',
-   hyp:'CCI>+100 = sobre-extensión alcista → corto; <-100 = bajista → largo. Mide desviación de la media típica.',
-   sig:(cl,j)=>{if(j<24)return 0;const r=rollStat(cl,j,20),px=cl[j-1];if(r.sd===0)return 0;const cci=(px-r.mean)/(0.0188*r.sd);return cci>100?-1:cci<-100?1:0;}},
-  {id:'mardistrev',name:'Distancia a la MA20',tipo:'Reversión',obj:'Estirado vs la MA20.',
-   hyp:'Cuando el precio se estira >15% de su MA20 suele revertir: corto si muy por encima, largo si muy por debajo.',
-   sig:(cl,j)=>{if(j<26)return 0;const d=cl[j-1]/maAt(cl,j,20)-1;return d>0.15?-1:d<-0.15?1:0;}},
-  {id:'antitrend',name:'Contrarian 5d',tipo:'Reversión',obj:'Contra el movimiento de 5d.',
-   hyp:'Reversión muy corta: un salto fuerte a 5d (>8%) suele corregir; opera en contra del último tramo.',
-   sig:(cl,j)=>{if(j<8)return 0;const m=momAt(cl,j,5);return m>0.08?-1:m<-0.08?1:0;}},
+  {id:'bollrev',name:'Reversión Bollinger (2σ)',tipo:'Reversión',obj:'Bandas de Bollinger 20·2σ, con tendencia.',
+   hyp:'Tocar la banda inferior (sobreventa) en tendencia alcista da largo; la superior (sobrecompra) en bajista da corto. Reversión solo a favor de la tendencia mayor.',
+   sig:(cl,j)=>{if(j<24)return 0;const px=cl[j-1],r=rollStat(cl,j,20);if(r.sd===0)return 0;const z=(px-r.mean)/r.sd;return revFilter(cl,j,z>2?-1:z<-2?1:0);}},
+  {id:'zscore',name:'Z-score 30d',tipo:'Reversión',obj:'Desviación estandarizada a 30d, con tendencia.',
+   hyp:'Cuando el precio se aleja >1,5σ de su media de 30d tiende a volver; se opera la reversión solo en el sentido de la tendencia mayor (MA200).',
+   sig:(cl,j)=>{if(j<34)return 0;const px=cl[j-1],r=rollStat(cl,j,30);if(r.sd===0)return 0;const z=(px-r.mean)/r.sd;return revFilter(cl,j,z>1.5?-1:z<-1.5?1:0);}},
+  {id:'stoch',name:'Estocástico (14)',tipo:'Reversión',obj:'%K en zona de la ventana, con tendencia.',
+   hyp:'%K<20 (sobreventa) en alcista da largo; %K>80 (sobrecompra) en bajista da corto. Oscilador de rango filtrado por tendencia.',
+   sig:(cl,j)=>{if(j<18)return 0;const r=rollStat(cl,j,14),px=cl[j-1];if(r.hi===r.lo)return 0;const k=(px-r.lo)/(r.hi-r.lo)*100;return revFilter(cl,j,k>80?-1:k<20?1:0);}},
+  {id:'williams',name:'Williams %R (14)',tipo:'Reversión',obj:'%R de Larry Williams, con tendencia.',
+   hyp:'%R<-80 (sobreventa) en alcista da largo; >-20 (sobrecompra) en bajista da corto. Reversión a favor de la tendencia.',
+   sig:(cl,j)=>{if(j<18)return 0;const r=rollStat(cl,j,14),px=cl[j-1];if(r.hi===r.lo)return 0;const wr=(r.hi-px)/(r.hi-r.lo)*-100;return revFilter(cl,j,wr>-20?-1:wr<-80?1:0);}},
+  {id:'cci',name:'CCI (20)',tipo:'Reversión',obj:'Commodity Channel Index, con tendencia.',
+   hyp:'CCI<-100 (sobre-extensión bajista) en alcista da largo; >+100 en bajista da corto. Mide desviación de la media típica, filtrado por tendencia.',
+   sig:(cl,j)=>{if(j<24)return 0;const r=rollStat(cl,j,20),px=cl[j-1];if(r.sd===0)return 0;const cci=(px-r.mean)/(0.0188*r.sd);return revFilter(cl,j,cci>100?-1:cci<-100?1:0);}},
+  {id:'mardistrev',name:'Distancia a la MA20',tipo:'Reversión',obj:'Estirado vs la MA20, con tendencia.',
+   hyp:'Cuando el precio se estira >15% de su MA20 suele revertir; se opera solo a favor de la tendencia mayor (compra caídas en alcista).',
+   sig:(cl,j)=>{if(j<26)return 0;const d=cl[j-1]/maAt(cl,j,20)-1;return revFilter(cl,j,d>0.15?-1:d<-0.15?1:0);}},
+  {id:'antitrend',name:'Contrarian 5d',tipo:'Reversión',obj:'Contra el movimiento de 5d, con tendencia.',
+   hyp:'Un salto fuerte a 5d (>8%) suele corregir; se opera en contra solo a favor de la tendencia mayor (compra el desplome en alcista, no shortea el rebote).',
+   sig:(cl,j)=>{if(j<8)return 0;const m=momAt(cl,j,5);return revFilter(cl,j,m>0.08?-1:m<-0.08?1:0);}},
   // ——— RUPTURAS / CANALES ———
   {id:'donch',name:'Canal Donchian 55',tipo:'Ruptura',obj:'Mediana del canal de 55d.',
    hyp:'Rupturas de rango (Turtle): por encima de la mediana del canal de 55d el sesgo es alcista.',
@@ -3129,8 +3134,16 @@ function BotsView({gFunding}){
           <span style={eyebrow}>Clasificación · todos los bots</span>
           <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>por rentabilidad</span>
         </div>
-        <div style={{fontSize:9,color:'var(--faint)',marginBottom:10,lineHeight:1.5}}>Toca un bot para ver cómo cumple los <b>innegociables</b>. Deflated Sharpe = probabilidad de que el Sharpe sea real tras descontar que se han probado {ev.K} estrategias.</div>
-        {ev.rows.map((r,i)=>{const open=openId===r.id, rob=r.oos&&r.oos.sharpe>=0.4&&r.oos.cagr>0&&r.dsr>=0.9;
+        <div style={{fontSize:9,color:'var(--faint)',marginBottom:8,lineHeight:1.5}}>Toca un bot para ver cómo cumple los <b>innegociables</b>. Deflated Sharpe = probabilidad de que el Sharpe sea real tras descontar que se han probado {ev.K} estrategias.</div>
+        {/* LEYENDA del veredicto: qué significa robusto / dudoso / frágil */}
+        <div style={{...flx({gap:10,flexWrap:'wrap'}),fontSize:8.5,marginBottom:11,padding:'8px 10px',background:'#0A0D14',borderRadius:9}}>
+          <span style={{color:'var(--up)',fontWeight:700}}>✓ robusto</span><span style={{color:'var(--faint)'}}>rentable fuera de muestra (Sharpe OOS ≥ 0,5) y Deflated Sharpe ≥ 90%</span>
+          <span style={{color:'#F3BA2F',fontWeight:700}}>~ dudoso</span><span style={{color:'var(--faint)'}}>positivo fuera de muestra pero sin significancia fuerte</span>
+          <span style={{color:'var(--down)',fontWeight:700}}>⚠ frágil</span><span style={{color:'var(--faint)'}}>NO aguanta fuera de muestra (pierde o Sharpe ≤ 0): no fiarse</span>
+        </div>
+        {ev.rows.map((r,i)=>{const open=openId===r.id;
+          const oosOk=r.oos&&r.oos.cagr>0&&r.oos.sharpe>=0.5;
+          const ver=(oosOk&&r.dsr>=0.9)?{t:'robusto',c:'var(--up)',ic:'✓'}:(r.oos&&r.oos.cagr>0&&r.oos.sharpe>=0)?{t:'dudoso',c:'#F3BA2F',ic:'~'}:{t:'frágil',c:'var(--down)',ic:'⚠'};
           const lt=botLiveTrade(cl,r), rawSig=r.sig(cl,cl.length);
           const frac=Math.abs(rawSig), fracTxt=(frac>0&&frac<1)?' '+Math.round(frac*100)+'%':'';
           const sCol=rawSig>0?'var(--up)':rawSig<0?'var(--down)':'var(--faint)';
@@ -3142,7 +3155,7 @@ function BotsView({gFunding}){
               <div style={{flex:1,minWidth:0}}>
                 <div style={{...flx({gap:6})}}>
                   <span style={{fontSize:12,fontWeight:700,color:'var(--txt)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{r.name}</span>
-                  <span className="mono" style={{fontSize:7.5,fontWeight:700,color:rob?'var(--up)':'#F3BA2F',padding:'1px 5px',borderRadius:7,background:'rgba(255,255,255,.04)',flexShrink:0}}>{rob?'✓ robusto':'⚠ frágil'}</span>
+                  <span className="mono" style={{fontSize:7.5,fontWeight:700,color:ver.c,padding:'1px 5px',borderRadius:7,background:'rgba(255,255,255,.04)',flexShrink:0}}>{ver.ic} {ver.t}</span>
                 </div>
                 <div style={{...flx({gap:6}),marginTop:2}}>
                   <span className="mono" style={{fontSize:8.5,fontWeight:800,color:sCol,padding:'1px 5px',borderRadius:7,background:'rgba(255,255,255,.04)',flexShrink:0}}>{rawSig>0?'▲ LONG':rawSig<0?'▼ SHORT':'— fuera'}{fracTxt}</span>
