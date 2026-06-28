@@ -1233,7 +1233,14 @@ function botSignal(cl,j){
 // (apalancamiento objetivo) como una institución. fee = comisión por lado;
 // fundDaily = funding/día en posición. Devuelve métricas ajustadas al riesgo
 // (Sharpe/Sortino/Calmar), curva de equity y banda de incertidumbre a 20 años.
-function simulateBot(cl,fee,fundDaily,slip,sigFn){
+// Banda de escenarios a 20 años: bootstrap por bloques de los retornos diarios del bot.
+function band20From(dr,cagr){
+  const BD=20*365,B=20,P=240,fin=[];
+  if(dr&&dr.length>40){for(let p=0;p<P;p++){let e=1,d=0;while(d<BD){const stt=(Math.random()*(dr.length-B))|0;for(let qx=0;qx<B&&d<BD;qx++,d++)e*=(1+dr[stt+qx]);}fin.push(e);}fin.sort((a,b)=>a-b);}
+  const qf=p=>fin.length?fin[Math.min(fin.length-1,Math.floor(p/100*fin.length))]:Math.pow(1+cagr/100,20);
+  return {p5:qf(5),p50:qf(50),p95:qf(95)};
+}
+function simulateBot(cl,fee,fundDaily,slip,sigFn,skipBand){
   const n=cl.length; if(n<260)return null;
   const sg=sigFn||botSignal; // estrategia (por defecto, la del trade recomendado)
   const sl=slip||0; const cost=fee+sl; // comisión + deslizamiento por lado
@@ -1261,11 +1268,8 @@ function simulateBot(cl,fee,fundDaily,slip,sigFn){
   let dn=0;for(const x of dr)if(x<0)dn+=x*x; const ddv=Math.sqrt(dn/dr.length);
   const sharpe=sd>0?mean/sd*Math.sqrt(365):0, sortino=ddv>0?mean/ddv*Math.sqrt(365):0;
   const calmar=maxDD>0?(cagr/100)/maxDD:0, avgLev=levN?levSum/levN:1;
-  // banda de incertidumbre a 20 años: bootstrap por bloques de los retornos diarios del bot
-  const BD=20*365,B=20,P=240,fin=[];
-  if(dr.length>40){for(let p=0;p<P;p++){let e=1,d=0;while(d<BD){const stt=(Math.random()*(dr.length-B))|0;for(let qx=0;qx<B&&d<BD;qx++,d++)e*=(1+dr[stt+qx]);}fin.push(e);}fin.sort((a,b)=>a-b);}
-  const qf=p=>fin.length?fin[Math.min(fin.length-1,Math.floor(p/100*fin.length))]:Math.pow(1+cagr/100,20);
-  const band20={p5:qf(5),p50:qf(50),p95:qf(95)};
+  // banda de incertidumbre a 20 años (solo para el bot líder, es caro): se omite por defecto
+  const band20=skipBand?null:band20From(dr,cagr);
   const stepc=Math.max(1,Math.floor(curve.length/110)),eqCurve=[],hodlCurve=[];
   for(let k=0;k<curve.length;k+=stepc){eqCurve.push(curve[k]);hodlCurve.push(cl[start+k]/cl[start-1]);}
   eqCurve.push(curve[curve.length-1]);hodlCurve.push(cl[n-1]/cl[start-1]);
@@ -1284,52 +1288,159 @@ function simulateBot(cl,fee,fundDaily,slip,sigFn){
 // dimensionado por volatilidad, validación walk-forward y Deflated Sharpe Ratio
 // (López de Prado) que penaliza el data-snooping de probar varias estrategias a la vez.
 function maAt(cl,j,n){let s=0;for(let m=j-n;m<j;m++)s+=cl[m];return s/n;}
+// estadísticas de ventana [j-n, j-1]: media, desviación, máximo y mínimo
+function rollStat(cl,j,n){let s=0,s2=0,hi=-Infinity,lo=Infinity;const a=Math.max(0,j-n);
+  for(let m=a;m<j;m++){const v=cl[m];s+=v;s2+=v*v;if(v>hi)hi=v;if(v<lo)lo=v;}
+  const c=Math.max(1,j-a),mean=s/c,vr=Math.max(0,s2/c-mean*mean);return {mean,sd:Math.sqrt(vr),hi,lo};}
+// retorno a k días en j (cierres hasta j-1)
+function momAt(cl,j,k){return (j>k&&cl[j-1-k]>0)?cl[j-1]/cl[j-1-k]-1:0;}
+// ── 40 BOTS diversificados (tendencia, momentum, reversión, osciladores, rupturas,
+//    volatilidad, ciclo/valoración y compuestos). Todos: señal solo con datos hasta j-1.
 const BOTS=[
-  {id:'tend',name:'Tendencia (MA + momentum)',tipo:'Seguimiento de tendencia',
-   obj:'Dirección diaria, horizonte swing (días–semanas).',
-   hyp:'El momentum persiste: BTC en tendencia (MA50>MA200) y con impulso positivo a 21d tiende a continuar (factor momentum).',
-   sig:botSignal},
-  {id:'cross',name:'Cruce dorado / muerte',tipo:'Seguimiento de tendencia',
-   obj:'Régimen direccional por cruce de MA50/MA200.',
-   hyp:'El cruce de medias 50/200 separa régimen alcista de bajista; operar a favor del cruce captura las grandes tendencias y evita las caídas.',
+  // ——— TENDENCIA / MEDIAS MÓVILES ———
+  {id:'tend',name:'Tendencia (MA + momentum)',tipo:'Tendencia',obj:'Dirección swing.',
+   hyp:'El momentum persiste: BTC en tendencia (MA50>MA200) con impulso positivo a 21d tiende a continuar.',sig:botSignal},
+  {id:'cross',name:'Cruce dorado / muerte (50/200)',tipo:'Tendencia',obj:'Régimen por cruce MA50/MA200.',
+   hyp:'El cruce 50/200 separa mercado alcista de bajista; operar a favor captura las grandes tendencias.',
    sig:(cl,j)=>j<210?0:(maAt(cl,j,50)>maAt(cl,j,200)?1:-1)},
-  {id:'tsmom',name:'Momentum temporal (60d)',tipo:'Momentum',
-   obj:'Signo del retorno a 60 días.',
-   hyp:'Time-series momentum (Moskowitz et al.): el signo del retorno a ~60d predice el siguiente tramo en muchos activos, BTC incluido.',
-   sig:(cl,j)=>{if(j<70)return 0;const m=cl[j-1]/cl[j-60]-1;return m>0.02?1:m<-0.02?-1:0;}},
-  {id:'donch',name:'Ruptura de canal (Donchian 55)',tipo:'Ruptura · trend-following',
-   obj:'Posición respecto a la mediana del canal de 55 días.',
-   hyp:'Las rupturas de rango (sistema Turtle) capturan el arranque de tendencias; por encima de la mediana del canal de 55d el sesgo es alcista.',
-   sig:(cl,j)=>{if(j<60)return 0;let hi=-Infinity,lo=Infinity;for(let m=j-55;m<j;m++){if(cl[m]>hi)hi=cl[m];if(cl[m]<lo)lo=cl[m];}return cl[j-1]>(hi+lo)/2?1:-1;}},
-  {id:'rsi',name:'Reversión a la media (RSI)',tipo:'Reversión · contrarian',
-   obj:'Extremos de RSI(14): comprar sobreventa, vender sobrecompra.',
-   hyp:'Las sobre-reacciones de corto plazo revierten: largo en RSI<30 (pánico) y corto en RSI>70 (euforia).',
+  {id:'cross20_100',name:'Cruce 20/100',tipo:'Tendencia',obj:'Cruce de medias intermedio.',
+   hyp:'Cruce más rápido que el 50/200: reacciona antes a los cambios de tendencia, a cambio de más señales falsas.',
+   sig:(cl,j)=>j<110?0:(maAt(cl,j,20)>maAt(cl,j,100)?1:-1)},
+  {id:'cross10_50',name:'Cruce 10/50',tipo:'Tendencia',obj:'Cruce de medias corto.',
+   hyp:'Tendencia de corto plazo: el cruce 10/50 capta los tramos intermedios del mercado.',
+   sig:(cl,j)=>j<60?0:(maAt(cl,j,10)>maAt(cl,j,50)?1:-1)},
+  {id:'cross5_21',name:'Cruce rápido 5/21',tipo:'Tendencia',obj:'Cruce muy rápido.',
+   hyp:'Tendencia muy corta (5/21): entra y sale rápido; útil en mercados con impulso, ruidoso en rango.',
+   sig:(cl,j)=>j<26?0:(maAt(cl,j,5)>maAt(cl,j,21)?1:-1)},
+  {id:'cross100_200',name:'Cruce lento 100/200',tipo:'Tendencia',obj:'Cruce de medias lento.',
+   hyp:'Tendencia primaria: el cruce 100/200 filtra el ruido y solo cambia en giros mayores del ciclo.',
+   sig:(cl,j)=>j<210?0:(maAt(cl,j,100)>maAt(cl,j,200)?1:-1)},
+  {id:'triple',name:'Triple media alineada',tipo:'Tendencia',obj:'MA10>MA50>MA200 alineadas.',
+   hyp:'Solo opera cuando las tres medias están alineadas (tendencia limpia); fuera cuando se cruzan.',
+   sig:(cl,j)=>{if(j<210)return 0;const a=maAt(cl,j,10),b=maAt(cl,j,50),cc=maAt(cl,j,200);return a>b&&b>cc?1:a<b&&b<cc?-1:0;}},
+  {id:'pxma100',name:'Precio vs MA100',tipo:'Tendencia',obj:'Régimen por la MA100.',
+   hyp:'Por encima de la MA100 el sesgo es alcista; por debajo, bajista. Filtro de tendencia simple y robusto.',
+   sig:(cl,j)=>j<110?0:(cl[j-1]>maAt(cl,j,100)?1:-1)},
+  {id:'pxma20',name:'Precio vs MA20',tipo:'Tendencia',obj:'Régimen corto por la MA20.',
+   hyp:'Tendencia de muy corto plazo respecto a la MA20: rápido pero sensible al ruido.',
+   sig:(cl,j)=>j<26?0:(cl[j-1]>maAt(cl,j,20)?1:-1)},
+  // ——— MOMENTUM ———
+  {id:'tsmom',name:'Momentum temporal (60d)',tipo:'Momentum',obj:'Signo del retorno a 60d.',
+   hyp:'Time-series momentum (Moskowitz): el signo del retorno a ~60d predice el siguiente tramo.',
+   sig:(cl,j)=>{if(j<70)return 0;const m=momAt(cl,j,60);return m>0.02?1:m<-0.02?-1:0;}},
+  {id:'mom20',name:'Momentum 20d',tipo:'Momentum',obj:'Impulso de corto plazo.',
+   hyp:'Momentum corto: el retorno a 20d anticipa la continuación a pocas semanas.',
+   sig:(cl,j)=>{if(j<24)return 0;const m=momAt(cl,j,20);return m>0.04?1:m<-0.04?-1:0;}},
+  {id:'mom90',name:'Momentum 90d',tipo:'Momentum',obj:'Impulso trimestral.',
+   hyp:'Momentum a 90d: captura tendencias de medio plazo más estables que las cortas.',
+   sig:(cl,j)=>{if(j<94)return 0;const m=momAt(cl,j,90);return m>0.05?1:m<-0.05?-1:0;}},
+  {id:'mom120',name:'Momentum 120d',tipo:'Momentum',obj:'Impulso de largo plazo.',
+   hyp:'Momentum a 120d: el clásico 12-1 adaptado; sigue la tendencia mayor del activo.',
+   sig:(cl,j)=>{if(j<124)return 0;return momAt(cl,j,120)>0?1:-1;}},
+  {id:'momaccel',name:'Aceleración de momentum',tipo:'Momentum',obj:'Momentum creciente.',
+   hyp:'No solo importa el signo del momentum, sino que ACELERE: largo si el impulso 20d es positivo y mayor que el previo.',
+   sig:(cl,j)=>{if(j<62)return 0;const m1=momAt(cl,j,20),m2=momAt(cl,j-20,20);return m1>0&&m1>m2?1:m1<0&&m1<m2?-1:0;}},
+  {id:'roc10',name:'Rate of change 10d',tipo:'Momentum',obj:'Velocidad a 10d.',
+   hyp:'ROC corto: un cambio fuerte a 10d señala impulso direccional inmediato.',
+   sig:(cl,j)=>{if(j<14)return 0;const m=momAt(cl,j,10);return m>0.03?1:m<-0.03?-1:0;}},
+  // ——— REVERSIÓN A LA MEDIA / OSCILADORES ———
+  {id:'rsi',name:'Reversión RSI (30/70)',tipo:'Reversión',obj:'Extremos de RSI(14).',
+   hyp:'Las sobre-reacciones revierten: largo en RSI<30 (pánico), corto en RSI>70 (euforia).',
    sig:(cl,j)=>{if(j<20)return 0;const r=rsiAt(cl,j-1);return r<30?1:r>70?-1:0;}},
-  {id:'cycle',name:'Ciclo (long abajo · short arriba)',tipo:'Rotación de ciclo · long+short',
-   obj:'Acumula LONG promediando cerca del mínimo, cierra el largo cerca del ATH y mete SHORT en el techo / la caída. Tradea las dos direcciones.',
-   hyp:'BTC se mueve por ciclos. Cerca del MÍNIMO (precio barato vs MA200 / caída profunda) se acumula LONG promediando; en el markup se mantiene largo; cerca de un ATH probable (muy sobre-extendido) se cierra el largo y se empieza a meter SHORT; y según cae desde máximos se promedia el corto. Posición fraccionada = promedio; opera largo Y corto.',
+  {id:'rsicross',name:'RSI cruce 50',tipo:'Momentum',obj:'RSI por encima/debajo de 50.',
+   hyp:'El RSI sobre 50 indica impulso comprador; por debajo, vendedor. Versión momentum del RSI.',
+   sig:(cl,j)=>{if(j<20)return 0;return rsiAt(cl,j-1)>50?1:-1;}},
+  {id:'bollrev',name:'Reversión Bollinger (2σ)',tipo:'Reversión',obj:'Bandas de Bollinger 20·2σ.',
+   hyp:'Tocar la banda superior (2σ) sugiere sobrecompra → corto; la inferior, sobreventa → largo. Reversión a la media.',
+   sig:(cl,j)=>{if(j<24)return 0;const px=cl[j-1],r=rollStat(cl,j,20);if(r.sd===0)return 0;const z=(px-r.mean)/r.sd;return z>2?-1:z<-2?1:0;}},
+  {id:'zscore',name:'Z-score 30d',tipo:'Reversión',obj:'Desviación estandarizada a 30d.',
+   hyp:'Cuando el precio se aleja >1,5σ de su media de 30d, tiende a volver. Reversión estadística.',
+   sig:(cl,j)=>{if(j<34)return 0;const px=cl[j-1],r=rollStat(cl,j,30);if(r.sd===0)return 0;const z=(px-r.mean)/r.sd;return z>1.5?-1:z<-1.5?1:0;}},
+  {id:'stoch',name:'Estocástico (14)',tipo:'Reversión',obj:'%K en zona de la ventana.',
+   hyp:'%K>80 = cerca del máximo del rango (sobrecompra) → corto; %K<20 → largo. Oscilador de rango.',
+   sig:(cl,j)=>{if(j<18)return 0;const r=rollStat(cl,j,14),px=cl[j-1];if(r.hi===r.lo)return 0;const k=(px-r.lo)/(r.hi-r.lo)*100;return k>80?-1:k<20?1:0;}},
+  {id:'williams',name:'Williams %R (14)',tipo:'Reversión',obj:'%R de Larry Williams.',
+   hyp:'%R por encima de -20 = sobrecompra → corto; por debajo de -80 = sobreventa → largo.',
+   sig:(cl,j)=>{if(j<18)return 0;const r=rollStat(cl,j,14),px=cl[j-1];if(r.hi===r.lo)return 0;const wr=(r.hi-px)/(r.hi-r.lo)*-100;return wr>-20?-1:wr<-80?1:0;}},
+  {id:'cci',name:'CCI (20)',tipo:'Reversión',obj:'Commodity Channel Index.',
+   hyp:'CCI>+100 = sobre-extensión alcista → corto; <-100 = bajista → largo. Mide desviación de la media típica.',
+   sig:(cl,j)=>{if(j<24)return 0;const r=rollStat(cl,j,20),px=cl[j-1];if(r.sd===0)return 0;const cci=(px-r.mean)/(0.0188*r.sd);return cci>100?-1:cci<-100?1:0;}},
+  {id:'mardistrev',name:'Distancia a la MA20',tipo:'Reversión',obj:'Estirado vs la MA20.',
+   hyp:'Cuando el precio se estira >15% de su MA20 suele revertir: corto si muy por encima, largo si muy por debajo.',
+   sig:(cl,j)=>{if(j<26)return 0;const d=cl[j-1]/maAt(cl,j,20)-1;return d>0.15?-1:d<-0.15?1:0;}},
+  {id:'antitrend',name:'Contrarian 5d',tipo:'Reversión',obj:'Contra el movimiento de 5d.',
+   hyp:'Reversión muy corta: un salto fuerte a 5d (>8%) suele corregir; opera en contra del último tramo.',
+   sig:(cl,j)=>{if(j<8)return 0;const m=momAt(cl,j,5);return m>0.08?-1:m<-0.08?1:0;}},
+  // ——— RUPTURAS / CANALES ———
+  {id:'donch',name:'Canal Donchian 55',tipo:'Ruptura',obj:'Mediana del canal de 55d.',
+   hyp:'Rupturas de rango (Turtle): por encima de la mediana del canal de 55d el sesgo es alcista.',
+   sig:(cl,j)=>{if(j<60)return 0;const r=rollStat(cl,j,55);return cl[j-1]>(r.hi+r.lo)/2?1:-1;}},
+  {id:'donch20',name:'Canal Donchian 20',tipo:'Ruptura',obj:'Canal corto de 20d.',
+   hyp:'Ruptura rápida del canal de 20d: capta el inicio de impulsos de corto plazo.',
+   sig:(cl,j)=>{if(j<24)return 0;const r=rollStat(cl,j,20);return cl[j-1]>(r.hi+r.lo)/2?1:-1;}},
+  {id:'donch100',name:'Canal Donchian 100',tipo:'Ruptura',obj:'Canal largo de 100d.',
+   hyp:'Ruptura del canal de 100d: solo cambia con movimientos importantes, sigue la tendencia mayor.',
+   sig:(cl,j)=>{if(j<110)return 0;const r=rollStat(cl,j,100);return cl[j-1]>(r.hi+r.lo)/2?1:-1;}},
+  {id:'bollbreak',name:'Ruptura de Bollinger',tipo:'Ruptura',obj:'Salida de la banda 1,5σ.',
+   hyp:'Versión TENDENCIAL de Bollinger: romper por encima de la banda alta = fuerza compradora (largo); por debajo = vendedora.',
+   sig:(cl,j)=>{if(j<24)return 0;const px=cl[j-1],r=rollStat(cl,j,20);if(r.sd===0)return 0;return px>r.mean+r.sd*1.5?1:px<r.mean-r.sd*1.5?-1:0;}},
+  {id:'rangepos',name:'Posición en rango 50d',tipo:'Ruptura',obj:'Dónde está dentro del rango.',
+   hyp:'En el tercio alto del rango de 50d el sesgo es alcista (compradores al mando); en el bajo, bajista.',
+   sig:(cl,j)=>{if(j<54)return 0;const r=rollStat(cl,j,50),px=cl[j-1];if(r.hi===r.lo)return 0;const p=(px-r.lo)/(r.hi-r.lo);return p>0.6?1:p<0.4?-1:0;}},
+  {id:'newhigh',name:'Nuevos máximos 100d',tipo:'Ruptura',obj:'Cerca de máximos/mínimos de 100d.',
+   hyp:'Marcar nuevos máximos de 100d es señal de fuerza (largo); nuevos mínimos, de debilidad (corto). Momentum de precio.',
+   sig:(cl,j)=>{if(j<110)return 0;const r=rollStat(cl,j,100),px=cl[j-1];return px>=r.hi*0.98?1:px<=r.lo*1.02?-1:0;}},
+  // ——— VOLATILIDAD ———
+  {id:'volregime',name:'Régimen de volatilidad',tipo:'Volatilidad',obj:'Tendencia solo en vol baja.',
+   hyp:'La tendencia funciona mejor en calma: opera a favor de la MA50 solo cuando la volatilidad es baja; fuera si está alta.',
+   sig:(cl,j)=>{if(j<54)return 0;const r=rollStat(cl,j,20),cv=r.mean>0?r.sd/r.mean:1;return cv<0.06?(cl[j-1]>maAt(cl,j,50)?1:-1):0;}},
+  {id:'volbreak',name:'Expansión de volatilidad',tipo:'Volatilidad',obj:'Sigue el movimiento explosivo.',
+   hyp:'Una vela diaria mayor que 2× la volatilidad reciente señala un movimiento con seguimiento: opera en su dirección.',
+   sig:(cl,j)=>{if(j<24)return 0;let mn=0;const r=[];for(let m=j-20;m<j;m++){const x=Math.log(cl[m]/cl[m-1]);r.push(x);mn+=x;}mn/=r.length;let v=0;for(const x of r)v+=(x-mn)*(x-mn);v=Math.sqrt(v/r.length);const td=Math.log(cl[j-1]/cl[j-2]);return Math.abs(td)>2*v?(td>0?1:-1):0;}},
+  // ——— CICLO / VALORACIÓN ———
+  {id:'cycle',name:'Ciclo (long abajo · short arriba)',tipo:'Ciclo · long+short',
+   obj:'Acumula LONG cerca del mínimo, cierra el largo en el ATH y mete SHORT en el techo/la caída.',
+   hyp:'BTC se mueve por ciclos. Cerca del MÍNIMO (barato vs MA200 / caída profunda) acumula LONG promediando; en el markup se mantiene largo; cerca de un ATH probable cierra el largo y empieza a meter SHORT; según cae desde máximos promedia el corto. Opera largo Y corto.',
    sig:(cl,j)=>{if(j<220)return 0; const px=cl[j-1];
-     let ath=0;for(let m=0;m<j;m++)if(cl[m]>ath)ath=cl[m]; // máximo histórico hasta ayer
+     let ath=0;for(let m=0;m<j;m++)if(cl[m]>ath)ath=cl[m];
      const ma200=maAt(cl,j,200), mayer=ma200>0?px/ma200:1, dd=ath>0?px/ath-1:0;
-     // —— SUELO: acumular LONG promediando ——
-     if(mayer<0.75||dd<=-0.6) return 1;             // mínimo profundo: todo LONG
-     if(mayer<0.95&&dd<=-0.4) return 0.66;          // cerca del suelo: promedia LONG
-     // —— TECHO/ATH: cerrar largo y meter SHORT ——
-     if(mayer>=2.6) return -1;                      // ATH extremo: SHORT con todo
-     if(mayer>=2.2) return -0.5;                    // cerca del ATH: cierra largo y empieza SHORT
-     if(dd<=-0.15&&dd>-0.4&&mayer>1.3) return -0.66;// cae desde máximos estando caro: promedia SHORT
-     // —— MARKUP: largo en tendencia ——
+     if(mayer<0.75||dd<=-0.6) return 1;
+     if(mayer<0.95&&dd<=-0.4) return 0.66;
+     if(mayer>=2.6) return -1;
+     if(mayer>=2.2) return -0.5;
+     if(dd<=-0.15&&dd>-0.4&&mayer>1.3) return -0.66;
      if(px>ma200) return 1;
      return 0;}},
-  {id:'quant',name:'Cuantitativo (multifactor)',tipo:'Análisis cuantitativo',
-   obj:'Score direccional compuesto que tradea el sesgo de la ruta del análisis cuantitativo (con los factores calculables del precio).',
-   hyp:'Replica la deriva que inclina la ruta del Cuantitativo usando los factores de precio: tendencia (MA50/200 + momentum), momentum temporal 60d, régimen (precio vs MA200) y RSI contrarian en extremos. La suma ponderada dimensiona la posición (más convicción = más tamaño), como la deriva inclina el cono.',
+  {id:'mayerband',name:'Múltiplo de Mayer',tipo:'Valoración',obj:'Bandas precio/MA200.',
+   hyp:'El múltiplo de Mayer (precio/MA200) mide la valoración: <0,8 históricamente es barato (largo) y >2,4 caro (corto).',
+   sig:(cl,j)=>{if(j<210)return 0;const mayer=cl[j-1]/maAt(cl,j,200);return mayer<0.8?1:mayer>2.4?-1:0;}},
+  {id:'dcadd',name:'DCA por caída (solo largo)',tipo:'Acumulación',obj:'Compra más cuanto más cae.',
+   hyp:'Acumulación tipo DCA: solo largo, tamaño mayor cuanto más profunda la caída desde el máximo reciente. Nunca corto: refleja al inversor que promedia a la baja.',
+   sig:(cl,j)=>{if(j<210)return 0;let ath=0;for(let m=Math.max(0,j-400);m<j;m++)if(cl[m]>ath)ath=cl[m];const dd=ath>0?cl[j-1]/ath-1:0;return dd<=-0.3?1:dd<=-0.1?0.5:dd<0?0.25:0.1;}},
+  // ——— COMPUESTOS / MULTIFACTOR ———
+  {id:'quant',name:'Cuantitativo (multifactor)',tipo:'Compuesto',
+   obj:'Score direccional que tradea el sesgo de la ruta del análisis cuantitativo.',
+   hyp:'Replica la deriva del Cuantitativo con factores de precio: tendencia (MA50/200+momentum), momentum 60d, régimen (vs MA200) y RSI contrarian. La suma ponderada dimensiona la posición por convicción.',
    sig:(cl,j)=>{if(j<210)return 0;
      const trend=botSignal(cl,j), px=cl[j-1], ma200=maAt(cl,j,200);
-     const m60=cl[j-60]?cl[j-1]/cl[j-60]-1:0, tsmom=m60>0.03?1:m60<-0.03?-1:0;
+     const m60=momAt(cl,j,60), tsmom=m60>0.03?1:m60<-0.03?-1:0;
      const reg=px>ma200?1:-1, r=rsiAt(cl,j-1), rsiC=r>72?-1:r<28?1:0;
      const score=0.4*trend+0.28*tsmom+0.17*reg+0.15*rsiC;
      return Math.abs(score)<0.2?0:Math.max(-1,Math.min(1,score*1.4));}},
+  {id:'dualmom',name:'Doble momentum (20+90)',tipo:'Compuesto',obj:'Acuerdo de dos plazos.',
+   hyp:'Solo opera cuando el momentum corto (20d) y el medio (90d) coinciden de signo: filtra señales débiles.',
+   sig:(cl,j)=>{if(j<94)return 0;const a=momAt(cl,j,20),b=momAt(cl,j,90);return a>0&&b>0?1:a<0&&b<0?-1:0;}},
+  {id:'trendpull',name:'Tendencia + pullback',tipo:'Compuesto',obj:'Entra en retrocesos.',
+   hyp:'En tendencia alcista (>MA200) compra los retrocesos (RSI<45); en bajista vende los rebotes (RSI>55). Combina tendencia y timing.',
+   sig:(cl,j)=>{if(j<210)return 0;const up=cl[j-1]>maAt(cl,j,200),r=rsiAt(cl,j-1);return up?(r<45?1:0):(r>55?-1:0);}},
+  {id:'macd',name:'MACD (12/26)',tipo:'Compuesto',obj:'Diferencia de medias 12/26.',
+   hyp:'El histograma MACD (media rápida − lenta) positivo indica impulso alcista; negativo, bajista.',
+   sig:(cl,j)=>{if(j<40)return 0;return maAt(cl,j,12)-maAt(cl,j,26)>0?1:-1;}},
+  {id:'allweather',name:'Todo-tiempo (voto de estilos)',tipo:'Compuesto',obj:'Mayoría de 4 estilos.',
+   hyp:'Vota entre 4 estilos (tendencia, momentum, reversión RSI y ruptura de canal) y opera solo con mayoría clara: diversificación dentro del propio bot.',
+   sig:(cl,j)=>{if(j<210)return 0;const trend=cl[j-1]>maAt(cl,j,200)?1:-1;const m=momAt(cl,j,60),mom=m>0?1:m<0?-1:0;
+     const r=rsiAt(cl,j-1),mr=r>70?-1:r<30?1:0;const ch=rollStat(cl,j,55),br=cl[j-1]>(ch.hi+ch.lo)/2?1:-1;
+     const s=trend+mom+mr+br;return Math.abs(s)<2?0:(s>0?1:-1);}},
 ];
 // momentos de una serie (media, desviación, asimetría, curtosis) para el Deflated Sharpe
 function moments(a){const n=a.length||1,m=qMean(a);let s2=0,s3=0,s4=0;
@@ -1355,9 +1466,9 @@ function evalBots(bcl){
   if(!bcl||bcl.length<300)return null;
   const FEE=0.0004,FUND=0.0003,SLIP=0.0005, halfI=Math.floor(bcl.length/2);
   const rows=BOTS.map(bt=>{
-    const full=simulateBot(bcl,FEE,FUND,SLIP,bt.sig); if(!full)return null;
-    const is=simulateBot(bcl.slice(0,halfI),FEE,FUND,SLIP,bt.sig);
-    const oos=simulateBot(bcl.slice(Math.max(0,halfI-210)),FEE,FUND,SLIP,bt.sig);
+    const full=simulateBot(bcl,FEE,FUND,SLIP,bt.sig,true); if(!full)return null; // band20 omitida (cara)
+    const is=simulateBot(bcl.slice(0,halfI),FEE,FUND,SLIP,bt.sig,true);
+    const oos=simulateBot(bcl.slice(Math.max(0,halfI-210)),FEE,FUND,SLIP,bt.sig,true);
     const mo=moments(full.ret||[]); let gp=0,gl=0;
     for(const x of (full.ret||[])){if(x>0)gp+=x;else gl-=x;}
     return {...bt,s:full,is,oos,mo,pf:gl>0?gp/gl:(gp>0?99:0),srD:mo.sd>0?mo.mean/mo.sd:0,T:(full.ret||[]).length};
@@ -1375,9 +1486,9 @@ function evalBots(bcl){
     obj:'Combina todos los bots: copia al rentable, invierte al no rentable. Los bots nuevos se añaden solos.',
     hyp:'Conjunto de TODOS los bots. A cada uno: si es rentable en el periodo, se copia su señal; si no, se invierte (se tradea lo contrario). La posición es el voto medio ponderado por dirección. Se reconstruye desde el array de estrategias, así que cualquier bot futuro se incorpora automáticamente.',
     sig:metaSig,members:orient};
-  const mfull=simulateBot(bcl,FEE,FUND,SLIP,metaSig);
-  if(mfull){const mis=simulateBot(bcl.slice(0,halfI),FEE,FUND,SLIP,metaSig);
-    const moos=simulateBot(bcl.slice(Math.max(0,halfI-210)),FEE,FUND,SLIP,metaSig);
+  const mfull=simulateBot(bcl,FEE,FUND,SLIP,metaSig,true);
+  if(mfull){const mis=simulateBot(bcl.slice(0,halfI),FEE,FUND,SLIP,metaSig,true);
+    const moos=simulateBot(bcl.slice(Math.max(0,halfI-210)),FEE,FUND,SLIP,metaSig,true);
     const mmo=moments(mfull.ret||[]); let mgp=0,mgl=0; for(const x of (mfull.ret||[])){if(x>0)mgp+=x;else mgl-=x;}
     rows.push({...metaBot,s:mfull,is:mis,oos:moos,mo:mmo,pf:mgl>0?mgp/mgl:(mgp>0?99:0),srD:mmo.sd>0?mmo.mean/mmo.sd:0,T:(mfull.ret||[]).length});}
   // Deflated Sharpe: SR0 = Sharpe máximo ESPERADO de K pruebas independientes bajo H0
@@ -1386,6 +1497,7 @@ function evalBots(bcl){
   for(const r of rows){const sr=r.srD,den=Math.sqrt(Math.max(1e-9,1-r.mo.skew*sr+(r.mo.kurt-1)/4*sr*sr));
     r.dsr=normCDF((sr-SR0)*Math.sqrt(Math.max(1,r.T-1))/den);} // prob. de que el Sharpe sea real
   rows.sort((a,b)=>b.s.cagr-a.s.cagr); // RANKING por rentabilidad (CAGR), el mejor primero
+  if(rows[0])rows[0].s.band20=band20From(rows[0].s.ret,rows[0].s.cagr); // banda 20a solo para el líder
   return {rows,SR0,K,years:rows[0].s.years};
 }
 // Trade en vivo de un bot: su señal ACTUAL → operación (entrada/stop/objetivo) con
@@ -2812,6 +2924,7 @@ function FundingHistory({g}){
 function BotsView({gFunding}){
   const [cl,setCl]=useState(null);
   const [openId,setOpenId]=useState(null);
+  const evRef=React.useRef({len:0,ev:null}); // cachea el backtest de los 40 bots (1×/día)
   const longRef=React.useRef(null);
   useEffect(()=>{
     let alive=true,timer=null;
@@ -2835,7 +2948,10 @@ function BotsView({gFunding}){
   const c=useMemo(()=>{
     if(!cl||cl.length<300)return null;
     const price=cl[cl.length-1], bcl=cl.slice(-(210+9*365)); // ~9 años de prueba (todo el histórico fiable de BTC)
-    const ev=evalBots(bcl); if(!ev)return null;
+    // el backtest de los 40 bots se cachea por nº de velas: solo se recalcula al
+    // aparecer una vela diaria nueva, no en cada refresco de precio (cada 2 min)
+    if(evRef.current.len!==bcl.length){evRef.current={len:bcl.length,ev:evalBots(bcl)};}
+    const ev=evRef.current.ev; if(!ev)return null;
     const top=ev.rows[0], live=botLiveTrade(cl,top), trade=loadTrade(live,price);
     return {price,ev,top,live,trade,yr:ev.years.toFixed(1)};
   },[cl]);
@@ -2871,7 +2987,7 @@ function BotsView({gFunding}){
       <div style={panel({marginBottom:14,padding:16})}>
         <div style={{...flx({justifyContent:'space-between'}),marginBottom:8}}>
           <span style={eyebrow}>Laboratorio de bots</span>
-          <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>{ev.K} estrategias · {yr} años · mismos costes</span>
+          <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>40 bots + meta · {yr} años · mismos costes</span>
         </div>
         <div style={{fontSize:10.5,color:'var(--faint)',lineHeight:1.6}}>Lo que decide si un bot de BTC sobrevive no son las señales bonitas, sino la parte aburrida: datos limpios, costes reales, control de sobreajuste y gestión de riesgo. <b style={{color:'var(--txt)'}}>Todos los bots pasan por lo mismo</b> y compiten en el <b>mismo periodo</b>. El más rentable, arriba.</div>
       </div>
