@@ -1,0 +1,16 @@
+name = "vwafr-telegram"
+main = "worker.js"
+compatibility_date = "2024-11-01"
+
+# Cron: dispara cada 20 minutos. El worker envía con ~34% de probabilidad,
+# así que de media sale ~1 mensaje/hora con horario irregular.
+[triggers]
+crons = ["*/20 * * * *"]
+
+# Destinos: ids separados por coma (los grupos empiezan por -100…).
+# Puedes ponerlos aquí o en el panel de Cloudflare (Settings → Variables).
+[vars]
+CHAT_IDS = ""
+
+# El token NO va aquí (es secreto). Se pone con:
+#   npx wrangler secret put TELEGRAM_TOKEN

@@ -4000,6 +4000,9 @@ function App(){
             <li>Para enviarte también a ti: abre <b>@userinfobot</b>, copia tu ID y añádelo en otra línea. Pulsa <b>Probar</b> y <b>Activar</b>.</li>
           </ol>
           <div style={{fontSize:8.5,color:'var(--faint)',marginTop:6,lineHeight:1.5}}>Los IDs de grupo suelen empezar por <b>-100…</b>. El token y los destinos se guardan solo en tu navegador (no en ningún servidor nuestro). Los avisos solo se mandan con la web/app abierta.</div>
+          <div style={{fontSize:8.5,color:'var(--faint)',marginTop:8,padding:'8px 10px',borderRadius:8,background:'rgba(110,139,255,.07)',border:'1px solid rgba(110,139,255,.2)',lineHeight:1.5}}>
+            <b style={{color:'var(--accent)'}}>¿24/7 aunque la cierres?</b> En la carpeta <b style={{color:'var(--txt)'}}>worker/</b> del proyecto hay un Cloudflare Worker con cron (backend gratuito) que envía a tus grupos aunque no tengas la web abierta. Sigue su <b>README</b> (≈5 min).
+          </div>
         </details>
       </div>
 
