@@ -1659,8 +1659,8 @@ function analyzePatterns(cl){
     // exceso sobre el mercado, ENCOGIDO por tamaño de muestra (anti-sobreajuste):
     // con pocas ocurrencias el aporte al Monte Carlo se acerca a cero.
     const shr=k/(k+8), pathX=path.map((v,h)=>(v-muD*h)*shr);
-    const wn=cnt[H]||k;
-    return {n:k,win:Math.round(win/wn*100),avg:+(path[H]*100).toFixed(1),path,pathX};};
+    const wn=cnt[H]||k, pw=win/wn;
+    return {n:k,win:Math.round(pw*100),ci:Math.round(Math.sqrt(pw*(1-pw)/Math.max(1,wn))*196),avg:+(path[H]*100).toFixed(1),path,pathX};};
   const has=n>206;
   // osciladores y zona de Fibonacci (todo derivable del cierre)
   const wr=j=>{const Hh=maxN(j+1,14),Ll=minN(j+1,14);return Hh>Ll?(Hh-cl[j])/(Hh-Ll)*-100:-50;};      // Williams %R
@@ -1798,8 +1798,8 @@ function chartPatterns(cl){
     for(let j=start;j<n-1;j++){if(fn(j)){k++;for(let h=1;h<=HM&&j+h<n;h++){acc[h]+=(cl[j+h]-cl[j])/cl[j];cnt[h]++;}if(j+H10<n&&((cl[j+H10]-cl[j])/cl[j])*sgn>0)win++;}}
     if(k<3)return null;
     const path=[0];let prev=0;for(let h=1;h<=HM;h++){prev=cnt[h]?acc[h]/cnt[h]:prev;path[h]=prev;}
-    const shr=k/(k+6),pathX=path.map((v,h)=>(v-muD*h)*shr);
-    return {n:k,win:Math.round(win/k*100),avg:+(path[Math.min(20,HM)]*100).toFixed(1),path,pathX};};
+    const shr=k/(k+6),pathX=path.map((v,h)=>(v-muD*h)*shr); const pw=win/k;
+    return {n:k,win:Math.round(pw*100),ci:Math.round(Math.sqrt(pw*(1-pw)/Math.max(1,k))*196),avg:+(path[Math.min(20,HM)]*100).toFixed(1),path,pathX};};
   const figs=[
     ['Doble techo',-1,'dos máximos al mismo nivel: ruptura del cuello',dTop],
     ['Doble suelo',1,'dos mínimos al mismo nivel: ruptura del cuello',dBot],
@@ -1839,7 +1839,8 @@ function candlePatterns(oh){
     if(k<4)return null;
     const path=[0];let prev=0;for(let h=1;h<=HM;h++){prev=cnt[h]?acc[h]/cnt[h]:prev;path[h]=prev;}
     const shr=k/(k+8), pathX=path.map((v,h)=>(v-muD*h)*shr); // exceso encogido por muestra
-    return {n:k,win:Math.round(win/(cnt[H]||k)*100),avg:+(path[H]*100).toFixed(1),path,pathX};};
+    const wn3=cnt[H]||k, pw=win/wn3;
+    return {n:k,win:Math.round(pw*100),ci:Math.round(Math.sqrt(pw*(1-pw)/Math.max(1,wn3))*196),avg:+(path[H]*100).toFixed(1),path,pathX};};
   const i=n-1,defs=[
     [rng(i)>0&&dnW(i)>2*body(i)&&upW(i)<body(i)&&cl[i-1]<cl[i-3],1,'Martillo','mecha inferior larga tras caída (giro alcista)',j=>rng(j)>0&&dnW(j)>2*body(j)&&upW(j)<body(j)&&cl[j-1]<cl[j-3]],
     [rng(i)>0&&upW(i)>2*body(i)&&dnW(i)<body(i)&&cl[i-1]>cl[i-3],-1,'Estrella fugaz','mecha superior larga tras subida (giro bajista)',j=>rng(j)>0&&upW(j)>2*body(j)&&dnW(j)<body(j)&&cl[j-1]>cl[j-3]],
@@ -2358,7 +2359,7 @@ function QuantView({gFunding}){
             </div>
             {pt.st?(
               <div style={{textAlign:'right',flexShrink:0}}>
-                <div className="mono" style={{fontSize:13,fontWeight:800,color:pt.st.win>=55?'var(--up)':pt.st.win<=45?'var(--down)':'#F3BA2F'}}>{pt.st.win}%</div>
+                <div className="mono" style={{fontSize:13,fontWeight:800,color:pt.st.win>=55?'var(--up)':pt.st.win<=45?'var(--down)':'#F3BA2F'}}>{pt.st.win}%{pt.st.ci!=null&&<span style={{fontSize:8,fontWeight:600,color:'var(--faint)'}}> ±{pt.st.ci}</span>}</div>
                 <div className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>{pt.st.avg>=0?'+':''}{pt.st.avg}% · n={pt.st.n}</div>
               </div>
             ):<div style={{fontSize:8.5,color:'var(--faint)',textAlign:'right',flexShrink:0,maxWidth:60}}>pocos casos</div>}
@@ -2382,7 +2383,7 @@ function QuantView({gFunding}){
               <div className="mono" style={{fontSize:9.5,color:'var(--dim)',marginTop:2}}>objetivo {money(pt.target)}</div>
             </div>
             <div style={{textAlign:'right',flexShrink:0}}>
-              {pt.win!=null&&<div className="mono" style={{fontSize:13,fontWeight:800,color:pt.win>=65?'var(--up)':'#F3BA2F'}}>{pt.win}%</div>}
+              {pt.win!=null&&<div className="mono" style={{fontSize:13,fontWeight:800,color:pt.win>=65?'var(--up)':'#F3BA2F'}}>{pt.win}%{pt.ci!=null&&<span style={{fontSize:8,fontWeight:600,color:'var(--faint)'}}> ±{pt.ci}</span>}</div>}
               {pt.avg!=null&&<div className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>{pt.avg>=0?'+':''}{pt.avg}% típico</div>}
             </div>
           </div>
