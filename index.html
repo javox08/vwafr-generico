@@ -1233,15 +1233,16 @@ function botSignal(cl,j){
 // (apalancamiento objetivo) como una institución. fee = comisión por lado;
 // fundDaily = funding/día en posición. Devuelve métricas ajustadas al riesgo
 // (Sharpe/Sortino/Calmar), curva de equity y banda de incertidumbre a 20 años.
-function simulateBot(cl,fee,fundDaily,slip){
+function simulateBot(cl,fee,fundDaily,slip,sigFn){
   const n=cl.length; if(n<260)return null;
+  const sg=sigFn||botSignal; // estrategia (por defecto, la del trade recomendado)
   const sl=slip||0; const cost=fee+sl; // comisión + deslizamiento por lado
   const lr=[];for(let i=1;i<n;i++)lr.push(Math.log(cl[i]/cl[i-1]));
   const vol=j=>{let m=0;for(let k=j-20;k<j;k++)m+=lr[k-1];m/=20;let s=0;for(let k=j-20;k<j;k++){const x=lr[k-1]-m;s+=x*x;}return Math.sqrt(s/20);};
   let eq=1,pos=0,sz=0,trades=0,wins=0,entryEq=1,peak=1,maxDD=0,levSum=0,levN=0;
   const start=210, dr=[], curve=[];
   for(let j=start;j<n;j++){
-    const sig=botSignal(cl,j);
+    const sig=sg(cl,j);
     const rv=vol(j)||0.02, lev=Math.max(0.25,Math.min(3,0.022/rv)); // objetivo ~2,2%/día de vol
     if(sig!==pos){ // se decide al cierre de j-1 y se mantiene durante el día j
       if(pos!==0){trades++;if(eq>=entryEq)wins++;eq*=(1-cost*Math.abs(sz));}
@@ -1275,7 +1276,86 @@ function simulateBot(cl,fee,fundDaily,slip){
   let hp=cl[start-1],hdd=0;for(let j=start-1;j<n;j++){if(cl[j]>hp)hp=cl[j];const d=(hp-cl[j])/hp;if(d>hdd)hdd=d;}
   return {eq,roe,cagr,years,trades,winRate:trades?wins/trades*100:0,maxDD:maxDD*100,
     sharpe,sortino,calmar,avgLev,band20,eqCurve,hodlCurve,m20:Math.pow(1+cagr/100,20),
-    hodlMult,hodlRoe,hodlCagr,hodlMaxDD:hdd*100};
+    hodlMult,hodlRoe,hodlCagr,hodlMaxDD:hdd*100,ret:dr};
+}
+// ════════════ BOTS: varias estrategias, MISMO periodo y MISMOS costes ════════════
+// Cada bot es una señal direccional (−1/0/+1) que SOLO usa cierres hasta j−1 (sin
+// look-ahead). Todas pasan por el MISMO backtest realista (comisión+funding+slippage),
+// dimensionado por volatilidad, validación walk-forward y Deflated Sharpe Ratio
+// (López de Prado) que penaliza el data-snooping de probar varias estrategias a la vez.
+function maAt(cl,j,n){let s=0;for(let m=j-n;m<j;m++)s+=cl[m];return s/n;}
+const BOTS=[
+  {id:'tend',name:'Tendencia (MA + momentum)',tipo:'Seguimiento de tendencia',
+   obj:'Dirección diaria, horizonte swing (días–semanas).',
+   hyp:'El momentum persiste: BTC en tendencia (MA50>MA200) y con impulso positivo a 21d tiende a continuar (factor momentum).',
+   sig:botSignal},
+  {id:'cross',name:'Cruce dorado / muerte',tipo:'Seguimiento de tendencia',
+   obj:'Régimen direccional por cruce de MA50/MA200.',
+   hyp:'El cruce de medias 50/200 separa régimen alcista de bajista; operar a favor del cruce captura las grandes tendencias y evita las caídas.',
+   sig:(cl,j)=>j<210?0:(maAt(cl,j,50)>maAt(cl,j,200)?1:-1)},
+  {id:'tsmom',name:'Momentum temporal (60d)',tipo:'Momentum',
+   obj:'Signo del retorno a 60 días.',
+   hyp:'Time-series momentum (Moskowitz et al.): el signo del retorno a ~60d predice el siguiente tramo en muchos activos, BTC incluido.',
+   sig:(cl,j)=>{if(j<70)return 0;const m=cl[j-1]/cl[j-60]-1;return m>0.02?1:m<-0.02?-1:0;}},
+  {id:'donch',name:'Ruptura de canal (Donchian 55)',tipo:'Ruptura · trend-following',
+   obj:'Posición respecto a la mediana del canal de 55 días.',
+   hyp:'Las rupturas de rango (sistema Turtle) capturan el arranque de tendencias; por encima de la mediana del canal de 55d el sesgo es alcista.',
+   sig:(cl,j)=>{if(j<60)return 0;let hi=-Infinity,lo=Infinity;for(let m=j-55;m<j;m++){if(cl[m]>hi)hi=cl[m];if(cl[m]<lo)lo=cl[m];}return cl[j-1]>(hi+lo)/2?1:-1;}},
+  {id:'rsi',name:'Reversión a la media (RSI)',tipo:'Reversión · contrarian',
+   obj:'Extremos de RSI(14): comprar sobreventa, vender sobrecompra.',
+   hyp:'Las sobre-reacciones de corto plazo revierten: largo en RSI<30 (pánico) y corto en RSI>70 (euforia).',
+   sig:(cl,j)=>{if(j<20)return 0;const r=rsiAt(cl,j-1);return r<30?1:r>70?-1:0;}},
+];
+// momentos de una serie (media, desviación, asimetría, curtosis) para el Deflated Sharpe
+function moments(a){const n=a.length||1,m=qMean(a);let s2=0,s3=0,s4=0;
+  for(const x of a){const d=x-m;s2+=d*d;s3+=d*d*d;s4+=d*d*d*d;}
+  s2/=n;s3/=n;s4/=n;const sd=Math.sqrt(s2);
+  return {mean:m,sd,skew:sd>0?s3/(sd*sd*sd):0,kurt:s2>0?s4/(s2*s2):3};}
+function erf(x){const s=x<0?-1:1;x=Math.abs(x);const t=1/(1+0.3275911*x);
+  const y=1-(((((1.061405429*t-1.453152027)*t)+1.421413741)*t-0.284496736)*t+0.254829592)*t*Math.exp(-x*x);return s*y;}
+function normCDF(x){return 0.5*(1+erf(x/Math.SQRT2));}
+function normInv(p){ // inversa de la normal (Acklam) para el SR esperado bajo H0
+  if(p<=0)return -8;if(p>=1)return 8;
+  const a=[-39.6968302866538,220.946098424521,-275.928510446969,138.357751867269,-30.6647980661472,2.50662827745924];
+  const b=[-54.4760987982241,161.585836858041,-155.698979859887,66.8013118877197,-13.2806815528857];
+  const c=[-0.00778489400243029,-0.322396458041136,-2.40075827716184,-2.54973253934373,4.37466414146497,2.93816398269878];
+  const d=[0.00778469570904146,0.32246712907004,2.445134137143,3.75440866190742];
+  const pl=0.02425,ph=1-pl;let q,r;
+  if(p<pl){q=Math.sqrt(-2*Math.log(p));return (((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5])/((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1);}
+  if(p<=ph){q=p-0.5;r=q*q;return (((((a[0]*r+a[1])*r+a[2])*r+a[3])*r+a[4])*r+a[5])*q/(((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1);}
+  q=Math.sqrt(-2*Math.log(1-p));return -(((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5])/((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1);}
+// Evalúa TODOS los bots sobre el MISMO histórico (bcl) con costes idénticos: métricas
+// de riesgo, walk-forward (1ª vs 2ª mitad) y Deflated Sharpe (corrección multiple-testing).
+function evalBots(bcl){
+  if(!bcl||bcl.length<300)return null;
+  const FEE=0.0004,FUND=0.0003,SLIP=0.0005, halfI=Math.floor(bcl.length/2);
+  const rows=BOTS.map(bt=>{
+    const full=simulateBot(bcl,FEE,FUND,SLIP,bt.sig); if(!full)return null;
+    const is=simulateBot(bcl.slice(0,halfI),FEE,FUND,SLIP,bt.sig);
+    const oos=simulateBot(bcl.slice(Math.max(0,halfI-210)),FEE,FUND,SLIP,bt.sig);
+    const mo=moments(full.ret||[]); let gp=0,gl=0;
+    for(const x of (full.ret||[])){if(x>0)gp+=x;else gl-=x;}
+    return {...bt,s:full,is,oos,mo,pf:gl>0?gp/gl:(gp>0?99:0),srD:mo.sd>0?mo.mean/mo.sd:0,T:(full.ret||[]).length};
+  }).filter(Boolean);
+  if(!rows.length)return null;
+  // Deflated Sharpe: SR0 = Sharpe máximo ESPERADO de K pruebas independientes bajo H0
+  const srs=rows.map(r=>r.srD), V=moments(srs).sd**2, K=rows.length, g=0.5772156649;
+  const SR0=Math.sqrt(Math.max(V,1e-12))*((1-g)*normInv(1-1/K)+g*normInv(1-1/(K*Math.E)));
+  for(const r of rows){const sr=r.srD,den=Math.sqrt(Math.max(1e-9,1-r.mo.skew*sr+(r.mo.kurt-1)/4*sr*sr));
+    r.dsr=normCDF((sr-SR0)*Math.sqrt(Math.max(1,r.T-1))/den);} // prob. de que el Sharpe sea real
+  rows.sort((a,b)=>b.s.cagr-a.s.cagr); // RANKING por rentabilidad (CAGR), el mejor primero
+  return {rows,SR0,K,years:rows[0].s.years};
+}
+// Trade en vivo de un bot: su señal ACTUAL → operación (entrada/stop/objetivo) con
+// dimensionado por volatilidad. Reutiliza la persistencia y el track record reales.
+function botLiveTrade(cl,bt){
+  const price=cl[cl.length-1], sig=bt.sig(cl,cl.length);
+  const side=sig>0?'LONG':sig<0?'SHORT':'NEUTRAL';
+  const lr=[];for(let i=Math.max(1,cl.length-25);i<cl.length;i++)lr.push(Math.log(cl[i]/cl[i-1]));
+  const vol=qStd(lr)||0.03, lev=Math.max(0.25,Math.min(3,0.022/vol));
+  const slPct=Math.min(0.12,Math.max(0.02,1.4*vol*Math.sqrt(5))), tpPct=slPct*1.6;
+  const conf=side==='NEUTRAL'?0:Math.round(45+(bt.dsr!=null?bt.dsr*45:0));
+  return {side,tpPct,slPct,lev,conf,reason:bt.name+' · '+bt.tipo};
 }
 // Calendario económico (eventos de alto impacto, previstos). Filtra a futuro.
 const ECON=[
@@ -1858,41 +1938,10 @@ function QuantView({gFunding}){
         let mp=null,minp=Infinity;const ks=Object.keys(sk).map(Number).sort((a,b)=>a-b);
         for(const S of ks){let pay=0;for(const K of ks){const oo=sk[K];pay+=oo.c*Math.max(0,S-K)+oo.p*Math.max(0,K-S);}if(pay<minp){minp=pay;mp=S;}}
         optExp={date:big,oi:exp[big].oi,maxPain:mp,days:Math.ceil((big-Date.now())/864e5)};}}
-    // ── TRADE RECOMENDADO (síntesis de todo el análisis) ──
-    const D2=86400000, nowT=Date.now();
-    const macroSoon=ECON.some(e=>{const d=new Date(e[0]+'T13:00:00Z').getTime();return Math.abs(d-nowT)<2*D2;});
-    const riskBlock=macroSoon||(shutdown&&shutdown.active);
-    const up10=mc.bands[10].p75/price-1, dn10=1-mc.bands[10].p25/price;
-    // dirección = MISMA señal que el backtest (tendencia + momentum) → coherencia bot↔backtest
-    const botSig=botSignal(cl,cl.length), agree=(botSig>0&&drift>0)||(botSig<0&&drift<0);
-    const h4Sig=(q.h4&&q.h4.length>210)?botSignal(q.h4,q.h4.length):0; // pulso intradía (4h)
-    let tside='NEUTRAL',treason='';
-    if(riskBlock){treason=macroSoon?'Evento macro inminente · mejor esperar':'Cierre de gobierno activo · mejor esperar';}
-    else if(botSig>0){tside='LONG';treason='Tendencia alcista + momentum'+(drift>0?' · la ruta lo confirma':drift<0?' · la ruta no acompaña':'');}
-    else if(botSig<0){tside='SHORT';treason='Tendencia bajista + momentum'+(drift<0?' · la ruta lo confirma':drift>0?' · la ruta no acompaña':'');}
-    else treason='Sin tendencia clara · el bot se queda fuera';
-    let tpPct=0,slPct=0;
-    if(tside==='LONG'){tpPct=Math.max(0.03,up10);slPct=Math.max(0.02,Math.min(0.12,dn10));}
-    else if(tside==='SHORT'){tpPct=Math.max(0.03,dn10);slPct=Math.max(0.02,Math.min(0.12,up10));}
-    // apalancamiento recomendado por volatilidad (objetivo ~2,2%/día de vol)
-    const recLev=Math.max(0.25,Math.min(3,0.022/(recentVol||0.02)));
-    const tconf=tside==='NEUTRAL'?0:Math.round(Math.min(92,42+Math.abs(probUp-50)*1.5+(agree?12:0)));
-    const tradeRec={side:tside,tpPct,slPct,reason:treason,conf:tconf,lev:recLev};
-    const trade=loadTrade(tradeRec,price);
-    // ── BACKTEST del bot: 6 años (210d de calentamiento + 6×365 de prueba) ──
-    const bclAll=(q.longCloses&&q.longCloses.length>=230)?q.longCloses:cl;
-    const bcl=bclAll.slice(-(210+6*365)); // últimos ~6 años de prueba
-    const SLIP=0.0005; // deslizamiento 0,05%/lado
-    const sim=simulateBot(bcl,0,0,0);                       // sin costes
-    const simC=simulateBot(bcl,0.0004,0.0003,SLIP);         // comisión 0,04% + funding 0,03%/día + slippage 0,05%
-    // VALIDACIÓN WALK-FORWARD: 1ª mitad (en muestra) vs 2ª mitad (FUERA de muestra)
-    const halfI=Math.floor(bcl.length/2);
-    const simIS=simulateBot(bcl.slice(0,halfI),0.0004,0.0003,SLIP);
-    const simOOS=simulateBot(bcl.slice(Math.max(0,halfI-210)),0.0004,0.0003,SLIP);
     return {price,annVol,rsi,ma200,ma50,ma200w,mc,probUp,probUp15,probDn15,var99,cvar99,
       fair,lo,hi,valPct,realized,models,plSup,plRes,H,regime,fund,gf,opt,levels,cyc,patterns,corrE,corrS,corrAvg,optExp,
       route,tomorrow,tomPct,sig10,pdrift,trap,swingHi,swingLo,routes,biases,chartPats,drift,drift30,shutdown,
-      cal,volScale,sigTarget,dvol:q.dvol,obImb:q.obImb,impDaily,trade,tradeRec,closes:cl,sim,simC,simIS,simOOS,h4Sig,db,skill};
+      cal,volScale,sigTarget,dvol:q.dvol,obImb:q.obImb,impDaily,closes:cl,db,skill};
   },[q,gFunding]);
 
   const D=86400000, now=Date.now();
@@ -2399,197 +2448,12 @@ function QuantView({gFunding}){
         </p>
       </div>
 
-      {/* ── TRADE RECOMENDADO (paper-trade estilo TradingView) ── */}
-      {(()=>{
-        const t=c.trade, neutral=t.side==='NEUTRAL'||t.empty, long=t.side==='LONG';
-        const col=neutral?'var(--dim)':long?'var(--up)':'var(--down)';
-        const past=(c.closes||[]).slice(-36), fut=c.mc.bands.slice(1,16).map(x=>x.p50);
-        const series=past.concat(fut), n=series.length, splitI=past.length-1;
-        const lv=neutral?[]:[t.entry,t.tp,t.sl], allv=series.concat(lv);
-        const Wc=320,Hc=130,Pd=10; let lo=Math.min(...allv),hi=Math.max(...allv);const pd=((hi-lo)||1)*0.08;lo-=pd;hi+=pd;
-        const X=i=>Pd+i/(n-1)*(Wc-2*Pd), Y=v=>Hc-Pd-((v-lo)/((hi-lo)||1))*(Hc-2*Pd);
-        const pastD='M '+past.map((v,i)=>X(i).toFixed(1)+' '+Y(v).toFixed(1)).join(' L ');
-        const futD='M '+series.slice(splitI).map((v,i)=>X(i+splitI).toFixed(1)+' '+Y(v).toFixed(1)).join(' L ');
-        return(
-        <div style={panel({marginBottom:14,padding:16,borderColor:neutral?'var(--line2)':long?'rgba(31,224,160,.35)':'rgba(255,84,112,.35)'})}>
-          <div style={{...flx({justifyContent:'space-between'}),marginBottom:10}}>
-            <span style={eyebrow}>Trade recomendado</span><span className="mono" style={{fontSize:9,color:'var(--faint)'}}>auto · simulado</span>
-          </div>
-          {neutral?(
-            <div style={{textAlign:'center',padding:'14px 0'}}>
-              <div style={{fontSize:20,fontWeight:800,color:'var(--dim)'}}>⏸ SIN TRADE</div>
-              <div style={{fontSize:11,color:'var(--faint)',marginTop:4}}>{c.tradeRec.reason}</div>
-            </div>
-          ):(<>
-            <div style={{...flx({justifyContent:'space-between'}),marginBottom:10}}>
-              <div style={{...flx({gap:8})}}>
-                <span style={{fontSize:18,fontWeight:800,color:col}}>{long?'▲ LONG':'▼ SHORT'}</span>
-                {c.h4Sig!==0&&<span className="mono" style={{fontSize:9,fontWeight:700,padding:'2px 6px',borderRadius:8,
-                  background:c.h4Sig>0?'rgba(31,224,160,.12)':'rgba(255,84,112,.12)',color:c.h4Sig>0?'var(--up)':'var(--down)'}}>4h {c.h4Sig>0?'▲':'▼'}</span>}
-                {t.closed&&<span className="mono" style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:10,background:t.result==='TP'?'rgba(31,224,160,.15)':'rgba(255,84,112,.15)',color:t.result==='TP'?'var(--up)':'var(--down)'}}>{t.result==='TP'?'✓ objetivo':'✗ stop'}</span>}
-                {t.stale&&!t.closed&&<span className="mono" style={{fontSize:9,color:'#F3BA2F'}}>señal cambió</span>}
-              </div>
-              <span className="mono" style={{fontSize:16,fontWeight:800,color:t.pnl>=0?'var(--up)':'var(--down)'}}>{t.pnl>=0?'+':''}{t.pnl.toFixed(1)}%</span>
-            </div>
-            <svg viewBox={`0 0 ${Wc} ${Hc}`} width="100%" style={{display:'block'}}>
-              <line x1={Pd} y1={Y(t.tp).toFixed(1)} x2={Wc-Pd} y2={Y(t.tp).toFixed(1)} stroke="var(--up)" strokeWidth="1" strokeDasharray="4 3" opacity=".85"/>
-              <line x1={Pd} y1={Y(t.entry).toFixed(1)} x2={Wc-Pd} y2={Y(t.entry).toFixed(1)} stroke="var(--faint)" strokeWidth="1" strokeDasharray="2 3"/>
-              <line x1={Pd} y1={Y(t.sl).toFixed(1)} x2={Wc-Pd} y2={Y(t.sl).toFixed(1)} stroke="var(--down)" strokeWidth="1" strokeDasharray="4 3" opacity=".85"/>
-              <text x={Wc-Pd-1} y={(Y(t.tp)-2).toFixed(1)} fill="var(--up)" fontSize="8" textAnchor="end" className="mono">TP {money(t.tp)}</text>
-              <text x={Wc-Pd-1} y={(Y(t.sl)+8).toFixed(1)} fill="var(--down)" fontSize="8" textAnchor="end" className="mono">SL {money(t.sl)}</text>
-              <path d={pastD} fill="none" stroke="#F7931A" strokeWidth="2"/>
-              <path d={futD} fill="none" stroke={col} strokeWidth="1.6" strokeDasharray="4 3" opacity=".7"/>
-              <line x1={X(splitI).toFixed(1)} y1={Pd} x2={X(splitI).toFixed(1)} y2={Hc-Pd} stroke="var(--line2)" strokeWidth="1" strokeDasharray="2 3"/>
-              <circle cx={X(splitI).toFixed(1)} cy={Y(c.price).toFixed(1)} r="3.4" fill={col} stroke="var(--bg)" strokeWidth="2"/>
-            </svg>
-            <div style={{height:7,borderRadius:4,background:'#0A0D14',overflow:'hidden',marginTop:10}}>
-              <div style={{height:'100%',width:Math.max(0,Math.min(100,t.prog))+'%',borderRadius:4,background:t.prog>=0?'linear-gradient(90deg,var(--upDim),var(--up))':'var(--down)'}}/>
-            </div>
-            <div style={{...flx({justifyContent:'space-between'}),marginTop:4,fontSize:8.5,color:'var(--faint)'}} className="mono">
-              <span>entrada {money(t.entry)}</span><span>{t.prog.toFixed(0)}% al objetivo</span><span>{t.days}d en trade</span>
-            </div>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:12}}>
-              {[['R:R',t.rr.toFixed(1)+':1',t.rr>=1.5?'var(--up)':'#F3BA2F'],['Apalancamiento',c.tradeRec.lev.toFixed(1)+'×',c.tradeRec.lev<=1.2?'var(--up)':'#F3BA2F'],['Confianza',c.tradeRec.conf+'%',c.tradeRec.conf>=60?'var(--up)':'#F3BA2F']].map((m,i)=>(
-                <div key={i} style={{background:'#0A0D14',borderRadius:8,padding:'8px',textAlign:'center'}}>
-                  <div className="mono" style={{fontSize:12,fontWeight:800,color:m[2]}}>{m[1]}</div>
-                  <div style={{fontSize:8,color:'var(--dim)'}}>{m[0]}</div>
-                </div>
-              ))}
-            </div>
-            <div style={{fontSize:9.5,color:'var(--faint)',marginTop:10,lineHeight:1.5}}>{c.tradeRec.reason}. La operación avanza con el precio y se cierra al tocar objetivo o stop; se abre otra cuando cambia la señal.</div>
-          </>)}
-        </div>);
-      })()}
-
-      {/* ── TRACK RECORD REAL (trades cerrados, se acumula según usas la web) ── */}
-      {(()=>{let log=[];try{log=JSON.parse(localStorage.getItem('vwafr_trades_log')||'[]');}catch(_){}
-        if(!log.length)return(
-          <div style={panel({marginBottom:14,padding:'12px 16px'})}>
-            <div style={{...flx({justifyContent:'space-between'})}}>
-              <span style={eyebrow}>Track record en vivo</span>
-              <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>0 trades</span>
-            </div>
-            <div style={{fontSize:9.5,color:'var(--faint)',marginTop:6,lineHeight:1.5}}>Aquí se irá registrando el resultado REAL de cada trade recomendado a medida que se cierran (acierto/fallo y P&L). Vuelve dentro de un tiempo para ver el historial.</div>
-          </div>);
-        const wins=log.filter(x=>x.result==='TP').length, wr=log.length?wins/log.length*100:0;
-        const avg=qMean(log.map(x=>x.pnl)), cum=log.reduce((a,x)=>a*(1+x.pnl/100),1);
-        const last=log.slice(-12);
-        return(
-        <div style={panel({marginBottom:14,padding:16})}>
-          <div style={{...flx({justifyContent:'space-between'}),marginBottom:10}}>
-            <span style={eyebrow}>Track record en vivo</span>
-            <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>{log.length} trades cerrados</span>
-          </div>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:10}}>
-            {[['Aciertos',wr.toFixed(0)+'%',wr>=50?'var(--up)':'var(--down)'],['P&L medio',(avg>=0?'+':'')+avg.toFixed(1)+'%',avg>=0?'var(--up)':'var(--down)'],['Acumulado',((cum-1)*100>=0?'+':'')+((cum-1)*100).toFixed(0)+'%',cum>=1?'var(--up)':'var(--down)']].map((m,i)=>(
-              <div key={i} style={{background:'#0A0D14',borderRadius:9,padding:'9px 6px',textAlign:'center'}}>
-                <div className="mono" style={{fontSize:14,fontWeight:800,color:m[2]}}>{m[1]}</div>
-                <div style={{fontSize:8,color:'var(--dim)',marginTop:2}}>{m[0]}</div>
-              </div>
-            ))}
-          </div>
-          <div style={{...flx({gap:4,justifyContent:'center',flexWrap:'wrap'})}}>
-            {last.map((x,i)=>(<span key={i} title={x.side+' '+x.pnl+'%'} style={{width:16,height:16,borderRadius:4,display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:9,fontWeight:800,
-              background:x.result==='TP'?'rgba(31,224,160,.18)':'rgba(255,84,112,.18)',color:x.result==='TP'?'var(--up)':'var(--down)'}}>{x.result==='TP'?'✓':'✗'}</span>))}
-          </div>
-          <p style={{fontSize:8.5,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Resultado REAL de los trades recomendados que se han cerrado mientras usabas la web (no es backtest). Se guarda en tu navegador.</p>
-        </div>);
-      })()}
-
-      {/* ── BACKTEST DEL BOT (resultado REAL del periodo + métricas de riesgo) ── */}
-      {c.sim&&(()=>{
-        const s=c.sim, sc=c.simC, yr=s.years.toFixed(1);
-        const fmtMult=m=>m>=1000?Math.round(m).toLocaleString('es-ES')+'×':m>=10?m.toFixed(0)+'×':m.toFixed(1)+'×';
-        const fmtRoe=r=>Math.abs(r)>=1000?(r>=0?'+':'')+Math.round(r).toLocaleString('es-ES')+'%':(r>=0?'+':'')+r.toFixed(0)+'%';
-        const eqc=s.eqCurve||[]; const useC=sc&&sc.eqCurve?sc:s;
-        return(
-        <div style={panel({marginBottom:14,padding:16,background:'radial-gradient(130% 80% at 50% 0%, rgba(31,224,160,.06) 0%, var(--panel) 55%)'})}>
-          <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
-            <span style={eyebrow}>Backtest del bot · {yr} años reales</span>
-            <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>misma señal que el trade</span>
-          </div>
-          <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:10}}>la MISMA estrategia del trade recomendado, con <b>dimensionado por volatilidad</b> (apalancamiento objetivo), sobre <b>{yr} años</b> reales de BTC. Con comisiones de Binance.</div>
-          {/* HERO: ROE real del periodo (con comisiones) */}
-          <div style={{textAlign:'center',padding:'10px 0 6px'}}>
-            <div className="mono" style={{fontSize:30,fontWeight:800,color:(sc?sc.roe:s.roe)>=0?'var(--up)':'var(--down)',lineHeight:1}}>{fmtRoe(sc?sc.roe:s.roe)}</div>
-            <div style={{fontSize:9.5,color:'var(--dim)',marginTop:3}}>ROE en {yr} años (con comisiones) · {fmtMult(sc?sc.eq:s.eq)} la inversión</div>
-          </div>
-          {/* curva de equity (log) · BOT vs COMPRAR BTC */}
-          {useC.eqCurve&&useC.eqCurve.length>3&&(()=>{const cv=useC.eqCurve.map(x=>Math.log(Math.max(1e-6,x)));
-            const hc=useC.hodlCurve&&useC.hodlCurve.length===cv.length?useC.hodlCurve.map(x=>Math.log(Math.max(1e-6,x))):null;
-            return <div style={{margin:'4px 0'}}>
-              <div style={{...flx({gap:12}),marginBottom:4,fontSize:9}} className="mono">
-                <span style={{color:'#1FE0A0',fontWeight:700}}>━ Bot</span><span style={{color:'#F7931A',fontWeight:700}}>┄ Comprar BTC</span>
-              </div>
-              <TVChart series={cv} color="#1FE0A0" H={72} glow refLine={hc} refColor="#F7931A"
-                fmt={v=>fmtMult(Math.exp(v))} label={i=>'≈ año '+(i/cv.length*useC.years).toFixed(1)}/>
-            </div>;})()}
-          {/* COMPARACIÓN: Bot vs comprar y mantener BTC (mismo periodo) */}
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,margin:'10px 0'}}>
-            <div style={{background:'rgba(31,224,160,.08)',border:'1px solid rgba(31,224,160,.3)',borderRadius:10,padding:'10px 8px',textAlign:'center'}}>
-              <div style={{fontSize:8.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.7,fontWeight:600}}>🤖 Bot</div>
-              <div className="mono" style={{fontSize:16,fontWeight:800,color:'var(--up)',marginTop:3,lineHeight:1}}>{fmtMult(useC.eq)}</div>
-              <div className="mono" style={{fontSize:9,color:'var(--dim)',marginTop:2}}>{fmtRoe(useC.roe)} · DD -{useC.maxDD.toFixed(0)}%</div>
-            </div>
-            <div style={{background:'#0A0D14',border:'1px solid var(--line2)',borderRadius:10,padding:'10px 8px',textAlign:'center'}}>
-              <div style={{fontSize:8.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.7,fontWeight:600}}>🟠 Comprar BTC</div>
-              <div className="mono" style={{fontSize:16,fontWeight:800,color:'#F7931A',marginTop:3,lineHeight:1}}>{fmtMult(useC.hodlMult)}</div>
-              <div className="mono" style={{fontSize:9,color:'var(--dim)',marginTop:2}}>{fmtRoe(useC.hodlRoe)} · DD -{useC.hodlMaxDD.toFixed(0)}%</div>
-            </div>
-          </div>
-          <div style={{textAlign:'center',fontSize:10,fontWeight:700,marginBottom:6,
-            color:useC.eq>=useC.hodlMult?'var(--up)':'var(--down)'}}>
-            {useC.eq>=useC.hodlMult?'✅ el bot batió a comprar BTC':'⚠️ comprar BTC habría rendido más'} · {(useC.eq/Math.max(1e-6,useC.hodlMult)).toFixed(2)}× vs hold</div>
-          {/* métricas ajustadas al riesgo */}
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:7,margin:'10px 0'}}>
-            {[['CAGR',(useC.cagr>=0?'+':'')+useC.cagr.toFixed(0)+'%/año',useC.cagr>=0?'var(--up)':'var(--down)'],
-              ['Sharpe',useC.sharpe.toFixed(2),useC.sharpe>=1?'var(--up)':useC.sharpe>=0.5?'#F3BA2F':'var(--down)'],
-              ['Calmar',useC.calmar.toFixed(2),useC.calmar>=0.5?'var(--up)':'#F3BA2F'],
-              ['Máx. caída','-'+useC.maxDD.toFixed(0)+'%','var(--down)']].map((m,i)=>(
-              <div key={i} style={{background:'#0A0D14',borderRadius:8,padding:'8px 4px',textAlign:'center'}}>
-                <div className="mono" style={{fontSize:12,fontWeight:800,color:m[2]}}>{m[1]}</div>
-                <div style={{fontSize:7.5,color:'var(--dim)',marginTop:2}}>{m[0]}</div>
-              </div>
-            ))}
-          </div>
-          <div style={{...flx({justifyContent:'space-between'}),fontSize:9,color:'var(--dim)',padding:'0 2px 4px'}} className="mono">
-            <span>aciertos {useC.winRate.toFixed(0)}%</span><span>apalancamiento medio {useC.avgLev.toFixed(1)}×</span><span>Sortino {useC.sortino.toFixed(2)}</span>
-          </div>
-          {/* VALIDACIÓN WALK-FORWARD: en muestra vs fuera de muestra */}
-          {c.simIS&&c.simOOS&&(()=>{const rob=c.simOOS.sharpe>=0.4&&c.simOOS.cagr>0;
-            return(
-            <div style={{marginTop:8,paddingTop:10,borderTop:'1px solid var(--line2)'}}>
-              <div style={{...flx({justifyContent:'space-between'}),marginBottom:6}}>
-                <span style={{fontSize:8.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.8,fontWeight:600}}>Validación walk-forward</span>
-                <span className="mono" style={{fontSize:9,fontWeight:700,color:rob?'var(--up)':'#F3BA2F'}}>{rob?'✓ aguanta fuera de muestra':'⚠ frágil fuera de muestra'}</span>
-              </div>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-                {[['1ª mitad (en muestra)',c.simIS],['2ª mitad (FUERA de muestra)',c.simOOS]].map(([lbl,s2],i)=>(
-                  <div key={i} style={{background:'#0A0D14',borderRadius:9,padding:'9px 8px',textAlign:'center'}}>
-                    <div style={{fontSize:8,color:'var(--faint)',marginBottom:3}}>{lbl}</div>
-                    <div className="mono" style={{fontSize:13,fontWeight:800,color:s2.cagr>=0?'var(--up)':'var(--down)'}}>{(s2.cagr>=0?'+':'')+s2.cagr.toFixed(0)}%/año</div>
-                    <div className="mono" style={{fontSize:8.5,color:'var(--dim)',marginTop:2}}>Sharpe {s2.sharpe.toFixed(2)} · DD -{s2.maxDD.toFixed(0)}%</div>
-                  </div>
-                ))}
-              </div>
-              <p style={{fontSize:8,color:'var(--faint)',marginTop:6,lineHeight:1.5}}>Si la 2ª mitad (datos que la estrategia "no vio") rinde parecido a la 1ª, la ventaja es robusta y no sobreajustada.</p>
-            </div>);})()}
-          {/* proyección a 20 años: BANDA de incertidumbre (no un número mágico) */}
-          {useC.band20&&(
-            <div style={{marginTop:8,paddingTop:10,borderTop:'1px solid var(--line2)'}}>
-              <div style={{fontSize:8.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.8,fontWeight:600,marginBottom:6}}>Proyección a 20 años · banda (bootstrap)</div>
-              <div style={{...flx({justifyContent:'space-between'})}}>
-                {[['pesimista (p5)',useC.band20.p5,'var(--down)'],['mediana',useC.band20.p50,'var(--txt)'],['optimista (p95)',useC.band20.p95,'var(--up)']].map((m,i)=>(
-                  <div key={i} style={{textAlign:'center',flex:1}}>
-                    <div className="mono" style={{fontSize:13,fontWeight:800,color:m[2]}}>{fmtMult(m[1])}</div>
-                    <div style={{fontSize:7.5,color:'var(--dim)'}}>{m[0]}</div>
-                  </div>
-                ))}
-              </div>
-            </div>)}
-          <p style={{fontSize:8.5,color:'var(--faint)',marginTop:10,lineHeight:1.5}}>Cifras del periodo <b>real de {yr} años</b> (NO de 20). Costes aplicados: taker futuros Binance 0,04%/lado + funding ~0,03%/día + <b>slippage 0,05%/lado</b>. La banda a 20 años es un bootstrap de los retornos del bot (rango de escenarios, no una promesa): BTC no tiene 20 años de histórico fiable y rendimientos pasados no garantizan futuros.</p>
-        </div>);
-      })()}
+      {/* Los bots (trade recomendado, backtest y ranking) se han movido a la pestaña "Bots" */}
+      <div style={panel({marginBottom:14,padding:16,textAlign:"center",background:"radial-gradient(130% 80% at 50% 0%, rgba(31,224,160,.06) 0%, var(--panel) 55%)"})}>
+        <div style={{fontSize:22,marginBottom:6}}>🤖</div>
+        <div style={{fontSize:13,fontWeight:800,color:"var(--txt)"}}>Los bots tienen su propia pestaña</div>
+        <div style={{fontSize:10.5,color:"var(--faint)",marginTop:6,lineHeight:1.55}}>El trade recomendado, el backtest y el <b>ranking de bots por rentabilidad</b> (todos sobre el mismo periodo y validados con walk-forward y Deflated Sharpe) están ahora en la pestaña <b style={{color:"var(--up)"}}>Bots</b>, arriba.</div>
+      </div>
 
       <p style={{fontSize:9.5,color:'var(--faint)',lineHeight:1.5,textAlign:'center',padding:'0 8px',marginBottom:8}}>
         Análisis automático con datos públicos (Binance · Deribit · CoinGecko · bitcoin-data). Modelos estadísticos.
@@ -2898,6 +2762,260 @@ function FundingHistory({g}){
   );
 }
 
+// ════════════════════════ APARTADO BOTS ════════════════════════
+// Varias estrategias compiten en el MISMO periodo y con los MISMOS costes. Todas
+// pasan por los "innegociables" (objetivo, datos point-in-time, hipótesis económica,
+// backtest con costes, control de overfitting, gestión de riesgo, métricas ajustadas
+// y conciencia de régimen). Se ordenan por rentabilidad: el mejor, arriba del todo.
+function BotsView({gFunding}){
+  const [cl,setCl]=useState(null);
+  const [openId,setOpenId]=useState(null);
+  const longRef=React.useRef(null);
+  useEffect(()=>{
+    let alive=true,timer=null;
+    const jget=(u,ms=9000)=>{const ac=new AbortController();const tt=setTimeout(()=>ac.abort(),ms);
+      return fetch(u,{signal:ac.signal}).then(r=>{if(!r.ok)throw 0;return r.json();}).finally(()=>clearTimeout(tt));};
+    const load=async()=>{
+      let closes=longRef.current;
+      if(!closes){try{let allc=[],end=Date.now();
+        for(let pg=0;pg<3;pg++){const k=await jget('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=1000&endTime='+end);
+          if(!Array.isArray(k)||!k.length)break; allc=k.map(x=>parseFloat(x[4])).concat(allc); end=k[0][0]-864e5; if(k.length<1000)break;}
+        if(allc.length>800){closes=allc;longRef.current=allc;}
+      }catch(_){}}
+      // refresca el último cierre para que la señal en vivo sea actual
+      if(closes){try{const k=await jget('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=2',7000);
+        if(Array.isArray(k)&&k.length){closes=closes.slice();closes[closes.length-1]=parseFloat(k[k.length-1][4]);}}catch(_){}}
+      if(alive&&closes)setCl(closes);
+    };
+    load(); timer=setInterval(load,120000);
+    return()=>{alive=false;if(timer)clearInterval(timer);};
+  },[]);
+  const c=useMemo(()=>{
+    if(!cl||cl.length<300)return null;
+    const price=cl[cl.length-1], bcl=cl.slice(-(210+6*365));
+    const ev=evalBots(bcl); if(!ev)return null;
+    const top=ev.rows[0], live=botLiveTrade(cl,top), trade=loadTrade(live,price);
+    return {price,ev,top,live,trade,yr:ev.years.toFixed(1)};
+  },[cl]);
+  if(!c)return(
+    <div style={{textAlign:'center',padding:'60px 0',color:'var(--faint)'}}>
+      <div style={{display:'inline-block',animation:'spin 1s linear infinite',fontSize:22}}>↻</div>
+      <div style={{fontSize:11,marginTop:10}}>Backtesteando los bots sobre ~6 años de BTC…</div>
+    </div>);
+  const {ev,top,yr}=c;
+  const money=v=>(v==null||!Number.isFinite(v))?'—':'$'+Math.round(v).toLocaleString('es-ES');
+  const fmtMult=m=>m>=1000?Math.round(m).toLocaleString('es-ES')+'×':m>=10?m.toFixed(0)+'×':m.toFixed(1)+'×';
+  const fmtRoe=r=>Math.abs(r)>=1000?(r>=0?'+':'')+Math.round(r).toLocaleString('es-ES')+'%':(r>=0?'+':'')+r.toFixed(0)+'%';
+  const dsrCol=d=>d>=0.95?'var(--up)':d>=0.9?'#F3BA2F':'var(--down)';
+  const checklist=r=>{
+    const oosOk=r.oos&&r.oos.sharpe>=0.4&&r.oos.cagr>0, noDecay=r.oos&&r.is&&r.oos.cagr>0&&r.oos.sharpe>=0.55*r.is.sharpe;
+    return [
+      ['Objetivo definido',true,r.obj],
+      ['Datos point-in-time · sin look-ahead',true,'la señal solo usa cierres hasta ayer (j−1); timestamps alineados, sin anticipación'],
+      ['Features con hipótesis económica',true,r.hyp],
+      ['Backtest realista con costes',true,'comisión 0,04% + funding 0,03%/día + slippage 0,05%/lado · dimensionado por volatilidad'],
+      ['Control de overfitting',oosOk&&r.dsr>=0.9,'walk-forward OOS Sharpe '+r.oos.sharpe.toFixed(2)+' · Deflated Sharpe '+(r.dsr*100).toFixed(0)+'% (López de Prado)'],
+      ['Gestión de riesgo y sizing',r.s.maxDD<80,'vol-targeting (apal. medio '+r.s.avgLev.toFixed(1)+'×, tope 3×) · máx. caída '+r.s.maxDD.toFixed(0)+'%'],
+      ['Métricas ajustadas al riesgo',r.s.sharpe>=0.5,'Sharpe '+r.s.sharpe.toFixed(2)+' · Sortino '+r.s.sortino.toFixed(2)+' · Calmar '+r.s.calmar.toFixed(2)+' · profit factor '+r.pf.toFixed(2)],
+      ['Régimen y decaimiento del alfa',noDecay,'2ª mitad (fuera de muestra) vs 1ª · Sharpe '+r.oos.sharpe.toFixed(2)+' vs '+r.is.sharpe.toFixed(2)],
+    ];
+  };
+  const t=c.trade, neutral=t.side==='NEUTRAL'||t.empty, long=t.side==='LONG';
+  const tcol=neutral?'var(--dim)':long?'var(--up)':'var(--down)';
+
+  return(
+    <div>
+      {/* INTRO: los innegociables */}
+      <div style={panel({marginBottom:14,padding:16})}>
+        <div style={{...flx({justifyContent:'space-between'}),marginBottom:8}}>
+          <span style={eyebrow}>Laboratorio de bots</span>
+          <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>{ev.K} estrategias · {yr} años · mismos costes</span>
+        </div>
+        <div style={{fontSize:10.5,color:'var(--faint)',lineHeight:1.6}}>Lo que decide si un bot de BTC sobrevive no son las señales bonitas, sino la parte aburrida: datos limpios, costes reales, control de sobreajuste y gestión de riesgo. <b style={{color:'var(--txt)'}}>Todos los bots pasan por lo mismo</b> y compiten en el <b>mismo periodo</b>. El más rentable, arriba.</div>
+      </div>
+
+      {/* BOT LÍDER (más rentable) */}
+      <div style={panel({marginBottom:14,padding:16,background:'radial-gradient(130% 80% at 50% 0%, rgba(31,224,160,.08) 0%, var(--panel) 55%)',borderColor:'rgba(31,224,160,.35)'})}>
+        <div style={{...flx({justifyContent:'space-between'}),marginBottom:6}}>
+          <span className="mono" style={{fontSize:9,fontWeight:800,color:'var(--up)',padding:'2px 8px',borderRadius:10,background:'rgba(31,224,160,.14)',border:'1px solid rgba(31,224,160,.35)'}}>🏆 Nº1 · más rentable</span>
+          <span className="mono" style={{fontSize:8.5,fontWeight:700,color:dsrCol(top.dsr),padding:'2px 7px',borderRadius:10,background:'rgba(255,255,255,.04)'}}>Deflated Sharpe {(top.dsr*100).toFixed(0)}%</span>
+        </div>
+        <div style={{fontSize:16,fontWeight:800,letterSpacing:-.3,color:'var(--txt)'}}>{top.name}</div>
+        <div style={{fontSize:9.5,color:'var(--faint)',marginTop:3,lineHeight:1.5}}>{top.tipo} · {top.hyp}</div>
+        <div style={{textAlign:'center',padding:'12px 0 4px'}}>
+          <div className="mono" style={{fontSize:30,fontWeight:800,color:top.s.cagr>=0?'var(--up)':'var(--down)',lineHeight:1}}>{(top.s.cagr>=0?'+':'')+top.s.cagr.toFixed(0)}%<span style={{fontSize:14}}>/año</span></div>
+          <div style={{fontSize:9.5,color:'var(--dim)',marginTop:3}}>CAGR en {yr} años (con comisiones) · {fmtRoe(top.s.roe)} total · {fmtMult(top.s.eq)} la inversión</div>
+        </div>
+        {top.s.eqCurve&&top.s.eqCurve.length>3&&(()=>{const cv=top.s.eqCurve.map(x=>Math.log(Math.max(1e-6,x)));
+          const hc=top.s.hodlCurve&&top.s.hodlCurve.length===cv.length?top.s.hodlCurve.map(x=>Math.log(Math.max(1e-6,x))):null;
+          return <div style={{margin:'4px 0'}}>
+            <div style={{...flx({gap:12}),marginBottom:4,fontSize:9}} className="mono">
+              <span style={{color:'#1FE0A0',fontWeight:700}}>━ Bot</span><span style={{color:'#F7931A',fontWeight:700}}>┄ Comprar BTC</span></div>
+            <TVChart series={cv} color="#1FE0A0" H={72} glow refLine={hc} refColor="#F7931A"
+              fmt={v=>fmtMult(Math.exp(v))} label={i=>'≈ año '+(i/cv.length*top.s.years).toFixed(1)}/>
+          </div>;})()}
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,margin:'10px 0'}}>
+          <div style={{background:'rgba(31,224,160,.08)',border:'1px solid rgba(31,224,160,.3)',borderRadius:10,padding:'10px 8px',textAlign:'center'}}>
+            <div style={{fontSize:8.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.7,fontWeight:600}}>🤖 Bot</div>
+            <div className="mono" style={{fontSize:16,fontWeight:800,color:'var(--up)',marginTop:3,lineHeight:1}}>{fmtMult(top.s.eq)}</div>
+            <div className="mono" style={{fontSize:9,color:'var(--dim)',marginTop:2}}>DD -{top.s.maxDD.toFixed(0)}%</div>
+          </div>
+          <div style={{background:'#0A0D14',border:'1px solid var(--line2)',borderRadius:10,padding:'10px 8px',textAlign:'center'}}>
+            <div style={{fontSize:8.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.7,fontWeight:600}}>🟠 Comprar BTC</div>
+            <div className="mono" style={{fontSize:16,fontWeight:800,color:'#F7931A',marginTop:3,lineHeight:1}}>{fmtMult(top.s.hodlMult)}</div>
+            <div className="mono" style={{fontSize:9,color:'var(--dim)',marginTop:2}}>DD -{top.s.hodlMaxDD.toFixed(0)}%</div>
+          </div>
+        </div>
+        <div style={{textAlign:'center',fontSize:10,fontWeight:700,marginBottom:8,color:top.s.eq>=top.s.hodlMult?'var(--up)':'var(--down)'}}>
+          {top.s.eq>=top.s.hodlMult?'✅ el bot batió a comprar BTC':'⚠️ comprar BTC habría rendido más'} · {(top.s.eq/Math.max(1e-6,top.s.hodlMult)).toFixed(2)}× vs hold</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:7}}>
+          {[['Sharpe',top.s.sharpe.toFixed(2),top.s.sharpe>=1?'var(--up)':top.s.sharpe>=0.5?'#F3BA2F':'var(--down)'],
+            ['Sortino',top.s.sortino.toFixed(2),top.s.sortino>=1?'var(--up)':'#F3BA2F'],
+            ['Calmar',top.s.calmar.toFixed(2),top.s.calmar>=0.5?'var(--up)':'#F3BA2F'],
+            ['Máx. caída','-'+top.s.maxDD.toFixed(0)+'%','var(--down)']].map((m,i)=>(
+            <div key={i} style={{background:'#0A0D14',borderRadius:8,padding:'8px 4px',textAlign:'center'}}>
+              <div className="mono" style={{fontSize:12,fontWeight:800,color:m[2]}}>{m[1]}</div>
+              <div style={{fontSize:7.5,color:'var(--dim)',marginTop:2}}>{m[0]}</div>
+            </div>))}
+        </div>
+        {top.s.band20&&(
+          <div style={{marginTop:10,paddingTop:10,borderTop:'1px solid var(--line2)'}}>
+            <div style={{fontSize:8.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.8,fontWeight:600,marginBottom:6}}>Proyección a 20 años · banda (bootstrap)</div>
+            <div style={{...flx({justifyContent:'space-between'})}}>
+              {[['pesimista (p5)',top.s.band20.p5,'var(--down)'],['mediana',top.s.band20.p50,'var(--txt)'],['optimista (p95)',top.s.band20.p95,'var(--up)']].map((m,i)=>(
+                <div key={i} style={{textAlign:'center',flex:1}}>
+                  <div className="mono" style={{fontSize:13,fontWeight:800,color:m[2]}}>{fmtMult(m[1])}</div>
+                  <div style={{fontSize:7.5,color:'var(--dim)'}}>{m[0]}</div>
+                </div>))}
+            </div>
+          </div>)}
+      </div>
+
+      {/* TRADE EN VIVO del bot líder */}
+      <div style={panel({marginBottom:14,padding:16,borderColor:neutral?'var(--line2)':long?'rgba(31,224,160,.35)':'rgba(255,84,112,.35)'})}>
+        <div style={{...flx({justifyContent:'space-between'}),marginBottom:10}}>
+          <span style={eyebrow}>Trade en vivo · bot líder</span><span className="mono" style={{fontSize:9,color:'var(--faint)'}}>auto · simulado</span>
+        </div>
+        {neutral?(
+          <div style={{textAlign:'center',padding:'14px 0'}}>
+            <div style={{fontSize:20,fontWeight:800,color:'var(--dim)'}}>⏸ SIN TRADE</div>
+            <div style={{fontSize:11,color:'var(--faint)',marginTop:4}}>{top.name}: sin señal clara ahora mismo</div>
+          </div>
+        ):(<>
+          <div style={{...flx({justifyContent:'space-between'}),marginBottom:10}}>
+            <div style={{...flx({gap:8})}}>
+              <span style={{fontSize:18,fontWeight:800,color:tcol}}>{long?'▲ LONG':'▼ SHORT'}</span>
+              {t.closed&&<span className="mono" style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:10,background:t.result==='TP'?'rgba(31,224,160,.15)':'rgba(255,84,112,.15)',color:t.result==='TP'?'var(--up)':'var(--down)'}}>{t.result==='TP'?'✓ objetivo':'✗ stop'}</span>}
+              {t.stale&&!t.closed&&<span className="mono" style={{fontSize:9,color:'#F3BA2F'}}>señal cambió</span>}
+            </div>
+            <span className="mono" style={{fontSize:16,fontWeight:800,color:t.pnl>=0?'var(--up)':'var(--down)'}}>{t.pnl>=0?'+':''}{t.pnl.toFixed(1)}%</span>
+          </div>
+          <div style={{height:7,borderRadius:4,background:'#0A0D14',overflow:'hidden'}}>
+            <div style={{height:'100%',width:Math.max(0,Math.min(100,t.prog))+'%',borderRadius:4,background:t.prog>=0?'linear-gradient(90deg,var(--upDim),var(--up))':'var(--down)'}}/>
+          </div>
+          <div style={{...flx({justifyContent:'space-between'}),marginTop:4,fontSize:8.5,color:'var(--faint)'}} className="mono">
+            <span>entrada {money(t.entry)}</span><span>{t.prog.toFixed(0)}% al objetivo</span><span>{t.days}d en trade</span>
+          </div>
+          <div style={{...flx({justifyContent:'space-between'}),marginTop:6,fontSize:9}} className="mono">
+            <span style={{color:'var(--up)'}}>TP {money(t.tp)}</span><span style={{color:'var(--down)'}}>SL {money(t.sl)}</span>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:12}}>
+            {[['R:R',t.rr.toFixed(1)+':1',t.rr>=1.5?'var(--up)':'#F3BA2F'],['Apalancamiento',c.live.lev.toFixed(1)+'×',c.live.lev<=1.2?'var(--up)':'#F3BA2F'],['Confianza',c.live.conf+'%',c.live.conf>=60?'var(--up)':'#F3BA2F']].map((m,i)=>(
+              <div key={i} style={{background:'#0A0D14',borderRadius:8,padding:'8px',textAlign:'center'}}>
+                <div className="mono" style={{fontSize:12,fontWeight:800,color:m[2]}}>{m[1]}</div>
+                <div style={{fontSize:8,color:'var(--dim)'}}>{m[0]}</div>
+              </div>))}
+          </div>
+          <div style={{fontSize:9.5,color:'var(--faint)',marginTop:10,lineHeight:1.5}}>{top.name}. La operación avanza con el precio y se cierra al tocar objetivo o stop; se abre otra cuando cambia la señal.</div>
+        </>)}
+      </div>
+
+      {/* TRACK RECORD REAL (trades cerrados) */}
+      {(()=>{let log=[];try{log=JSON.parse(localStorage.getItem('vwafr_trades_log')||'[]');}catch(_){}
+        if(!log.length)return(
+          <div style={panel({marginBottom:14,padding:'12px 16px'})}>
+            <div style={{...flx({justifyContent:'space-between'})}}>
+              <span style={eyebrow}>Track record en vivo</span><span className="mono" style={{fontSize:9,color:'var(--faint)'}}>0 trades</span>
+            </div>
+            <div style={{fontSize:9.5,color:'var(--faint)',marginTop:6,lineHeight:1.5}}>Aquí se registra el resultado REAL de cada trade recomendado según se cierran (acierto/fallo y P&L). Vuelve dentro de un tiempo.</div>
+          </div>);
+        const wins=log.filter(x=>x.result==='TP').length, wr=log.length?wins/log.length*100:0;
+        const avg=qMean(log.map(x=>x.pnl)), cum=log.reduce((a,x)=>a*(1+x.pnl/100),1), last=log.slice(-12);
+        return(
+        <div style={panel({marginBottom:14,padding:16})}>
+          <div style={{...flx({justifyContent:'space-between'}),marginBottom:10}}>
+            <span style={eyebrow}>Track record en vivo</span><span className="mono" style={{fontSize:9,color:'var(--faint)'}}>{log.length} trades cerrados</span>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:10}}>
+            {[['Aciertos',wr.toFixed(0)+'%',wr>=50?'var(--up)':'var(--down)'],['P&L medio',(avg>=0?'+':'')+avg.toFixed(1)+'%',avg>=0?'var(--up)':'var(--down)'],['Acumulado',((cum-1)*100>=0?'+':'')+((cum-1)*100).toFixed(0)+'%',cum>=1?'var(--up)':'var(--down)']].map((m,i)=>(
+              <div key={i} style={{background:'#0A0D14',borderRadius:9,padding:'9px 6px',textAlign:'center'}}>
+                <div className="mono" style={{fontSize:14,fontWeight:800,color:m[2]}}>{m[1]}</div>
+                <div style={{fontSize:8,color:'var(--dim)',marginTop:2}}>{m[0]}</div>
+              </div>))}
+          </div>
+          <div style={{...flx({gap:4,justifyContent:'center',flexWrap:'wrap'})}}>
+            {last.map((x,i)=>(<span key={i} title={x.side+' '+x.pnl+'%'} style={{width:16,height:16,borderRadius:4,display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:9,fontWeight:800,
+              background:x.result==='TP'?'rgba(31,224,160,.18)':'rgba(255,84,112,.18)',color:x.result==='TP'?'var(--up)':'var(--down)'}}>{x.result==='TP'?'✓':'✗'}</span>))}
+          </div>
+          <p style={{fontSize:8.5,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Resultado REAL de los trades recomendados cerrados mientras usabas la web (no es backtest). Se guarda en tu navegador.</p>
+        </div>);
+      })()}
+
+      {/* CLASIFICACIÓN: todos los bots */}
+      <div style={panel({marginBottom:14,padding:16})}>
+        <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
+          <span style={eyebrow}>Clasificación · todos los bots</span>
+          <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>por rentabilidad</span>
+        </div>
+        <div style={{fontSize:9,color:'var(--faint)',marginBottom:10,lineHeight:1.5}}>Toca un bot para ver cómo cumple los <b>innegociables</b>. Deflated Sharpe = probabilidad de que el Sharpe sea real tras descontar que se han probado {ev.K} estrategias.</div>
+        {ev.rows.map((r,i)=>{const open=openId===r.id, rob=r.oos&&r.oos.sharpe>=0.4&&r.oos.cagr>0&&r.dsr>=0.9;
+          return(
+          <div key={r.id} style={{borderTop:i?'1px solid #12151F':'none',padding:'10px 0'}}>
+            <div onClick={()=>setOpenId(open?null:r.id)} style={{...flx({gap:8}),cursor:'pointer'}}>
+              <span className="mono" style={{fontSize:12,fontWeight:800,width:20,color:i===0?'var(--up)':'var(--faint)'}}>{i+1}º</span>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{...flx({gap:6})}}>
+                  <span style={{fontSize:12,fontWeight:700,color:'var(--txt)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{r.name}</span>
+                  <span className="mono" style={{fontSize:7.5,fontWeight:700,color:rob?'var(--up)':'#F3BA2F',padding:'1px 5px',borderRadius:7,background:'rgba(255,255,255,.04)',flexShrink:0}}>{rob?'✓ robusto':'⚠ frágil'}</span>
+                </div>
+                <div className="mono" style={{fontSize:8.5,color:'var(--faint)',marginTop:1}}>Sharpe {r.s.sharpe.toFixed(2)} · DD -{r.s.maxDD.toFixed(0)}% · DSR {(r.dsr*100).toFixed(0)}%</div>
+              </div>
+              <div style={{textAlign:'right',flexShrink:0}}>
+                <div className="mono" style={{fontSize:14,fontWeight:800,color:r.s.cagr>=0?'var(--up)':'var(--down)'}}>{(r.s.cagr>=0?'+':'')+r.s.cagr.toFixed(0)}%<span style={{fontSize:8}}>/año</span></div>
+                <div className="mono" style={{fontSize:8,color:'var(--dim)'}}>{fmtMult(r.s.eq)} · {open?'▲':'▼'}</div>
+              </div>
+            </div>
+            {open&&<div style={{marginTop:10,paddingLeft:28}}>
+              {checklist(r).map((it,k)=>(
+                <div key={k} style={{...flx({gap:8}),padding:'5px 0',alignItems:'flex-start'}}>
+                  <span style={{fontSize:12,color:it[1]?'var(--up)':'#F3BA2F',flexShrink:0,lineHeight:1.4}}>{it[1]?'✓':'⚠'}</span>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:10.5,fontWeight:700,color:'var(--txt)'}}>{it[0]}</div>
+                    <div style={{fontSize:8.5,color:'var(--faint)',lineHeight:1.45}}>{it[2]}</div>
+                  </div>
+                </div>))}
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8}}>
+                {[['1ª mitad (en muestra)',r.is],['2ª mitad (fuera de muestra)',r.oos]].map(([lbl,s2],k)=>s2?(
+                  <div key={k} style={{background:'#0A0D14',borderRadius:9,padding:'8px',textAlign:'center'}}>
+                    <div style={{fontSize:7.5,color:'var(--faint)',marginBottom:2}}>{lbl}</div>
+                    <div className="mono" style={{fontSize:12,fontWeight:800,color:s2.cagr>=0?'var(--up)':'var(--down)'}}>{(s2.cagr>=0?'+':'')+s2.cagr.toFixed(0)}%/año</div>
+                    <div className="mono" style={{fontSize:8,color:'var(--dim)',marginTop:1}}>Sharpe {s2.sharpe.toFixed(2)}</div>
+                  </div>):<div key={k}/>) }
+              </div>
+            </div>}
+          </div>);
+        })}
+      </div>
+
+      <div style={{textAlign:'center',padding:'12px 14px',marginBottom:8,borderRadius:10,
+        background:'rgba(255,84,112,.07)',border:'1px solid rgba(255,84,112,.25)'}}>
+        <div style={{fontSize:12,fontWeight:800,color:'var(--down)'}}>⚠️ Esto NO es consejo de inversión</div>
+        <div style={{fontSize:9.5,color:'var(--faint)',marginTop:4,lineHeight:1.5}}>Backtests con costes reales y validación, pero un backtest es una hipótesis sobre el pasado, no una predicción. En cripto (histórico corto, ruido alto) es fácil engañarse. Opera bajo tu responsabilidad; puedes perder tu capital.</div>
+      </div>
+    </div>
+  );
+}
+
 function App(){
   const [payload,setPayload]=useState(null);
   const [source,setSource]=useState(null);
@@ -2953,6 +3071,7 @@ function App(){
   const TITLE={home:['Funding cripto · top 10 · en vivo','Sentimiento del Mercado'],
     cycle:['Bitcoin · ciclo de mercado','Ciclo de Bitcoin'],
     quant:['BTC · finanzas cuantitativas','Análisis Cuantitativo'],
+    bots:['BTC · estrategias automáticas','Bots de Trading'],
     pib:['Macro · ciclo económico mundial','Ciclo económico']}[view];
 
   return(
@@ -2982,7 +3101,7 @@ function App(){
 
       {/* NAV apartados */}
       <div style={{...flx({gap:7}),marginBottom:16}}>
-        {[['home','Funding'],['cycle','Ciclo'],['quant','Cuantitativo'],['pib','Macro']].map(([k,label])=>{
+        {[['home','Funding'],['cycle','Ciclo'],['quant','Cuantitativo'],['bots','Bots'],['pib','Macro']].map(([k,label])=>{
           const on=view===k;
           return(
             <button key={k} onClick={()=>setView(k)} className={on?'nav-glow':''} style={{flex:1,padding:'9px 2px',borderRadius:10,
@@ -2995,6 +3114,7 @@ function App(){
 
       {view==='cycle'&&<CycleBTC/>}
       {view==='quant'&&<QuantView gFunding={g.vwafr}/>}
+      {view==='bots'&&<BotsView gFunding={g.vwafr}/>}
       {view==='pib'&&<PIBView/>}
 
       {home&&<>
