@@ -1561,6 +1561,33 @@ function botLiveTrade(cl,bt,ohlc){
   const conf=side==='NEUTRAL'?0:Math.round(45+(bt.dsr!=null?bt.dsr*45:0));
   return {side,tpPct,slPct,lev,conf,reason:bt.name+' · '+bt.tipo,atr:atrFrac};
 }
+// ─────────── TELEGRAM (avisos automáticos sobre la página) ───────────
+// Guarda un resumen vivo del análisis para que el emisor de Telegram lo use.
+function saveInsight(obj){try{const c=JSON.parse(localStorage.getItem('vwafr_insight')||'{}');localStorage.setItem('vwafr_insight',JSON.stringify({...c,...obj,t:Date.now()}));}catch(_){}}
+function getInsight(){try{return JSON.parse(localStorage.getItem('vwafr_insight')||'{}');}catch(_){return {};}}
+// Envía un mensaje por el bot de Telegram del usuario (token+chat guardados por él).
+// Intenta con CORS (para confirmar) y, si falla, en modo no-cors (fire-and-forget).
+async function tgSend(token,chat,text){
+  const url='https://api.telegram.org/bot'+token+'/sendMessage';
+  try{const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:chat,text})});
+    const j=await r.json().catch(()=>null); return j?(j.ok?true:false):null;}
+  catch(e){try{await fetch(url+'?chat_id='+encodeURIComponent(chat)+'&text='+encodeURIComponent(text),{mode:'no-cors'});return null;}catch(_){return false;}}
+}
+// Construye un mensaje variado (un poco aleatorio) a partir del análisis vivo.
+function tgMessage(){
+  const ins=getInsight(); let bot={};try{bot=JSON.parse(localStorage.getItem('vwafr_insight_bots')||'{}');}catch(_){}
+  const m=v=>'$'+Math.round(v).toLocaleString('es-ES');
+  const pool=[];
+  if(Number.isFinite(ins.touchPct)&&Number.isFinite(ins.touchPrice))pool.push('🔮 Nuevo cono BTC: posibilidad del '+ins.touchPct+'% de tocar '+m(ins.touchPrice)+' en 30 días.');
+  if(Number.isFinite(ins.probUp)&&Number.isFinite(ins.price))pool.push('📊 BTC '+m(ins.price)+' · '+ins.probUp+'% de probabilidad de subir a 30 días.');
+  if(Number.isFinite(ins.p50)&&Number.isFinite(ins.medPct))pool.push('🎯 Cono 30d: mediana ~'+m(ins.p50)+' ('+(ins.medPct>=0?'+':'')+ins.medPct+'%).');
+  if(Number.isFinite(ins.tomPct))pool.push('📈 BTC mañana: sesgo '+(ins.tomPct>=0?'+':'')+ins.tomPct+'% según el modelo.');
+  if(ins.regime)pool.push('🧭 Régimen actual de BTC: '+ins.regime+'.');
+  if(bot.side&&bot.side!=='NEUTRAL')pool.push('🤖 Operación de los bots rentables: '+bot.side+' ('+bot.nLong+'▲/'+bot.nShort+'▼), confianza '+bot.conf+'%.');
+  if(!pool.length)return null;
+  const tail=['','',' ⚡',' 🟠',' #BTC',' 📲'][Math.floor(Math.random()*6)];
+  return pool[Math.floor(Math.random()*pool.length)]+tail;
+}
 // Calendario económico (eventos de alto impacto, previstos). Filtra a futuro.
 const ECON=[
   ['2026-06-17','FOMC','Decisión de tipos de la Fed'],['2026-07-14','CPI','Inflación EE.UU. (IPC)'],
@@ -2183,6 +2210,14 @@ function QuantView({gFunding}){
     // Mini-ruta corto plazo (próximos 7 días)
     const route=mc.bands.slice(0,8).map((bd,d)=>({d,p50:bd.p50,p25:bd.p25,p75:bd.p75}));
     const tomorrow=mc.bands[1], tomPct=(tomorrow.p50-price)/price*100;
+    // RESUMEN VIVO para los avisos de Telegram: un nivel redondo cercano y su prob. de toque
+    try{const step=price>50000?5000:price>10000?2000:price>2000?500:100;
+      const tlevel=Math.round(price*1.1/step)*step, N=mc.maxes.length;
+      const tpc=N?Math.round(mc.maxes.filter(v=>v>=tlevel).length/N*100):null;
+      saveInsight({price:+price.toFixed(0),probUp:+probUp.toFixed(0),tomPct:+tomPct.toFixed(1),
+        p50:+mc.bands[30].p50.toFixed(0),medPct:+((mc.bands[30].p50/price-1)*100).toFixed(1),
+        regime:regime.t,touchPrice:tlevel,touchPct:tpc});
+    }catch(_){}
     // ── Opciones (Deribit) ──
     let opt=null;
     if(q.opts&&q.opts.length){let poi=0,coi=0;const sk={};
@@ -3207,6 +3242,7 @@ function BotsView({gFunding}){
     const defRec={side:defSide,tpPct:defSl*1.6,slPct:defSl,lev:defLev,reason:elig.length+' bots rentables · consenso ponderado',
       conf:defSide==='NEUTRAL'?0:Math.round(50+Math.min(45,Math.abs(net)*60)),atr:atrFrac,nLong,nShort,nElig:elig.length,net};
     const defTrade=loadTrade(defRec,price,'vwafr_trade_def','vwafr_trades_def_log');
+    try{localStorage.setItem('vwafr_insight_bots',JSON.stringify({side:defSide,nLong,nShort,conf:defRec.conf,leader:top.name,leaderCagr:Math.round(top.s.cagr),t:Date.now()}));}catch(_){}
     return {price,ev,top,driver,live,trade,defRec,defTrade,yr:ev.years.toFixed(1)};
   },[cl,pinId]);
   if(!c)return(
@@ -3638,6 +3674,29 @@ function App(){
   },[]);
   const doInstall=async()=>{if(!installEvt)return;installEvt.prompt();try{await installEvt.userChoice;}catch(_){}setInstallEvt(null);};
 
+  // ── TELEGRAM: avisos automáticos sobre la página ──
+  const [tgTok,setTgTok]=useState(()=>{try{return localStorage.getItem('vwafr_tg_tok')||'';}catch(_){return '';}});
+  const [tgChat,setTgChat]=useState(()=>{try{return localStorage.getItem('vwafr_tg_chat')||'';}catch(_){return '';}});
+  const [tgOn,setTgOn]=useState(()=>{try{return localStorage.getItem('vwafr_tg_on')==='1';}catch(_){return false;}});
+  const [tgMsg,setTgMsg]=useState('');
+  useEffect(()=>{try{localStorage.setItem('vwafr_tg_tok',tgTok);localStorage.setItem('vwafr_tg_chat',tgChat);localStorage.setItem('vwafr_tg_on',tgOn?'1':'0');}catch(_){}},[tgTok,tgChat,tgOn]);
+  // emisor automático: 1 mensaje cada ~50-70 min (intervalo aleatorio para que parezca natural)
+  useEffect(()=>{
+    if(!tgOn||!tgTok||!tgChat)return;
+    let alive=true,timer=null;
+    const tick=async()=>{ if(!alive)return; const txt=tgMessage();
+      if(txt)await tgSend(tgTok,tgChat,txt);
+      if(!alive)return; const mins=48+Math.random()*24; timer=setTimeout(tick,mins*60000); }; // 48-72 min
+    // primer envío entre 1 y 4 min tras activar (no justo al instante)
+    timer=setTimeout(tick,(1+Math.random()*3)*60000);
+    return()=>{alive=false;if(timer)clearTimeout(timer);};
+  },[tgOn,tgTok,tgChat]);
+  const tgTest=async()=>{setTgMsg('Enviando…');
+    const txt=tgMessage()||'✅ Conectado a VWAFR. Aquí llegarán los avisos automáticos sobre BTC.';
+    const r=await tgSend(tgTok,tgChat,txt);
+    setTgMsg(r===true?'✓ Enviado: revisa tu Telegram':r===null?'Enviado (no se pudo confirmar por el navegador, mira Telegram)':'✗ Falló: revisa el token y el chat ID');
+  };
+
   const fetchAll=useCallback(async()=>{
     setBusy(true);
     try{
@@ -3826,6 +3885,37 @@ function App(){
           )}
         </React.Fragment>
       ))}
+
+      {/* ── TELEGRAM: avisos automáticos ── */}
+      <div style={panel({marginBottom:14,padding:16})}>
+        <div style={{...flx({justifyContent:'space-between'}),marginBottom:6}}>
+          <span style={{...flx({gap:6})}}><span style={{fontSize:16}}>✈️</span><span style={eyebrow}>Avisos por Telegram</span></span>
+          {tgOn&&tgTok&&tgChat&&<span className="mono" style={{fontSize:8.5,fontWeight:700,color:'var(--up)'}}>● activo</span>}
+        </div>
+        <div style={{fontSize:9.5,color:'var(--faint)',lineHeight:1.55,marginBottom:11}}>Recibe mensajes automáticos sobre BTC (nuevo cono, probabilidades, operación de los bots…), ~1 cada hora con horario variado. Funciona con la web/app abierta.</div>
+        <div style={{display:'grid',gap:8}}>
+          <input value={tgTok} onChange={e=>setTgTok(e.target.value.trim())} placeholder="Token del bot (de @BotFather)" autoComplete="off"
+            style={{background:'#0A0D14',border:'1px solid var(--line2)',borderRadius:9,color:'var(--txt)',fontSize:11,padding:'10px 12px',fontFamily:'JetBrains Mono,monospace',outline:'none',width:'100%',boxSizing:'border-box'}}/>
+          <input value={tgChat} onChange={e=>setTgChat(e.target.value.trim())} placeholder="Tu chat ID (de @userinfobot)" autoComplete="off" inputMode="numeric"
+            style={{background:'#0A0D14',border:'1px solid var(--line2)',borderRadius:9,color:'var(--txt)',fontSize:11,padding:'10px 12px',fontFamily:'JetBrains Mono,monospace',outline:'none',width:'100%',boxSizing:'border-box'}}/>
+        </div>
+        <div style={{...flx({gap:8}),marginTop:10}}>
+          <button onClick={tgTest} disabled={!tgTok||!tgChat} style={{flex:1,padding:'10px',borderRadius:9,border:'1px solid var(--accent)',
+            background:'rgba(110,139,255,.14)',color:'var(--txt)',fontWeight:700,fontSize:12,cursor:(!tgTok||!tgChat)?'default':'pointer',opacity:(!tgTok||!tgChat)?.5:1}}>Probar envío</button>
+          <button onClick={()=>setTgOn(o=>!o)} disabled={!tgTok||!tgChat} style={{flex:1,padding:'10px',borderRadius:9,border:`1px solid ${tgOn?'rgba(31,224,160,.4)':'var(--line2)'}`,
+            background:tgOn?'rgba(31,224,160,.14)':'transparent',color:tgOn?'var(--up)':'var(--dim)',fontWeight:700,fontSize:12,cursor:(!tgTok||!tgChat)?'default':'pointer',opacity:(!tgTok||!tgChat)?.5:1}}>{tgOn?'✓ Avisos activados':'Activar avisos'}</button>
+        </div>
+        {tgMsg&&<div style={{fontSize:9.5,color:tgMsg[0]==='✗'?'var(--down)':'var(--up)',marginTop:8,textAlign:'center'}}>{tgMsg}</div>}
+        <details style={{marginTop:10}}>
+          <summary style={{fontSize:9.5,color:'var(--accent)',cursor:'pointer',fontWeight:700}}>¿Cómo lo conecto? (1 minuto)</summary>
+          <ol style={{fontSize:9.5,color:'var(--faint)',lineHeight:1.6,margin:'8px 0 0',paddingLeft:16}}>
+            <li>En Telegram abre <b style={{color:'var(--txt)'}}>@BotFather</b> → <b>/newbot</b> → te da un <b>token</b>. Pégalo arriba.</li>
+            <li>Abre <b style={{color:'var(--txt)'}}>@userinfobot</b> → te dice tu <b>chat ID</b> (un número). Pégalo arriba.</li>
+            <li>Escribe algo a TU bot una vez (para que pueda escribirte). Pulsa <b>Probar envío</b> y luego <b>Activar avisos</b>.</li>
+          </ol>
+          <div style={{fontSize:8.5,color:'var(--faint)',marginTop:6,lineHeight:1.5}}>El token se guarda solo en tu navegador (no se envía a ningún servidor nuestro). Los avisos solo se mandan con la web/app abierta.</div>
+        </details>
+      </div>
 
       {/* ── EXPLICACIÓN ── */}
       <div style={panel({marginBottom:14,padding:'16px 18px'})}>
