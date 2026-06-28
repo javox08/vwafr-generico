@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0E1320"/>
+      <stop offset="1" stop-color="#07090E"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.32" r="0.7">
+      <stop offset="0" stop-color="#6E8BFF" stop-opacity="0.30"/>
+      <stop offset="1" stop-color="#6E8BFF" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="6"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <rect width="512" height="512" fill="url(#glow)"/>
+  <!-- línea de tendencia -->
+  <path d="M96 360 L188 300 L284 232 L416 132" fill="none" stroke="#6E8BFF" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" opacity="0.55" filter="url(#soft)"/>
+  <path d="M96 360 L188 300 L284 232 L416 132" fill="none" stroke="#8AA0FF" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- velas alcistas -->
+  <g stroke="#1FE0A0" stroke-width="10" stroke-linecap="round">
+    <line x1="148" y1="300" x2="148" y2="392"/>
+    <line x1="244" y1="232" x2="244" y2="340"/>
+    <line x1="356" y1="150" x2="356" y2="276"/>
+  </g>
+  <g fill="#1FE0A0">
+    <rect x="128" y="320" width="40" height="56" rx="9"/>
+    <rect x="224" y="252" width="40" height="68" rx="9"/>
+    <rect x="336" y="172" width="40" height="76" rx="9"/>
+  </g>
+  <!-- punto vivo en el último máximo -->
+  <circle cx="416" cy="132" r="15" fill="#1FE0A0"/>
+  <circle cx="416" cy="132" r="26" fill="none" stroke="#1FE0A0" stroke-width="4" opacity="0.4"/>
+</svg>

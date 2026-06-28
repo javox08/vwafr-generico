@@ -13,6 +13,16 @@
   <meta name="theme-color" content="#07090E"/>
   <link rel="canonical" href="https://vwafr-generico.pages.dev/"/>
 
+  <!-- ─────────── PWA (instalable + offline) ─────────── -->
+  <link rel="manifest" href="/manifest.webmanifest"/>
+  <link rel="icon" type="image/svg+xml" href="/icon.svg"/>
+  <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png"/>
+  <link rel="apple-touch-icon" href="/icon-192.png"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="VWAFR"/>
+  <meta name="mobile-web-app-capable" content="yes"/>
+
   <!-- Open Graph / redes sociales -->
   <meta property="og:type" content="website"/>
   <meta property="og:site_name" content="VWAFR · Funding de Cripto"/>
@@ -1484,7 +1494,9 @@ function evalBots(bcl){
   // array de bots, así que cualquier bot que se añada en el futuro entra solo. La
   // orientación (copiar/invertir) se decide con la rentabilidad del periodo (sesgo
   // que la columna "fuera de muestra" del walk-forward sirve para vigilar).
-  const orient=rows.map(r=>({sig:r.sig,name:r.name,cagr:r.s.cagr,o:r.s.cagr>=0?1:-1}));
+  // orientación (copiar/invertir) decidida con la 1ª mitad (en muestra), no con todo
+  // el periodo → la 2ª mitad (fuera de muestra) valida de forma honesta el meta-bot
+  const orient=rows.map(r=>({sig:r.sig,name:r.name,cagr:r.s.cagr,o:((r.is&&r.is.cagr>=0)?1:-1)}));
   const metaSig=(cl,j)=>{let s=0,nn=0;for(const it of orient){const v=it.sig(cl,j);if(v===0)continue;s+=it.o*v;nn++;}
     return nn>0?Math.max(-1,Math.min(1,s/nn*1.3)):0;};
   const metaBot={id:'future',name:'Futuro (meta-conjunto)',tipo:'Ensemble adaptativo · '+orient.length+' bots',
@@ -1503,7 +1515,29 @@ function evalBots(bcl){
     r.dsr=normCDF((sr-SR0)*Math.sqrt(Math.max(1,r.T-1))/den);} // prob. de que el Sharpe sea real
   rows.sort((a,b)=>b.s.cagr-a.s.cagr); // RANKING por rentabilidad (CAGR), el mejor primero
   if(rows[0])rows[0].s.band20=band20From(rows[0].s.ret,rows[0].s.cagr); // banda 20a solo para el líder
-  return {rows,SR0,K,years:rows[0].s.years};
+  // ── CARTERA DE BOTS (lo que de verdad operarías): combina los bots que AGUANTAN
+  // fuera de muestra, ponderados por INVERSO de su volatilidad (risk-parity). La
+  // diversificación reduce el drawdown y suele dar un Sharpe mayor que cualquier bot
+  // suelto. Se combinan sus retornos diarios día a día (mismo periodo, ya alineados).
+  let portfolio=null;
+  const elig=rows.filter(r=>r.id!=='future'&&r.oos&&r.oos.cagr>0&&r.oos.sharpe>=0&&r.s.ret&&r.s.ret.length>100);
+  if(elig.length>=2){
+    const T=Math.min(...elig.map(r=>r.s.ret.length));
+    const w=elig.map(r=>1/Math.max(1e-6,r.mo.sd)), ws=w.reduce((a,b)=>a+b,0);
+    const pr=new Array(T).fill(0);
+    for(let k=0;k<elig.length;k++){const ret=elig[k].s.ret, off=ret.length-T, wk=w[k]/ws;
+      for(let t=0;t<T;t++)pr[t]+=wk*ret[off+t];}
+    let eq=1,peak=1,mdd=0; const curve=[];
+    for(let t=0;t<T;t++){eq*=(1+pr[t]); if(eq>peak)peak=eq; const dd=(peak-eq)/peak; if(dd>mdd)mdd=dd; curve.push(eq);}
+    const pm=moments(pr), years=T/365, cagr=years>0?(Math.pow(Math.max(eq,1e-6),1/years)-1)*100:0;
+    let dn=0;for(const x of pr)if(x<0)dn+=x*x; const ddv=Math.sqrt(dn/pr.length);
+    const stepc=Math.max(1,Math.floor(curve.length/110)), eqCurve=[];
+    for(let k=0;k<curve.length;k+=stepc)eqCurve.push(curve[k]); eqCurve.push(curve[curve.length-1]);
+    portfolio={n:elig.length,eq,cagr,maxDD:mdd*100,years,
+      sharpe:pm.sd>0?pm.mean/pm.sd*Math.sqrt(365):0, sortino:ddv>0?pm.mean/ddv*Math.sqrt(365):0,
+      eqCurve, members:elig.map((r,k)=>({name:r.name,w:w[k]/ws,cagr:r.s.cagr})).sort((a,b)=>b.w-a.w)};
+  }
+  return {rows,SR0,K,years:rows[0].s.years,portfolio};
 }
 // Trade en vivo de un bot: su señal ACTUAL → operación (entrada/stop/objetivo) con
 // dimensionado por volatilidad. Reutiliza la persistencia y el track record reales.
@@ -1884,6 +1918,7 @@ function TVChart({series,color='var(--accent)',H=120,area=false,band=null,bands=
 }
 function QuantView({gFunding}){
   const [q,setQ]=useState(null);
+  const [loadedAt,setLoadedAt]=useState(0); // frescura de datos
   const [showBias,setShowBias]=useState(false);
   const longRef=React.useRef(null); // caché del histórico largo (no se re-pagina en cada refresco)
   const macroRef=React.useRef(null); // caché del ciclo económico (dato anual)
@@ -1940,7 +1975,7 @@ function QuantView({gFunding}){
       for(const [key,path,field] of ocRetry){
         if(!Number.isFinite(out[key])){try{const j=await jget('https://bitcoin-data.com/v1/'+path+'/last',6000);out[key]=parseFloat(j[field]);}catch(_){}}
       }
-      if(alive)setQ(out);
+      if(alive){setQ(out);setLoadedAt(Date.now());}
     };
     load();
     timer=setInterval(load,120000); // análisis automático: se refresca cada 2 min
@@ -2157,11 +2192,37 @@ function QuantView({gFunding}){
       <div style={{...flx({gap:10}),margin:'2px 2px 14px'}}>
         <div style={{width:32,height:32,borderRadius:10,flexShrink:0,background:'rgba(110,139,255,.15)',
           border:'1px solid rgba(110,139,255,.4)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16}}>Σ</div>
-        <div>
+        <div style={{flex:1}}>
           <div style={{fontSize:17,fontWeight:800,letterSpacing:-.3,lineHeight:1}}>Análisis Cuantitativo</div>
           <div style={{...eyebrow,fontSize:9}}>modelos · estadística · Monte Carlo · automático</div>
         </div>
+        {loadedAt>0&&<span className="mono" style={{fontSize:8,color:'var(--faint)',flexShrink:0,alignSelf:'flex-start'}}>● {new Date(loadedAt).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'})}</span>}
       </div>
+
+      {/* VEREDICTO DEL DÍA · resumen TL;DR de todo el análisis */}
+      {(()=>{const dir=c.drift>0.0008?1:c.drift<-0.0008?-1:0;
+        const col=dir>0?'var(--up)':dir<0?'var(--down)':'#F3BA2F';
+        const txt=dir>0?'Sesgo ALCISTA':dir<0?'Sesgo BAJISTA':'Sesgo NEUTRAL';
+        const topB=c.biases.slice().filter(b=>Math.abs(b.v*(b.w==null?1:b.w))>1e-6).sort((a,b)=>Math.abs(b.v*(b.w==null?1:b.w))-Math.abs(a.v*(a.w==null?1:a.w)))[0];
+        return(
+        <div style={panel({marginBottom:14,padding:'14px 16px',background:`radial-gradient(120% 90% at 50% 0%, ${col}14 0%, var(--panel) 60%)`,borderColor:`${col}33`})}>
+          <div style={{...flx({justifyContent:'space-between'}),marginBottom:9}}>
+            <span style={eyebrow}>Veredicto del día</span>
+            <span className="mono" style={{fontSize:11,fontWeight:800,color:col}}>{dir>0?'▲':dir<0?'▼':'◆'} {txt}</span>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+            {[['Mañana',(c.tomPct>=0?'+':'')+c.tomPct.toFixed(1)+'%',c.tomPct>=0?'var(--up)':'var(--down)'],
+              ['Sube 30d',c.probUp.toFixed(0)+'%',c.probUp>=55?'var(--up)':c.probUp<=45?'var(--down)':'#F3BA2F'],
+              ['Régimen',c.regime.t,c.regime.c],
+              ['Ciclo',c.cyc.phase.t,c.cyc.phase.c]].map((m,i)=>(
+              <div key={i} style={{background:'#0A0D14',borderRadius:9,padding:'8px 10px'}}>
+                <div style={{fontSize:8,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.6,fontWeight:600}}>{m[0]}</div>
+                <div className="mono" style={{fontSize:12,fontWeight:800,color:m[2],marginTop:2,lineHeight:1.1}}>{m[1]}</div>
+              </div>))}
+          </div>
+          {topB&&<div style={{fontSize:9,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Lo que más pesa hoy: <b style={{color:'var(--txt)'}}>{topB.k}</b> · {topB.why}</div>}
+        </div>);
+      })()}
 
       {/* PRECIO OBJETIVO (hero) */}
       <div className="rise" style={panel({position:'relative',overflow:'hidden',marginBottom:14,padding:'24px 20px',
@@ -2955,6 +3016,7 @@ function FundingHistory({g}){
 function BotsView({gFunding}){
   const [cl,setCl]=useState(null);
   const [openId,setOpenId]=useState(null);
+  const [loadedAt,setLoadedAt]=useState(0); // frescura de datos
   const evRef=React.useRef({len:0,ev:null}); // cachea el backtest de los 40 bots (1×/día)
   const longRef=React.useRef(null);
   useEffect(()=>{
@@ -2971,7 +3033,7 @@ function BotsView({gFunding}){
       // refresca el último cierre para que la señal en vivo sea actual
       if(closes){try{const k=await jget('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=2',7000);
         if(Array.isArray(k)&&k.length){closes=closes.slice();closes[closes.length-1]=parseFloat(k[k.length-1][4]);}}catch(_){}}
-      if(alive&&closes)setCl(closes);
+      if(alive&&closes){setCl(closes);setLoadedAt(Date.now());}
     };
     load(); timer=setInterval(load,120000);
     return()=>{alive=false;if(timer)clearInterval(timer);};
@@ -3000,7 +3062,7 @@ function BotsView({gFunding}){
     const oosOk=r.oos&&r.oos.sharpe>=0.4&&r.oos.cagr>0, noDecay=r.oos&&r.is&&r.oos.cagr>0&&r.oos.sharpe>=0.55*r.is.sharpe;
     return [
       ['Objetivo definido',true,r.obj],
-      ['Datos point-in-time · sin look-ahead',r.id!=='future',r.id==='future'?'la señal diaria sí usa solo datos hasta ayer, PERO la orientación (copiar/invertir) se decide con la rentabilidad de todo el periodo → sesgo optimista; mira la 2ª mitad (fuera de muestra) para juzgarlo':'la señal solo usa cierres hasta ayer (j−1); timestamps alineados, sin anticipación'],
+      ['Datos point-in-time · sin look-ahead',true,r.id==='future'?'la señal diaria usa solo datos hasta ayer; la orientación (copiar/invertir) se decide con la 1ª mitad (en muestra), así que la 2ª mitad (fuera de muestra) valida el meta-bot de forma honesta':'la señal solo usa cierres hasta ayer (j−1); timestamps alineados, sin anticipación'],
       ['Features con hipótesis económica',true,r.hyp],
       ['Backtest realista con costes',true,'comisión 0,04% + funding 0,03%/día + slippage 0,05%/lado · dimensionado por volatilidad'],
       ['Control de overfitting',oosOk&&r.dsr>=0.9,'walk-forward OOS Sharpe '+r.oos.sharpe.toFixed(2)+' · Deflated Sharpe '+(r.dsr*100).toFixed(0)+'% (López de Prado)'],
@@ -3018,7 +3080,7 @@ function BotsView({gFunding}){
       <div style={panel({marginBottom:14,padding:16})}>
         <div style={{...flx({justifyContent:'space-between'}),marginBottom:8}}>
           <span style={eyebrow}>Laboratorio de bots</span>
-          <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>40 bots + meta · {yr} años · mismos costes</span>
+          <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>40 bots + meta · {yr} años{loadedAt>0?' · ● '+new Date(loadedAt).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}):''}</span>
         </div>
         <div style={{fontSize:10.5,color:'var(--faint)',lineHeight:1.6}}>Lo que decide si un bot de BTC sobrevive no son las señales bonitas, sino la parte aburrida: datos limpios, costes reales, control de sobreajuste y gestión de riesgo. <b style={{color:'var(--txt)'}}>Todos los bots pasan por lo mismo</b> y compiten en el <b>mismo periodo</b>. El más rentable, arriba.</div>
         <div style={{...flx({gap:6}),marginTop:9,padding:'8px 10px',borderRadius:9,background:'rgba(31,224,160,.07)',border:'1px solid rgba(31,224,160,.22)'}}>
@@ -3151,6 +3213,40 @@ function BotsView({gFunding}){
               background:x.result==='TP'?'rgba(31,224,160,.18)':'rgba(255,84,112,.18)',color:x.result==='TP'?'var(--up)':'var(--down)'}}>{x.result==='TP'?'✓':'✗'}</span>))}
           </div>
           <p style={{fontSize:8.5,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Resultado REAL de los trades recomendados cerrados mientras usabas la web (no es backtest). Se guarda en tu navegador.</p>
+        </div>);
+      })()}
+
+      {/* CARTERA DE BOTS (risk-parity): lo que de verdad operarías */}
+      {ev.portfolio&&(()=>{const pf=ev.portfolio;
+        const cv=pf.eqCurve.map(x=>Math.log(Math.max(1e-6,x)));
+        return(
+        <div style={panel({marginBottom:14,padding:16,background:'radial-gradient(130% 80% at 50% 0%, rgba(110,139,255,.08) 0%, var(--panel) 55%)',borderColor:'rgba(110,139,255,.3)'})}>
+          <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
+            <span style={eyebrow}>Cartera de bots · risk-parity</span>
+            <span className="mono" style={{fontSize:8.5,fontWeight:700,color:'var(--accent)',padding:'2px 7px',borderRadius:10,background:'rgba(110,139,255,.12)'}}>{pf.n} bots robustos</span>
+          </div>
+          <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:10,lineHeight:1.5}}>Lo que <b>de verdad operarías</b>: combina los bots que aguantan fuera de muestra, ponderados por inverso de su volatilidad. La diversificación baja el riesgo y suele dar mejor Sharpe que cualquier bot suelto.</div>
+          <div style={{textAlign:'center',padding:'6px 0 4px'}}>
+            <div className="mono" style={{fontSize:26,fontWeight:800,color:pf.cagr>=0?'var(--up)':'var(--down)',lineHeight:1}}>{(pf.cagr>=0?'+':'')+pf.cagr.toFixed(0)}%<span style={{fontSize:13}}>/año</span></div>
+            <div style={{fontSize:9,color:'var(--dim)',marginTop:2}}>CAGR en {pf.years.toFixed(1)} años · {fmtMult(pf.eq)} la inversión</div>
+          </div>
+          {cv.length>3&&<TVChart series={cv} color="#6E8BFF" H={64} glow fmt={v=>fmtMult(Math.exp(v))} label={i=>'≈ año '+(i/cv.length*pf.years).toFixed(1)}/>}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:7,margin:'10px 0'}}>
+            {[['Sharpe',pf.sharpe.toFixed(2),pf.sharpe>=1?'var(--up)':pf.sharpe>=0.5?'#F3BA2F':'var(--down)'],
+              ['Sortino',pf.sortino.toFixed(2),pf.sortino>=1?'var(--up)':'#F3BA2F'],
+              ['Máx. caída','-'+pf.maxDD.toFixed(0)+'%','var(--down)']].map((m,i)=>(
+              <div key={i} style={{background:'#0A0D14',borderRadius:8,padding:'8px 4px',textAlign:'center'}}>
+                <div className="mono" style={{fontSize:13,fontWeight:800,color:m[2]}}>{m[1]}</div>
+                <div style={{fontSize:7.5,color:'var(--dim)',marginTop:2}}>{m[0]}</div>
+              </div>))}
+          </div>
+          <div style={{fontSize:8.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.6,fontWeight:700,margin:'4px 0 5px'}}>Pesos (mayor primero)</div>
+          {pf.members.slice(0,6).map((m,i)=>(
+            <div key={i} style={{...flx({justifyContent:'space-between'}),padding:'2px 0'}}>
+              <span style={{fontSize:9.5,color:'var(--dim)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',marginRight:8}}>{m.name}</span>
+              <span className="mono" style={{fontSize:9,fontWeight:700,color:'var(--accent)',flexShrink:0}}>{(m.w*100).toFixed(0)}%</span>
+            </div>))}
+          {pf.members.length>6&&<div style={{fontSize:8.5,color:'var(--faint)',marginTop:3}}>+{pf.members.length-6} más</div>}
         </div>);
       })()}
 
@@ -3476,7 +3572,31 @@ function App(){
   );
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+// LÍMITE DE ERROR: si un panel lanza una excepción al renderizar, en vez de dejar
+// la app en blanco se muestra un aviso recuperable con botón de recargar.
+class ErrorBoundary extends React.Component{
+  constructor(p){super(p);this.state={err:null};}
+  static getDerivedStateFromError(e){return {err:e};}
+  componentDidCatch(e,info){try{console.error('UI error:',e,info);}catch(_){}}
+  render(){
+    if(this.state.err)return(
+      <div style={{maxWidth:480,margin:'40px auto',padding:'28px 22px',textAlign:'center',
+        background:'var(--panel)',border:'1px solid var(--line2)',borderRadius:16,color:'var(--dim)'}}>
+        <div style={{fontSize:30,marginBottom:8}}>🛠️</div>
+        <div style={{fontSize:15,fontWeight:800,color:'var(--txt)',marginBottom:6}}>Algo se atascó al pintar este panel</div>
+        <div style={{fontSize:11,color:'var(--faint)',lineHeight:1.6,marginBottom:16}}>Es un fallo de visualización, tus datos están a salvo. Recarga para volver a intentarlo.</div>
+        <button onClick={()=>location.reload()} style={{padding:'10px 20px',borderRadius:10,border:'1px solid var(--accent)',
+          background:'rgba(110,139,255,.14)',color:'var(--txt)',fontWeight:700,fontSize:13,cursor:'pointer'}}>↻ Recargar</button>
+      </div>);
+    return this.props.children;
+  }
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<ErrorBoundary><App/></ErrorBoundary>);
+
+// PWA: registra el service worker (app instalable + offline + cargas repetidas rápidas)
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>{navigator.serviceWorker.register('/sw.js').catch(()=>{});});
+}
 </script>
 </body>
 </html>
