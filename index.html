@@ -1247,7 +1247,7 @@ function simulateBot(cl,fee,fundDaily,slip,sigFn,skipBand){
   const lr=[];for(let i=1;i<n;i++)lr.push(Math.log(cl[i]/cl[i-1]));
   const vol=j=>{let m=0;for(let k=j-20;k<j;k++)m+=lr[k-1];m/=20;let s=0;for(let k=j-20;k<j;k++){const x=lr[k-1]-m;s+=x*x;}return Math.sqrt(s/20);};
   let eq=1,pos=0,sz=0,trades=0,wins=0,entryEq=1,peak=1,maxDD=0,levSum=0,levN=0;
-  const start=210, dr=[], curve=[];
+  const start=220, dr=[], curve=[]; // calentamiento UNIFORME: los 40 bots empiezan a operar el MISMO día (justo)
   for(let j=start;j<n;j++){
     const sig=sg(cl,j);
     const rv=vol(j)||0.02, lev=Math.max(0.25,Math.min(3,0.022/rv)); // objetivo ~2,2%/día de vol
@@ -2990,6 +2990,10 @@ function BotsView({gFunding}){
           <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>40 bots + meta · {yr} años · mismos costes</span>
         </div>
         <div style={{fontSize:10.5,color:'var(--faint)',lineHeight:1.6}}>Lo que decide si un bot de BTC sobrevive no son las señales bonitas, sino la parte aburrida: datos limpios, costes reales, control de sobreajuste y gestión de riesgo. <b style={{color:'var(--txt)'}}>Todos los bots pasan por lo mismo</b> y compiten en el <b>mismo periodo</b>. El más rentable, arriba.</div>
+        <div style={{...flx({gap:6}),marginTop:9,padding:'8px 10px',borderRadius:9,background:'rgba(31,224,160,.07)',border:'1px solid rgba(31,224,160,.22)'}}>
+          <span style={{fontSize:12,flexShrink:0}}>⚖️</span>
+          <span style={{fontSize:9.5,color:'var(--faint)',lineHeight:1.5}}><b style={{color:'var(--up)'}}>Backtest justo:</b> los 40 bots se prueban en <b style={{color:'var(--txt)'}}>exactamente el mismo periodo</b> (mismos {yr} años, mismas fechas) con el mismo calentamiento, los mismos costes y empezando a operar el mismo día. Nadie tiene ventaja de muestra.</span>
+        </div>
       </div>
 
       {/* BOT LÍDER (más rentable) */}
