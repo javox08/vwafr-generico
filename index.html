@@ -3671,6 +3671,26 @@ function BotsView({gFunding}){
         </div>}
       </div>
 
+      {/* NUMÉRICO CHICO: rentabilidad del mega bot (operación de arriba del todo) */}
+      {(()=>{const pf=ev.portfolio;
+        let log=[];try{log=JSON.parse(localStorage.getItem('vwafr_trades_def_log')||'[]');}catch(_){}
+        const cum=log.length?(log.reduce((a,x)=>a*(1+x.pnl/100),1)-1)*100:null;
+        const cagr=pf?pf.cagr:null;
+        return(
+        <div style={{...flx({justifyContent:'center',gap:18}),marginBottom:10,padding:'10px 14px',borderRadius:10,
+          background:'#0A0D14',border:'1px solid var(--line2)'}}>
+          <div style={{textAlign:'center'}}>
+            <div className="mono" style={{fontSize:16,fontWeight:800,color:cagr==null?'var(--faint)':cagr>=0?'var(--up)':'var(--down)'}}>{cagr==null?'—':(cagr>=0?'+':'')+cagr.toFixed(0)+'%'}</div>
+            <div style={{fontSize:7.5,color:'var(--dim)',marginTop:1}}>mega bot · backtest/año</div>
+          </div>
+          <div style={{width:1,alignSelf:'stretch',background:'var(--line2)'}}/>
+          <div style={{textAlign:'center'}}>
+            <div className="mono" style={{fontSize:16,fontWeight:800,color:cum==null?'var(--faint)':cum>=0?'var(--up)':'var(--down)'}}>{cum==null?'—':(cum>=0?'+':'')+cum.toFixed(1)+'%'}</div>
+            <div style={{fontSize:7.5,color:'var(--dim)',marginTop:1}}>en vivo{log.length?' · '+log.length+' ops':''}</div>
+          </div>
+        </div>);
+      })()}
+
       <div style={{textAlign:'center',padding:'12px 14px',marginBottom:8,borderRadius:10,
         background:'rgba(255,84,112,.07)',border:'1px solid rgba(255,84,112,.25)'}}>
         <div style={{fontSize:12,fontWeight:800,color:'var(--down)'}}>⚠️ Esto NO es consejo de inversión</div>
