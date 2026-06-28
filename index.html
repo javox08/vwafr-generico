@@ -1261,7 +1261,10 @@ function simulateBot(cl,fee,fundDaily,slip,sigFn,skipBand){
   for(let j=start;j<n;j++){
     const sig=sg(cl,j);
     const rv=vol(j)||0.02, lev=Math.max(0.25,Math.min(3,0.022/rv)); // objetivo ~2,2%/día de vol
-    if(sig!==pos){ // se decide al cierre de j-1 y se mantiene durante el día j
+    // CONTROL DE ROTACIÓN: solo se re-opera si cambia el SIGNO o si la posición
+    // objetivo varía lo bastante (deadband 0,08). Evita el churn de los bots de
+    // posición fraccionada (no rebalancea por micro-cambios) → menos costes.
+    if(Math.sign(sig)!==Math.sign(pos)||Math.abs(sig-pos)>=0.08){ // se decide al cierre de j-1
       if(pos!==0){trades++;if(eq>=entryEq)wins++;eq*=(1-cost*Math.abs(sz));}
       if(sig!==0){eq*=(1-cost*lev);entryEq=eq;}
       pos=sig; sz=sig*lev;
@@ -3017,6 +3020,7 @@ function BotsView({gFunding}){
   const [cl,setCl]=useState(null);
   const [openId,setOpenId]=useState(null);
   const [loadedAt,setLoadedAt]=useState(0); // frescura de datos
+  const [showGloss,setShowGloss]=useState(false); // glosario de métricas
   const evRef=React.useRef({len:0,ev:null}); // cachea el backtest de los 40 bots (1×/día)
   const longRef=React.useRef(null);
   useEffect(()=>{
@@ -3334,6 +3338,27 @@ function BotsView({gFunding}){
         })}
       </div>
 
+      {/* GLOSARIO: qué significa cada métrica */}
+      <div style={panel({marginBottom:14,padding:'12px 16px'})}>
+        <div onClick={()=>setShowGloss(s=>!s)} style={{...flx({justifyContent:'space-between'}),cursor:'pointer'}}>
+          <span className="mono" style={{fontSize:10.5,color:'var(--accent)',fontWeight:700}}>{showGloss?'▲ ocultar glosario':'▼ ¿Qué significan estas métricas?'}</span>
+        </div>
+        {showGloss&&<div style={{marginTop:10}}>
+          {[['CAGR','Rentabilidad anualizada: cuánto crece de media al año.'],
+            ['Sharpe','Rentabilidad por unidad de riesgo (volatilidad). >1 es bueno, >2 excelente.'],
+            ['Sortino','Como el Sharpe pero solo penaliza la volatilidad a la BAJA (la mala).'],
+            ['Calmar','Rentabilidad anual dividida por la peor caída. Mide retorno frente a dolor.'],
+            ['Máx. caída','Drawdown: la mayor bajada desde un máximo hasta el siguiente suelo.'],
+            ['Profit factor','Ganancias totales ÷ pérdidas totales. >1 gana dinero; >1,5 es sólido.'],
+            ['Deflated Sharpe','Probabilidad de que el Sharpe sea REAL y no suerte, tras descontar que se han probado muchas estrategias (López de Prado).'],
+            ['Fuera de muestra','Resultado en datos que la estrategia "no vio" al diseñarse. Lo que de verdad importa.']].map((g,i)=>(
+            <div key={i} style={{padding:'5px 0',borderTop:i?'1px solid #12151F':'none'}}>
+              <span style={{fontSize:10.5,fontWeight:700,color:'var(--txt)'}}>{g[0]}</span>
+              <div style={{fontSize:9,color:'var(--faint)',lineHeight:1.5,marginTop:1}}>{g[1]}</div>
+            </div>))}
+        </div>}
+      </div>
+
       <div style={{textAlign:'center',padding:'12px 14px',marginBottom:8,borderRadius:10,
         background:'rgba(255,84,112,.07)',border:'1px solid rgba(255,84,112,.25)'}}>
         <div style={{fontSize:12,fontWeight:800,color:'var(--down)'}}>⚠️ Esto NO es consejo de inversión</div>
@@ -3349,6 +3374,22 @@ function App(){
   const [updated,setUpdated]=useState(null);
   const [busy,setBusy]=useState(false);
   const [tab,setTab]=useState('BTC');
+  // ── PWA: capturar el evento de instalación para ofrecer "Instalar app" ──
+  const [installEvt,setInstallEvt]=useState(null);
+  const [iosHint,setIosHint]=useState(false);
+  useEffect(()=>{
+    const onPrompt=e=>{e.preventDefault();setInstallEvt(e);};
+    window.addEventListener('beforeinstallprompt',onPrompt);
+    const onInstalled=()=>{setInstallEvt(null);};
+    window.addEventListener('appinstalled',onInstalled);
+    // iOS no soporta beforeinstallprompt: detectar Safari iOS no instalado
+    try{const ua=navigator.userAgent||'';const isIOS=/iPhone|iPad|iPod/.test(ua);
+      const standalone=window.navigator.standalone||window.matchMedia('(display-mode: standalone)').matches;
+      if(isIOS&&!standalone&&!localStorage.getItem('vwafr_ios_hint'))setIosHint(true);
+    }catch(_){}
+    return()=>{window.removeEventListener('beforeinstallprompt',onPrompt);window.removeEventListener('appinstalled',onInstalled);};
+  },[]);
+  const doInstall=async()=>{if(!installEvt)return;installEvt.prompt();try{await installEvt.userChoice;}catch(_){}setInstallEvt(null);};
 
   const fetchAll=useCallback(async()=>{
     setBusy(true);
@@ -3425,6 +3466,22 @@ function App(){
           </button>
         )}
       </div>
+
+      {/* PWA: ofrecer instalación de la app */}
+      {installEvt&&(
+        <div onClick={doInstall} style={{...flx({justifyContent:'center',gap:8}),marginBottom:12,padding:'10px 14px',borderRadius:11,cursor:'pointer',
+          background:'rgba(31,224,160,.10)',border:'1px solid rgba(31,224,160,.35)'}}>
+          <span style={{fontSize:15}}>📲</span>
+          <span style={{fontSize:12,fontWeight:700,color:'var(--txt)'}}>Instalar la app</span>
+          <span style={{fontSize:9.5,color:'var(--faint)'}}>· acceso directo, offline y más rápida</span>
+        </div>)}
+      {iosHint&&!installEvt&&(
+        <div style={{...flx({gap:8}),marginBottom:12,padding:'10px 14px',borderRadius:11,
+          background:'rgba(110,139,255,.08)',border:'1px solid rgba(110,139,255,.25)'}}>
+          <span style={{fontSize:15,flexShrink:0}}>📲</span>
+          <span style={{fontSize:10,color:'var(--faint)',lineHeight:1.5,flex:1}}>Instálala: toca <b style={{color:'var(--txt)'}}>Compartir</b> y luego <b style={{color:'var(--txt)'}}>"Añadir a pantalla de inicio"</b>.</span>
+          <span onClick={()=>{setIosHint(false);try{localStorage.setItem('vwafr_ios_hint','1');}catch(_){}}} style={{fontSize:13,color:'var(--faint)',cursor:'pointer',padding:'0 4px'}}>✕</span>
+        </div>)}
 
       {/* NAV apartados */}
       <div style={{...flx({gap:7}),marginBottom:16}}>
