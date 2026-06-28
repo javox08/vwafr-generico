@@ -3302,6 +3302,31 @@ function BotsView({gFunding}){
               </div>
               <span className="mono" style={{fontSize:18,fontWeight:800,color:dt.pnl>=0?'var(--up)':'var(--down)'}}>{dt.pnl>=0?'+':''}{dt.pnl.toFixed(1)}%</span>
             </div>
+            {/* GRÁFICO DE LA ORDEN: precio real + avance punteado hasta el TP, con entrada/SL/TP */}
+            {(()=>{const rc=(cl||[]).slice(-30); if(rc.length<4)return null;
+              const tp=dt.closed?dt.closePrice:dt.tp, last=dt.closed?dt.closePrice:rc[rc.length-1];
+              const steps=14, proj=[]; for(let k=1;k<=steps;k++)proj.push(last+(tp-last)*(k/steps)); // el precio avanza hasta el TP
+              const series=rc.concat(dt.closed?[]:proj), nn=series.length, splitI=rc.length-1;
+              const lv=[dt.entry,dt.tp,dt.sl], allv=rc.concat(proj).concat(lv);
+              const Wc=320,Hc=140,Pd=14; let lo=Math.min(...allv),hi=Math.max(...allv);const pd=((hi-lo)||1)*0.08;lo-=pd;hi+=pd;
+              const X=i=>Pd+i/(Math.max(1,nn-1))*(Wc-2*Pd), Y=v=>Hc-Pd-((v-lo)/((hi-lo)||1))*(Hc-2*Pd);
+              const pastD='M '+rc.map((v,i)=>X(i).toFixed(1)+' '+Y(v).toFixed(1)).join(' L ');
+              const futD=dt.closed?'':'M '+series.slice(splitI).map((v,i)=>X(i+splitI).toFixed(1)+' '+Y(v).toFixed(1)).join(' L ');
+              return(
+              <svg viewBox={`0 0 ${Wc} ${Hc}`} width="100%" style={{display:'block',margin:'4px 0 10px'}}>
+                <line x1={Pd} y1={Y(dt.tp).toFixed(1)} x2={Wc-Pd} y2={Y(dt.tp).toFixed(1)} stroke="var(--up)" strokeWidth="1" strokeDasharray="4 3" opacity=".9"/>
+                <text x={Wc-Pd-1} y={(Y(dt.tp)-3).toFixed(1)} fill="var(--up)" fontSize="8.5" textAnchor="end" className="mono">TP {money(dt.tp)}</text>
+                <line x1={Pd} y1={Y(dt.entry).toFixed(1)} x2={Wc-Pd} y2={Y(dt.entry).toFixed(1)} stroke="var(--faint)" strokeWidth="1" strokeDasharray="2 3"/>
+                <text x={Pd+1} y={(Y(dt.entry)-3).toFixed(1)} fill="var(--faint)" fontSize="8" className="mono">entrada {money(dt.entry)}</text>
+                <line x1={Pd} y1={Y(dt.sl).toFixed(1)} x2={Wc-Pd} y2={Y(dt.sl).toFixed(1)} stroke="var(--down)" strokeWidth="1" strokeDasharray="4 3" opacity=".9"/>
+                <text x={Wc-Pd-1} y={(Y(dt.sl)+10).toFixed(1)} fill="var(--down)" fontSize="8.5" textAnchor="end" className="mono">SL {money(dt.sl)}</text>
+                <path d={pastD} fill="none" stroke="#F7931A" strokeWidth="2.2" strokeLinejoin="round"/>
+                {futD&&<path d={futD} fill="none" stroke={col} strokeWidth="1.7" strokeDasharray="4 3" opacity=".75"/>}
+                <line x1={X(splitI).toFixed(1)} y1={Pd} x2={X(splitI).toFixed(1)} y2={Hc-Pd} stroke="var(--line2)" strokeWidth="1" strokeDasharray="2 3"/>
+                <circle cx={X(splitI).toFixed(1)} cy={Y(dt.closed?dt.closePrice:rc[rc.length-1]).toFixed(1)} r="3.6" fill={col} stroke="var(--bg)" strokeWidth="2"/>
+                <text x={X(splitI).toFixed(1)} y={(Hc-3).toFixed(1)} fill="var(--faint)" fontSize="7.5" textAnchor="middle" className="mono">ahora</text>
+              </svg>);
+            })()}
             <div style={{height:8,borderRadius:4,background:'#0A0D14',overflow:'hidden'}}>
               <div style={{height:'100%',width:Math.max(0,Math.min(100,dt.prog))+'%',borderRadius:4,background:dt.prog>=0?'linear-gradient(90deg,var(--upDim),var(--up))':'var(--down)'}}/>
             </div>
