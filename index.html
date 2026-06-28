@@ -1192,9 +1192,10 @@ function loadSkill(route,price){
 // Trade recomendado (paper-trade estilo TradingView): se ABRE con la señal actual
 // (entrada, stop y objetivo), se guarda y va AVANZANDO con el precio (P&L en vivo).
 // Se cierra al tocar objetivo/stop y se ABRE OTRO solo cuando cambia la señal.
-function loadTrade(rec,price){
+function loadTrade(rec,price,key,logKey){
+  const K=key||'vwafr_trade_v1', LK=logKey||'vwafr_trades_log';
   const now=Date.now(); let st=null;
-  try{st=JSON.parse(localStorage.getItem('vwafr_trade_v1'));}catch(_){}
+  try{st=JSON.parse(localStorage.getItem(K));}catch(_){}
   const openable=rec.side!=='NEUTRAL';
   // señal nueva = no hay trade, o la señal cambia de lado (entonces se sustituye).
   // Un trade cerrado se mantiene visible hasta que llegue una señal de OTRO lado.
@@ -1204,19 +1205,19 @@ function loadTrade(rec,price){
     st={side:rec.side,entry:price,ts:now,closed:false,reason:rec.reason,
         sl:long?price*(1-rec.slPct):price*(1+rec.slPct),
         tp:long?price*(1+rec.tpPct):price*(1-rec.tpPct)};
-    try{localStorage.setItem('vwafr_trade_v1',JSON.stringify(st));}catch(_){}
+    try{localStorage.setItem(K,JSON.stringify(st));}catch(_){}
   }
   if(st&&!st.closed){ // ¿tocó objetivo o stop?
     const long=st.side==='LONG';
     const hitTP=long?price>=st.tp:price<=st.tp, hitSL=long?price<=st.sl:price>=st.sl;
     if(hitTP||hitSL){st.closed=true;st.result=hitTP?'TP':'SL';st.closePrice=hitTP?st.tp:st.sl;st.closeTs=now;
-      try{localStorage.setItem('vwafr_trade_v1',JSON.stringify(st));}catch(_){}
+      try{localStorage.setItem(K,JSON.stringify(st));}catch(_){}
       // TRACK RECORD: registrar el trade cerrado (una sola vez, por su ts de apertura)
-      try{const log=JSON.parse(localStorage.getItem('vwafr_trades_log')||'[]');
+      try{const log=JSON.parse(localStorage.getItem(LK)||'[]');
         if(!log.some(x=>x.ts===st.ts)){
           const pnl=(long?(st.closePrice-st.entry):(st.entry-st.closePrice))/st.entry*100;
           log.push({ts:st.ts,side:st.side,result:st.result,pnl:+pnl.toFixed(2),closeTs:now});
-          while(log.length>300)log.shift();localStorage.setItem('vwafr_trades_log',JSON.stringify(log));}
+          while(log.length>300)log.shift();localStorage.setItem(LK,JSON.stringify(log));}
       }catch(_){}}
   }
   if(!st)return {side:'NEUTRAL',empty:true};
@@ -3188,7 +3189,25 @@ function BotsView({gFunding}){
     // el trade en vivo lo manda el bot FIJADO (si existe) o, por defecto, el líder
     const driver=(pinId&&ev.rows.find(r=>r.id===pinId))||ev.rows[0];
     const top=ev.rows[0], live=botLiveTrade(cl,driver,ohlcRef.current), trade=loadTrade(live,price);
-    return {price,ev,top,driver,live,trade,yr:ev.years.toFixed(1)};
+    // ── OPERACIÓN DEFINITIVA: net direccional de TODOS los bots RENTABLES (los que
+    // aguantan fuera de muestra), ponderado por inverso de vol. Un único trade con
+    // TP/SL que avanza con el precio (clave de almacenamiento propia).
+    let elig=ev.rows.filter(r=>r.id!=='future'&&r.oos&&r.oos.cagr>0&&r.oos.sharpe>=0);
+    if(elig.length<3)elig=ev.rows.filter(r=>r.id!=='future'&&r.s.cagr>0);
+    let wsum=0,net=0,nLong=0,nShort=0;
+    for(const r of elig){const w=1/Math.max(1e-6,r.mo.sd),s=r.sig(cl,cl.length);wsum+=w;net+=w*s;if(s>0)nLong++;else if(s<0)nShort++;}
+    net=wsum?net/wsum:0;
+    const defSide=net>0.12?'LONG':net<-0.12?'SHORT':'NEUTRAL';
+    // dimensionado por ATR real (rango high-low), igual que los trades en vivo
+    const lr=[];for(let i=Math.max(1,cl.length-25);i<cl.length;i++)lr.push(Math.log(cl[i]/cl[i-1]));
+    let vol=qStd(lr)||0.03,atrFrac=null; const oh=ohlcRef.current;
+    if(oh&&oh.length>=15){let tr=0,cc=0;for(let i=oh.length-14;i<oh.length;i++){const pc=oh[i-1].c;tr+=Math.max(oh[i].h-oh[i].l,Math.abs(oh[i].h-pc),Math.abs(oh[i].l-pc));cc++;}atrFrac=cc?(tr/cc)/price:null;if(atrFrac)vol=Math.max(vol,atrFrac);}
+    const defLev=Math.max(0.25,Math.min(3,0.022/vol));
+    const defSl=atrFrac!=null?Math.min(0.12,Math.max(0.02,2*atrFrac)):Math.min(0.12,Math.max(0.02,1.4*vol*Math.sqrt(5)));
+    const defRec={side:defSide,tpPct:defSl*1.6,slPct:defSl,lev:defLev,reason:elig.length+' bots rentables · consenso ponderado',
+      conf:defSide==='NEUTRAL'?0:Math.round(50+Math.min(45,Math.abs(net)*60)),atr:atrFrac,nLong,nShort,nElig:elig.length,net};
+    const defTrade=loadTrade(defRec,price,'vwafr_trade_def','vwafr_trades_def_log');
+    return {price,ev,top,driver,live,trade,defRec,defTrade,yr:ev.years.toFixed(1)};
   },[cl,pinId]);
   if(!c)return(
     <div style={{textAlign:'center',padding:'60px 0',color:'var(--faint)'}}>
@@ -3218,17 +3237,56 @@ function BotsView({gFunding}){
 
   return(
     <div>
-      {/* INTRO: los innegociables */}
-      <div style={panel({marginBottom:14,padding:16})}>
-        <div style={{...flx({justifyContent:'space-between'}),marginBottom:8}}>
-          <span style={eyebrow}>Laboratorio de bots</span>
-          <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>40 bots + meta · {yr} años{loadedAt>0?' · ● '+new Date(loadedAt).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}):''}</span>
-        </div>
-        <div style={{fontSize:10.5,color:'var(--faint)',lineHeight:1.6}}>Lo que decide si un bot de BTC sobrevive no son las señales bonitas, sino la parte aburrida: datos limpios, costes reales, control de sobreajuste y gestión de riesgo. <b style={{color:'var(--txt)'}}>Todos los bots pasan por lo mismo</b> y compiten en el <b>mismo periodo</b>. El más rentable, arriba.</div>
-        <div style={{...flx({gap:6}),marginTop:9,padding:'8px 10px',borderRadius:9,background:'rgba(31,224,160,.07)',border:'1px solid rgba(31,224,160,.22)'}}>
-          <span style={{fontSize:12,flexShrink:0}}>⚖️</span>
-          <span style={{fontSize:9.5,color:'var(--faint)',lineHeight:1.5}}><b style={{color:'var(--up)'}}>Backtest justo:</b> los 40 bots se prueban en <b style={{color:'var(--txt)'}}>exactamente el mismo periodo</b> (mismos {yr} años, mismas fechas) con el mismo calentamiento, los mismos costes y empezando a operar el mismo día. Nadie tiene ventaja de muestra.</span>
-        </div>
+      {/* OPERACIÓN DEFINITIVA DE LOS BOTS RENTABLES (trade final con TP/SL en vivo) */}
+      {(()=>{const dt=c.defTrade, dr=c.defRec, neutral=dt.side==='NEUTRAL'||dt.empty, long=dt.side==='LONG';
+        const col=neutral?'var(--dim)':long?'var(--up)':'var(--down)';
+        return(
+        <div style={panel({marginBottom:14,padding:16,borderColor:neutral?'var(--line2)':long?'rgba(31,224,160,.4)':'rgba(255,84,112,.4)',
+          background:`radial-gradient(130% 90% at 50% 0%, ${neutral?'rgba(110,139,255,.06)':long?'rgba(31,224,160,.1)':'rgba(255,84,112,.1)'} 0%, var(--panel) 58%)`})}>
+          <div style={{...flx({justifyContent:'space-between'}),marginBottom:3}}>
+            <span style={eyebrow}>Operación de los bots rentables</span>
+            <span className="mono" style={{fontSize:8,color:'var(--faint)'}}>{loadedAt>0?'● '+new Date(loadedAt).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}):'auto'}</span>
+          </div>
+          <div style={{fontSize:9,color:'var(--faint)',marginBottom:11}}>trade FINAL combinando los {dr.nElig} bots que aguantan fuera de muestra (consenso ponderado por riesgo) · TP/SL que avanza con el precio</div>
+          {neutral?(
+            <div style={{textAlign:'center',padding:'12px 0'}}>
+              <div style={{fontSize:22,fontWeight:800,color:'var(--dim)'}}>⏸ SIN OPERACIÓN</div>
+              <div style={{fontSize:10.5,color:'var(--faint)',marginTop:4}}>los bots rentables no tienen consenso claro ahora ({dr.nLong}▲ / {dr.nShort}▼)</div>
+            </div>
+          ):(<>
+            <div style={{...flx({justifyContent:'space-between'}),marginBottom:10}}>
+              <div style={{...flx({gap:8})}}>
+                <span style={{fontSize:22,fontWeight:800,color:col}}>{long?'▲ LONG':'▼ SHORT'}</span>
+                {dt.closed&&<span className="mono" style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:10,background:dt.result==='TP'?'rgba(31,224,160,.15)':'rgba(255,84,112,.15)',color:dt.result==='TP'?'var(--up)':'var(--down)'}}>{dt.result==='TP'?'✓ objetivo':'✗ stop'}</span>}
+                {dt.stale&&!dt.closed&&<span className="mono" style={{fontSize:9,color:'#F3BA2F'}}>consenso cambió</span>}
+              </div>
+              <span className="mono" style={{fontSize:18,fontWeight:800,color:dt.pnl>=0?'var(--up)':'var(--down)'}}>{dt.pnl>=0?'+':''}{dt.pnl.toFixed(1)}%</span>
+            </div>
+            <div style={{height:8,borderRadius:4,background:'#0A0D14',overflow:'hidden'}}>
+              <div style={{height:'100%',width:Math.max(0,Math.min(100,dt.prog))+'%',borderRadius:4,background:dt.prog>=0?'linear-gradient(90deg,var(--upDim),var(--up))':'var(--down)'}}/>
+            </div>
+            <div style={{...flx({justifyContent:'space-between'}),marginTop:4,fontSize:8.5,color:'var(--faint)'}} className="mono">
+              <span>entrada {money(dt.entry)}</span><span>{dt.prog.toFixed(0)}% al objetivo</span><span>{dt.days}d en trade</span>
+            </div>
+            <div style={{...flx({justifyContent:'space-between'}),marginTop:7,fontSize:10.5,fontWeight:700}} className="mono">
+              <span style={{color:'var(--up)'}}>TP {money(dt.tp)}</span><span style={{color:'var(--down)'}}>SL {money(dt.sl)}</span>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:12}}>
+              {[['Apoyo',dr.nLong+'▲ / '+dr.nShort+'▼',col],['Apalancamiento',dr.lev.toFixed(1)+'×',dr.lev<=1.2?'var(--up)':'#F3BA2F'],['Confianza',dr.conf+'%',dr.conf>=60?'var(--up)':'#F3BA2F']].map((m,i)=>(
+                <div key={i} style={{background:'#0A0D14',borderRadius:8,padding:'8px',textAlign:'center'}}>
+                  <div className="mono" style={{fontSize:12,fontWeight:800,color:m[2]}}>{m[1]}</div>
+                  <div style={{fontSize:8,color:'var(--dim)'}}>{m[0]}</div>
+                </div>))}
+            </div>
+            <div style={{fontSize:9,color:'var(--faint)',marginTop:10,lineHeight:1.5}}>{dr.nLong} de {dr.nElig} bots rentables en largo y {dr.nShort} en corto. {dr.atr!=null?'Stop por ATR ('+(dr.atr*100).toFixed(1)+'%/día). ':''}Avanza con el precio y se cierra al tocar TP o SL; se abre otra cuando cambia el consenso.</div>
+          </>)}
+        </div>);
+      })()}
+
+      {/* nota: backtest justo */}
+      <div style={{...flx({gap:6}),marginBottom:14,padding:'8px 12px',borderRadius:9,background:'rgba(31,224,160,.06)',border:'1px solid rgba(31,224,160,.2)'}}>
+        <span style={{fontSize:11,flexShrink:0}}>⚖️</span>
+        <span style={{fontSize:9,color:'var(--faint)',lineHeight:1.5}}><b style={{color:'var(--up)'}}>Backtest justo:</b> los 40 bots se prueban en el <b style={{color:'var(--txt)'}}>mismo periodo</b> ({yr} años, mismas fechas, mismo calentamiento y costes). El más rentable, arriba.</span>
       </div>
 
       {/* CONSENSO DE LOS BOTS RENTABLES · qué opinan los que aguantan fuera de muestra */}
