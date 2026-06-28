@@ -1836,6 +1836,39 @@ function chartPatterns(cl){
   }
   return out;
 }
+// Dibujos ESQUEMÁTICOS de cada figura (viewBox 270×150): {d:trazo, neck:nivel del
+// cuello, dir:+1/-1, tgt:nivel objetivo, key:[[x,y,etiqueta]] pivotes}. Sirve para el
+// visor: el usuario ve "cómo es" la figura idealizada y, al lado, el BTC real.
+const FIG_ART={
+  'Doble techo':{d:'M10,100 L55,30 L105,80 L155,30 L210,80 L242,128',neck:80,dir:-1,tgt:128,key:[[55,30,'1'],[155,30,'2']]},
+  'Doble suelo':{d:'M10,50 L55,118 L105,68 L155,118 L210,68 L242,20',neck:68,dir:1,tgt:20,key:[[55,118,'1'],[155,118,'2']]},
+  'Triple techo':{d:'M10,95 L45,32 L80,78 L120,32 L160,78 L195,32 L232,124',neck:78,dir:-1,tgt:124,key:[[45,32,'1'],[120,32,'2'],[195,32,'3']]},
+  'Triple suelo':{d:'M10,55 L45,116 L80,66 L120,116 L160,66 L195,116 L232,22',neck:66,dir:1,tgt:22,key:[[45,116,'1'],[120,116,'2'],[195,116,'3']]},
+  'Hombro-cabeza-hombro':{d:'M10,92 L48,55 L82,82 L125,28 L168,82 L205,55 L242,128',neck:82,dir:-1,tgt:128,key:[[48,55,'H'],[125,28,'C'],[205,55,'H']]},
+  'HCH invertido':{d:'M10,52 L48,90 L82,62 L125,118 L168,62 L205,90 L242,20',neck:62,dir:1,tgt:20,key:[[48,90,'h'],[125,118,'c'],[205,90,'h']]},
+  'Triángulo ascendente':{d:'M10,100 L50,38 L90,72 L130,38 L168,58 L205,38 L242,16',neck:38,dir:1,tgt:16,key:[[50,38,''],[130,38,''],[205,38,'']],trend:'M14,112 L235,40'},
+  'Triángulo descendente':{d:'M10,42 L50,104 L90,70 L130,104 L168,84 L205,104 L242,126',neck:104,dir:-1,tgt:126,key:[[50,104,''],[130,104,''],[205,104,'']],trend:'M14,30 L235,102'},
+  'Ruptura de rango ↑':{d:'M10,55 L40,42 L70,68 L100,42 L130,68 L160,42 L190,68 L220,42 L245,14',neck:42,dir:1,tgt:14,box:[28,42,210,26]},
+  'Ruptura de rango ↓':{d:'M10,55 L40,42 L70,68 L100,42 L130,68 L160,42 L190,68 L220,68 L245,110',neck:68,dir:-1,tgt:110,box:[28,42,210,26]},
+};
+// Dibujo SVG de una figura idealizada (para el visor que se abre al tocarla).
+function PatternArt({t}){
+  const a=FIG_ART[t]; if(!a)return null;
+  const up=a.dir>0, col=up?'#1FE0A0':'#FF5470';
+  return(
+    <svg viewBox="0 0 270 150" width="100%" style={{display:'block'}}>
+      {a.box&&<rect x={a.box[0]} y={a.box[1]} width={a.box[2]} height={a.box[3]} fill="rgba(110,139,255,.06)" stroke="rgba(110,139,255,.3)" strokeWidth="1" strokeDasharray="3 3" rx="3"/>}
+      {a.trend&&<path d={a.trend} fill="none" stroke="rgba(138,160,255,.55)" strokeWidth="1.4" strokeDasharray="4 3"/>}
+      <line x1="6" y1={a.neck} x2="264" y2={a.neck} stroke="#7C8699" strokeWidth="1.1" strokeDasharray="5 4" opacity=".75"/>
+      <text x="8" y={a.neck-4} fill="#7C8699" fontSize="8" className="mono">cuello</text>
+      <line x1="6" y1={a.tgt} x2="264" y2={a.tgt} stroke={col} strokeWidth="1.1" strokeDasharray="5 4" opacity=".75"/>
+      <text x="262" y={a.tgt+(up?12:-4)} fill={col} fontSize="8" textAnchor="end" className="mono">objetivo</text>
+      <path d={a.d} fill="none" stroke="#F7931A" strokeWidth="2.6" strokeLinejoin="round" strokeLinecap="round"/>
+      {(a.key||[]).map((k,i)=>k[2]?<g key={i}><circle cx={k[0]} cy={k[1]} r="4.5" fill={col}/><text x={k[0]} y={k[1]-8} fill="#E8ECF4" fontSize="8.5" textAnchor="middle" fontWeight="700">{k[2]}</text></g>:<circle key={i} cx={k[0]} cy={k[1]} r="3" fill={col} opacity=".8"/>)}
+      <polygon points={up?'242,6 236,18 248,18':'242,144 236,132 248,132'} fill={col}/>
+    </svg>
+  );
+}
 // Patrones de VELAS japonesas (estilo "patrones" de Binance), backtesteados sobre
 // el histórico real con su perfil de retorno a los días 1…30 (alimentan el Monte Carlo).
 function candlePatterns(oh){
@@ -1947,6 +1980,7 @@ function QuantView({gFunding}){
   const [loadedAt,setLoadedAt]=useState(0); // frescura de datos
   const [showBias,setShowBias]=useState(false);
   const [tgt,setTgt]=useState(''); // calculadora de probabilidad de tocar un precio
+  const [figSel,setFigSel]=useState(null); // visor de figura gráfica (modal)
   const longRef=React.useRef(null); // caché del histórico largo (no se re-pagina en cada refresco)
   const macroRef=React.useRef(null); // caché del ciclo económico (dato anual)
   useEffect(()=>{
@@ -2391,7 +2425,7 @@ function QuantView({gFunding}){
           <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>objetivo + fiabilidad</span>
         </div>
         {c.chartPats.length?c.chartPats.map((pt,i)=>(
-          <div key={i} style={{...flx({gap:9}),padding:'10px 0',borderTop:i?'1px solid #12151F':'none'}}>
+          <div key={i} onClick={()=>setFigSel(pt)} style={{...flx({gap:9}),padding:'10px 0',borderTop:i?'1px solid #12151F':'none',cursor:'pointer'}}>
             <span style={{fontSize:16,color:pt.sig>0?'var(--up)':pt.sig<0?'var(--down)':'var(--faint)'}}>{pt.sig>0?'▲':pt.sig<0?'▼':'◆'}</span>
             <div style={{flex:1,minWidth:0}}>
               <div style={{...flx({gap:6})}}>
@@ -2766,6 +2800,50 @@ function QuantView({gFunding}){
         <div style={{fontSize:12,fontWeight:800,color:'var(--down)'}}>⚠️ Esto NO es consejo de inversión</div>
         <div style={{fontSize:9.5,color:'var(--faint)',marginTop:4,lineHeight:1.5}}>El "trade recomendado" es una simulación automática con fines educativos. Opera bajo tu responsabilidad; puedes perder tu capital.</div>
       </div>
+
+      {/* VISOR DE FIGURA (modal estilo foto de perfil: toca fuera o la ✕ para cerrar) */}
+      {figSel&&(()=>{const pt=figSel, up=pt.sig>0;
+        const rc=(c.closes||[]).slice(-70);
+        const allv=rc.concat(Number.isFinite(pt.target)?[pt.target]:[]);
+        let lo=Math.min(...allv),hi=Math.max(...allv);const pad=((hi-lo)||1)*0.08;lo-=pad;hi+=pad;
+        const W=270,H=120,P=8,nn=Math.max(2,rc.length);
+        const X=i=>P+i/(nn-1)*(W-2*P), Y=v=>H-P-((v-lo)/((hi-lo)||1))*(H-2*P);
+        const dpath=rc.length?'M '+rc.map((v,i)=>X(i).toFixed(1)+' '+Y(v).toFixed(1)).join(' L '):'';
+        const col=up?'var(--up)':'var(--down)';
+        return(
+        <div onClick={()=>setFigSel(null)} style={{position:'fixed',inset:0,zIndex:300,background:'rgba(3,5,9,.88)',
+          backdropFilter:'blur(5px)',WebkitBackdropFilter:'blur(5px)',display:'flex',alignItems:'center',justifyContent:'center',padding:14}}>
+          <div onClick={e=>e.stopPropagation()} style={{...panel({padding:16}),width:'100%',maxWidth:400,maxHeight:'92vh',overflowY:'auto'}}>
+            <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
+              <span style={{fontSize:15,fontWeight:800,color:col}}>{up?'▲':'▼'} {pt.t}</span>
+              <span onClick={()=>setFigSel(null)} style={{fontSize:20,color:'var(--faint)',cursor:'pointer',lineHeight:1,padding:'0 4px'}}>✕</span>
+            </div>
+            <div style={{...flx({gap:6}),marginBottom:10}}>
+              <span className="mono" style={{fontSize:8,fontWeight:700,padding:'1px 6px',borderRadius:7,color:pt.forming?'#F3BA2F':'var(--up)',background:'rgba(255,255,255,.05)'}}>{pt.forming?'⏳ en formación':'✓ confirmada'}</span>
+              <span style={{fontSize:9.5,color:'var(--faint)'}}>{pt.d}</span>
+            </div>
+            <div style={{fontSize:8.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.7,fontWeight:700,marginBottom:5}}>Cómo es la figura</div>
+            <div style={{background:'#0A0D14',borderRadius:10,padding:'10px 8px'}}><PatternArt t={pt.t}/></div>
+            <div style={{fontSize:8.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.7,fontWeight:700,margin:'14px 0 5px'}}>BTC ahora · últimos 70 días</div>
+            <div style={{background:'#0A0D14',borderRadius:10,padding:'10px 8px'}}>
+              <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{display:'block'}}>
+                {Number.isFinite(pt.target)&&<g><line x1="0" y1={Y(pt.target).toFixed(1)} x2={W} y2={Y(pt.target).toFixed(1)} stroke={col} strokeWidth="1.1" strokeDasharray="5 4" opacity=".8"/>
+                  <text x={W-2} y={(Y(pt.target)+(up?-3:11)).toFixed(1)} fill={col} fontSize="8" textAnchor="end" className="mono">objetivo {money(pt.target)}</text></g>}
+                <path d={dpath} fill="none" stroke="#F7931A" strokeWidth="1.8" strokeLinejoin="round"/>
+                {rc.length>0&&<circle cx={X(rc.length-1).toFixed(1)} cy={Y(rc[rc.length-1]).toFixed(1)} r="3.2" fill="#F7931A" stroke="var(--bg)" strokeWidth="2"/>}
+              </svg>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:12}}>
+              {[['Objetivo',money(pt.target),col],['Acierto',pt.win!=null?pt.win+'%'+(pt.ci!=null?' ±'+pt.ci:''):'—',pt.win>=60?'var(--up)':'#F3BA2F'],['Casos',pt.st?'n='+pt.st.n:'—','var(--txt)']].map((m,i)=>(
+                <div key={i} style={{background:'#0A0D14',borderRadius:8,padding:'8px 4px',textAlign:'center'}}>
+                  <div className="mono" style={{fontSize:11,fontWeight:800,color:m[2]}}>{m[1]}</div>
+                  <div style={{fontSize:7.5,color:'var(--dim)',marginTop:2}}>{m[0]}</div>
+                </div>))}
+            </div>
+            <p style={{fontSize:8.5,color:'var(--faint)',marginTop:10,lineHeight:1.5}}>Naranja = precio real de BTC ahora. La línea de puntos es el <b>objetivo proyectado</b> por amplitud de la figura. {pt.forming?'En formación: aún no ha roto el cuello.':'Confirmada: ya rompió e inclina el cono.'} Toca fuera para cerrar.</p>
+          </div>
+        </div>);
+      })()}
     </div>
   );
 }
