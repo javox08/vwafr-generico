@@ -1588,9 +1588,12 @@ function tgMessage(){
   if(Number.isFinite(ins.tomPct))pool.push('📈 BTC mañana: sesgo '+(ins.tomPct>=0?'+':'')+ins.tomPct+'% según el modelo.');
   if(ins.regime)pool.push('🧭 Régimen actual de BTC: '+ins.regime+'.');
   if(bot.side&&bot.side!=='NEUTRAL')pool.push('🤖 Operación de los bots rentables: '+bot.side+' ('+bot.nLong+'▲/'+bot.nShort+'▼), confianza '+bot.conf+'%.');
+  if(bot.side&&bot.side!=='NEUTRAL'&&Number.isFinite(bot.tp)&&Number.isFinite(bot.sl))
+    pool.push('🤖 Operación bots: '+bot.side+' · entrada '+m(bot.entry)+' · 🎯 TP '+m(bot.tp)+' · 🛑 SL '+m(bot.sl)+'.');
+  if(Number.isFinite(bot.megaCagr))pool.push('🤖 El conjunto de bots rentables rinde '+(bot.megaCagr>=0?'+':'')+bot.megaCagr+'%/año en backtest.');
   if(!pool.length)return null;
   const tail=['','',' ⚡',' 🟠',' #BTC',' 📲'][Math.floor(Math.random()*6)];
-  return pool[Math.floor(Math.random()*pool.length)]+tail;
+  return pool[Math.floor(Math.random()*pool.length)]+tail+'\n\n⚠️ No es consejo financiero.';
 }
 // Calendario económico (eventos de alto impacto, previstos). Filtra a futuro.
 const ECON=[
@@ -3246,8 +3249,12 @@ function BotsView({gFunding}){
     const defRec={side:defSide,tpPct:defSl*1.6,slPct:defSl,lev:defLev,reason:elig.length+' bots rentables · consenso ponderado',
       conf:defSide==='NEUTRAL'?0:Math.round(50+Math.min(45,Math.abs(net)*60)),atr:atrFrac,nLong,nShort,nElig:elig.length,net};
     const defTrade=loadTrade(defRec,price,'vwafr_trade_def','vwafr_trades_def_log');
-    try{localStorage.setItem('vwafr_insight_bots',JSON.stringify({side:defSide,nLong,nShort,conf:defRec.conf,leader:top.name,leaderCagr:Math.round(top.s.cagr),t:Date.now()}));}catch(_){}
-    return {price,ev,top,driver,live,trade,defRec,defTrade,yr:ev.years.toFixed(1)};
+    // RENTABILIDAD del conjunto: la de la cartera risk-parity si existe; si no, media
+    // de los bots rentables ponderada por inverso de vol (siempre muestra un número).
+    const defCagr=ev.portfolio?ev.portfolio.cagr:(elig.length?
+      elig.reduce((a,r)=>a+r.s.cagr/Math.max(1e-6,r.mo.sd),0)/elig.reduce((a,r)=>a+1/Math.max(1e-6,r.mo.sd),0):null);
+    try{localStorage.setItem('vwafr_insight_bots',JSON.stringify({side:defSide,nLong,nShort,conf:defRec.conf,leader:top.name,leaderCagr:Math.round(top.s.cagr),megaCagr:defCagr!=null?Math.round(defCagr):null,entry:defTrade.entry,tp:defTrade.tp,sl:defTrade.sl,t:Date.now()}));}catch(_){}
+    return {price,ev,top,driver,live,trade,defRec,defTrade,defCagr,yr:ev.years.toFixed(1)};
   },[cl,pinId]);
   if(!c)return(
     <div style={{textAlign:'center',padding:'60px 0',color:'var(--faint)'}}>
@@ -3287,7 +3294,15 @@ function BotsView({gFunding}){
             <span style={eyebrow}>Operación de los bots rentables</span>
             <span className="mono" style={{fontSize:8,color:'var(--faint)'}}>{loadedAt>0?'● '+new Date(loadedAt).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}):'auto'}</span>
           </div>
-          <div style={{fontSize:9,color:'var(--faint)',marginBottom:11}}>trade FINAL combinando los {dr.nElig} bots que aguantan fuera de muestra (consenso ponderado por riesgo) · TP/SL que avanza con el precio</div>
+          <div style={{fontSize:9,color:'var(--faint)',marginBottom:9}}>trade FINAL combinando los {dr.nElig} bots que aguantan fuera de muestra (consenso ponderado por riesgo) · TP/SL que avanza con el precio</div>
+          {/* RENTABILIDAD del conjunto de bots rentables (backtest) */}
+          {(()=>{const cagr=c.defCagr;
+            return(
+            <div style={{...flx({justifyContent:'space-between'}),marginBottom:11,padding:'9px 12px',borderRadius:9,background:'rgba(31,224,160,.07)',border:'1px solid rgba(31,224,160,.22)'}}>
+              <span style={{fontSize:9.5,color:'var(--faint)'}}>Rentabilidad de los <b style={{color:'var(--txt)'}}>{dr.nElig} bots rentables</b> (backtest)</span>
+              <span className="mono" style={{fontSize:14,fontWeight:800,color:cagr==null?'var(--faint)':cagr>=0?'var(--up)':'var(--down)'}}>{cagr==null?'—':(cagr>=0?'+':'')+cagr.toFixed(0)+'%/año'}</span>
+            </div>);
+          })()}
           {neutral?(
             <div style={{textAlign:'center',padding:'12px 0'}}>
               <div style={{fontSize:22,fontWeight:800,color:'var(--dim)'}}>⏸ SIN OPERACIÓN</div>
@@ -3672,10 +3687,10 @@ function BotsView({gFunding}){
       </div>
 
       {/* NUMÉRICO CHICO: rentabilidad del mega bot (operación de arriba del todo) */}
-      {(()=>{const pf=ev.portfolio;
+      {(()=>{
         let log=[];try{log=JSON.parse(localStorage.getItem('vwafr_trades_def_log')||'[]');}catch(_){}
         const cum=log.length?(log.reduce((a,x)=>a*(1+x.pnl/100),1)-1)*100:null;
-        const cagr=pf?pf.cagr:null;
+        const cagr=c.defCagr;
         return(
         <div style={{...flx({justifyContent:'center',gap:18}),marginBottom:10,padding:'10px 14px',borderRadius:10,
           background:'#0A0D14',border:'1px solid var(--line2)'}}>

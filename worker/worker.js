@@ -81,13 +81,25 @@ async function buildMessage() {
     const trendUp = sma(50) > sma(200), mom = price / cl[n - 22] - 1;
     const side = (trendUp && mom > 0) ? 'LONG' : (!trendUp && mom < 0) ? 'SHORT' : null;
 
+    // Entrada / TP / SL por volatilidad (desviación de los retornos recientes).
+    let entry = null, tp = null, sl = null;
+    if (side) {
+      let mu = 0; for (const r of recent) mu += r; mu /= recent.length;
+      let vv = 0; for (const r of recent) vv += (r - mu) * (r - mu); vv = Math.sqrt(vv / recent.length);
+      const slPct = Math.min(0.12, Math.max(0.02, 1.6 * vv * Math.sqrt(5))), tpPct = slPct * 1.6;
+      entry = price;
+      tp = side === 'LONG' ? price * (1 + tpPct) : price * (1 - tpPct);
+      sl = side === 'LONG' ? price * (1 - slPct) : price * (1 + slPct);
+    }
+
     const pool = [
       '🔮 Nuevo cono BTC: posibilidad del ' + touchPct + '% de tocar ' + money(lvl) + ' en 30 días.',
       '📊 BTC ' + money(price) + ' · ' + probUp + '% de probabilidad de subir a 30 días.',
       '📈 BTC ' + money(price) + ' · sesgo ' + (mom >= 0 ? '+' : '') + (mom * 100).toFixed(1) + '% (momentum 21d).'
     ];
     if (side) pool.push('🤖 Señal de los bots: ' + side + ' (tendencia ' + (trendUp ? 'alcista' : 'bajista') + ').');
+    if (side) pool.push('🤖 Operación bots: ' + side + ' · entrada ' + money(entry) + ' · 🎯 TP ' + money(tp) + ' · 🛑 SL ' + money(sl) + '.');
     const tail = ['', '', ' ⚡', ' 🟠', ' #BTC'][(Math.random() * 5) | 0];
-    return pool[(Math.random() * pool.length) | 0] + tail;
+    return pool[(Math.random() * pool.length) | 0] + tail + '\n\n⚠️ No es consejo financiero.';
   } catch (e) { return null; }
 }
