@@ -224,7 +224,7 @@ async function analyze(env) {
 
     // ESTRATEGIA elegida (por defecto, el BOT APROBADO) + consenso para contexto
     const con = botConsensus(cl);
-    const stratName = (env && env.BITUNIX_STRATEGY) || 'momaccel';
+    const stratName = (env && env.BITUNIX_STRATEGY) || 'robmom';
     const stratSig = stratName === 'robmom' ? robmomSig : stratName === 'consensus' ? null : momaccelSig;
     const botName = stratName === 'robmom' ? 'Momentum robusto (multi-horizonte)' : stratName === 'consensus' ? 'Consenso de bots' : 'Aceleración de momentum';
     const raw = stratSig ? stratSig(cl, n) : (con.side === 'LONG' ? 1 : con.side === 'SHORT' ? -1 : 0);
@@ -304,8 +304,11 @@ function detectFigure(cl) {
   const rangeDn = j => { const d = minN(j, 25); return (cl[j] < d && cl[j - 1] >= d) ? { target: cl[j] * 0.9 } : null; };
   const dTop = j => { const h = recent(PH, j, 2); if (h.length < 2 || !near(cl[h[0]], cl[h[1]], 0.05)) return null; const v = Math.min(cl[h[0]], cl[h[1]]), top = (cl[h[0]] + cl[h[1]]) / 2; if ((top - v) / v < 0.04) return null; return (cl[j] < v && cl[j - 1] >= v) ? { target: v - (top - v) } : null; };
   const dBot = j => { const l = recent(PL, j, 2); if (l.length < 2 || !near(cl[l[0]], cl[l[1]], 0.05)) return null; const v = Math.max(cl[l[0]], cl[l[1]]), bot = (cl[l[0]] + cl[l[1]]) / 2; if ((v - bot) / bot < 0.04) return null; return (cl[j] > v && cl[j - 1] <= v) ? { target: v + (v - bot) } : null; };
-  const cands = [['Ruptura de rango ↑', 1, rangeUp], ['Ruptura de rango ↓', -1, rangeDn], ['Doble techo', -1, dTop], ['Doble suelo', 1, dBot]];
-  for (const [name, dir, fn] of cands) {
+  const cands = [
+    { name: 'Ruptura de rango ↑', dir: 1, fn: rangeUp }, { name: 'Ruptura de rango ↓', dir: -1, fn: rangeDn },
+    { name: 'Doble techo', dir: -1, fn: dTop }, { name: 'Doble suelo', dir: 1, fn: dBot }
+  ];
+  for (const { name, dir, fn } of cands) {
     let trig = null; for (let j = n - 1; j >= n - R; j--) { const r = fn(j); if (r) { trig = r; break; } }
     if (!trig) continue;
     let k = 0, win = 0; for (let j = 60; j < n - H; j++) { if (fn(j)) { k++; if (((cl[j + H] - cl[j]) / cl[j]) * dir > 0) win++; } }

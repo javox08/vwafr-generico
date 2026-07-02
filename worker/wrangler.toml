@@ -21,7 +21,7 @@ BITUNIX_SYMBOL = "BTCUSDT"
 BITUNIX_QTY = "0.001"
 # Estrategia que se tradea y anuncia: "momaccel" (Aceleración de momentum, el bot
 # aprobado 8/8), "robmom" (Momentum robusto) o "consensus" (consenso de bots).
-BITUNIX_STRATEGY = "momaccel"
+BITUNIX_STRATEGY = "robmom"
 
 # KV para detectar cambios de ruta y avisar solo cuando cambia (créalo y pega el id):
 #   npx wrangler kv namespace create VWAFR_KV
