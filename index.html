@@ -2252,7 +2252,7 @@ function QuantView({gFunding}){
     const cl0=(x,lim)=>Math.max(-lim,Math.min(lim,x));
     // ── ORO: correlación BTC–oro (PAXG) y sesgo pequeño si van de la mano ──
     const corrG=(q.gold&&q.gold.length>10)?pearson(dret(cl),dret(q.gold)):null;
-    const goldB=(corrG!=null&&q.gold&&q.gold.length>31)?cl0(corrG*(q.gold[q.gold.length-1]/q.gold[q.gold.length-31]-1)*0.01,0.0004):null;
+    const goldB=(corrG!=null&&q.gold&&q.gold.length>31)?cl0(corrG*(q.gold[q.gold.length-1]/q.gold[q.gold.length-31]-1)*0.015,0.0006):null;
     // ── LIQUIDEZ (stablecoins) con RETARDO: la liquidez cripto va meses por delante
     // del precio. Se busca el retardo (0–120d) con mayor correlación entre el cambio
     // 30d de la liquidez y el retorno 30d de BTC, y se usa la liquidez de hace ese
@@ -2271,7 +2271,7 @@ function QuantView({gFunding}){
       const li=L.length-1-best.lag, now30=li>30?L[li]/L[li-30]-1:null;
       if(now30!=null)liq={lag:best.lag,corr:best.corr,chg:now30};
     }
-    const liqB=liq?cl0(liq.chg*Math.max(0,liq.corr)*0.02,0.0006):null;
+    const liqB=liq?cl0(liq.chg*Math.max(0,liq.corr)*0.03,0.0010):null;
     // ── FLUJO SPOT (taker buy/sell) que guarda la vista de Funding ──
     let flow=null;try{const ff=JSON.parse(localStorage.getItem('vwafr_flow')||'null');if(ff&&Date.now()-ff.t<3*3600e3)flow=ff;}catch(_){}
     const flowB=(flow&&Number.isFinite(flow.takerBuy))?cl0((flow.takerBuy-0.5)*2*0.003,0.0008):null;
@@ -2356,12 +2356,14 @@ function QuantView({gFunding}){
     biases[0].v=techDaily;
     if(cumPath)biases[0].why+=' · perfil día a día (1-30d)';
     // CONFIANZA por señal (peso) — IC online para las de precio, prior para las externas
-    for(const b of biases)b.w=SIGW[b.k]!=null?SIGW[b.k]:0.5;
+    for(const b of biases)b.w=SIGW[b.k]!=null?SIGW[b.k]:(b.k.startsWith('Liquidez')?0.65:b.k.startsWith('Oro')?0.6:0.5);
     // COMBINACIÓN POR BUCKETS: cada bucket = media ponderada por confianza de sus
     // señales (anti doble-conteo), atenuada por la confianza media del bucket; los
     // buckets (≈ortogonales) se suman. Los Patrones van aparte (perfil día a día).
     const bk={};
-    const bucketOf=k=>BUCKET[k]||(k.startsWith('Liquidez')?'macro':k.startsWith('Oro')?'macro':k.startsWith('Flujo spot')?'posicion':null);
+    // liquidez y oro llevan BUCKET PROPIO: se SUMAN al total del cono (no se diluyen
+    // en la media del bucket macro) → efecto directo en la ruta de 30 días
+    const bucketOf=k=>BUCKET[k]||(k.startsWith('Liquidez')?'liquidez':k.startsWith('Oro')?'oro':k.startsWith('Flujo spot')?'posicion':null);
     for(const b of biases){const g=bucketOf(b.k); if(!g)continue; (bk[g]||(bk[g]=[])).push(b);}
     let constOther=0;
     for(const g in bk){const arr=bk[g]; let ws=0,vs=0;
