@@ -4832,6 +4832,23 @@ function App(){
                 <div style={{fontSize:7.5,color:'var(--dim)',marginTop:2}}>{m[0]}</div>
               </div>))}
           </div>
+          {(()=>{ // REPARTO DEL EMPUJE: % futuros (longs/shorts) vs % spot (compras/ventas)
+            const pl2=(Number.isFinite(flow.lsr)&&flow.lsr>0)?flow.lsr/(1+flow.lsr):null;
+            if(pl2==null)return null;
+            const sSpot=Math.abs(tb-0.5), sFut=Math.abs(pl2-0.5);
+            if((sSpot+sFut)<=0.001)return null;
+            const pctS=sSpot/(sSpot+sFut)*100, pctF=100-pctS;
+            return(<div style={{marginTop:8,display:'grid',gridTemplateColumns:'1fr 1fr',gap:7}}>
+              <div style={{background:'#0A0D14',borderRadius:8,padding:'8px 9px',textAlign:'center'}}>
+                <div className="mono" style={{fontSize:13,fontWeight:800,color:pl2>=0.5?'var(--up)':'var(--down)'}}>{pctF.toFixed(0)}%</div>
+                <div style={{fontSize:7.5,color:'var(--dim)',marginTop:2,lineHeight:1.4}}>FUTUROS · {pl2>=0.5?'empujan los LONGS':'empujan los SHORTS'} ({(pl2*100).toFixed(0)}% long)</div>
+              </div>
+              <div style={{background:'#0A0D14',borderRadius:8,padding:'8px 9px',textAlign:'center'}}>
+                <div className="mono" style={{fontSize:13,fontWeight:800,color:tb>=0.5?'var(--up)':'var(--down)'}}>{pctS.toFixed(0)}%</div>
+                <div style={{fontSize:7.5,color:'var(--dim)',marginTop:2,lineHeight:1.4}}>SPOT · {tb>=0.5?'empujan las COMPRAS':'empujan las VENTAS'} ({(tb*100).toFixed(0)}% compras)</div>
+              </div>
+              <div style={{gridColumn:'1 / -1',fontSize:8,color:'var(--faint)',lineHeight:1.4}}>Reparto estimado del empuje: cuánto se desvía cada mercado de su equilibrio (50/50). Más % = ese mercado manda ahora.</div>
+            </div>);})()}
           {Number.isFinite(flow.lsr)&&flow.lsr>0&&(()=>{const pl=flow.lsr/(1+flow.lsr),ps=1-pl;
             const plM=(Number.isFinite(flow.lsrPos)&&flow.lsrPos>0)?flow.lsrPos/(1+flow.lsrPos):null;
             const z=Number.isFinite(flow.lsrZ)?flow.lsrZ:null;
