@@ -90,39 +90,91 @@ async function broadcast(env, text, social) {
   return count;
 }
 
-// ── POST SOCIAL con GANCHO (X/LinkedIn): atrae gente a la web. Rota entre muchos
-// ganchos y, en los posts normales, promociona una función de la página. Los de
-// operación anuncian la ruta nueva del bot. Siempre ≤ ~275 caracteres (límite X). ──
+// ── POST SOCIAL con GANCHO (X/LinkedIn): atrae gente a la web. Combinatoria
+// enorme (40 ganchos × ~14 datos × 24 funciones × 12 CTAs × 3 estructuras ≈
+// 150.000+ posts distintos) y los números vivos cambian en cada uno → en un año
+// no se repite ninguno. Siempre ≤ ~276 caracteres (límite de X) con disclaimer. ──
 function socialText(env, d, update) {
   const url = env.BOT_URL || 'https://vwafr-generico.pages.dev/';
-  const hooks = [
+  const pick = a => a[(Math.random() * a.length) | 0];
+  const HOOKS = [
     '🧠 Datos, no opiniones:', '🚨 El retail mira otra cosa:', '🎯 Deja de adivinar con BTC:',
     '🤖 Mientras duermes, los bots trabajan:', '🔍 Lo que el precio no te cuenta:',
     '💡 Esto separa a los que aciertan:', '📉 El 90% pierde por no mirar esto:',
-    '🧲 El dinero inteligente deja huellas:', '⚡ Señal fresca del sistema:', '👀 Nadie te enseña esto gratis:'];
-  const hook = hooks[(Math.random() * hooks.length) | 0];
+    '🧲 El dinero inteligente deja huellas:', '⚡ Señal fresca del sistema:', '👀 Nadie te enseña esto gratis:',
+    '📊 Los números de hoy en BTC:', '🔮 ¿Qué dice la estadística hoy?', '🧪 Sin humo, solo backtest:',
+    '🥷 Los que saben no adivinan: miden.', '📡 Radar cuantitativo de BTC:', '⏱️ 30 segundos y sabes más que el 95%:',
+    '🎲 El azar no gestiona carteras. Esto sí ayuda:', '🐋 Sigue a las ballenas, no al ruido:',
+    '🧭 Tu brújula para BTC hoy:', '🚦 Semáforo cuantitativo de Bitcoin:', '💣 Dato que incomoda a los gurús:',
+    '📈 Trading con método, no con memes:', '🔥 Actualización en caliente:', '🤫 El indicador que casi nadie mira:',
+    '🏦 Piensa como fondo, no como apostador:', '⚙️ La máquina no duerme:', '🧮 Matemáticas > corazonadas:',
+    '📌 Guárdate esto antes de operar:', '💬 ¿Cómo va BTC? Respuesta corta:', '🕵️ Detectado por el sistema:',
+    '⛏️ Del dato en bruto a la señal:', '🌡️ Temperatura del mercado ahora:', '🎯 Probabilidades, no promesas:',
+    '🛰️ Visto desde arriba, BTC hoy:', '🧊 Frío y objetivo, como debe ser:', '🐂 ¿Toro o trampa? Los datos dicen:',
+    '🔑 La ventaja está en los detalles:', '📖 Lección gratis de mercado:', '🚀 Sin hype: lo que mide el modelo:',
+    '🦉 El mercado habla, pocos escuchan:'];
+  const CTAS = [
+    '👉 ' + url, 'Gratis y automático 👉 ' + url, 'Míralo en vivo 👉 ' + url, 'Análisis completo: ' + url,
+    'Todo gratis aquí 👉 ' + url, 'Sin registro: ' + url, 'Se actualiza solo 👉 ' + url,
+    'Compruébalo tú mismo: ' + url, 'La web lo hace por ti 👉 ' + url, 'Más en ' + url,
+    'Entra y míralo: ' + url, 'Tu dosis diaria: ' + url];
+  const DISC = '\n⚠️ No es consejo financiero.';
+  const fin = body => {
+    let t = body + '\n\n' + pick(CTAS) + DISC;
+    if (t.length > 276) t = body + '\n\n👉 ' + url + DISC;      // versión corta si se pasa
+    if (t.length <= 262) t += ' #Bitcoin #BTC';                  // hashtags solo si caben
+    return t;
+  };
   if (update && d.side) {
-    return hook + '\n\n🤖 ' + (d.botName || 'El bot aprobado') + ' actualiza su ruta:\n' +
-      (d.side === 'LONG' ? '▲ LONG' : '▼ SHORT') + ' BTC ' + money(d.entry) + ' · 🎯 ' + money(d.tp) + ' · 🛑 ' + money(d.sl) +
-      (d.apy != null ? '\nHistórico ' + (d.apy >= 0 ? '+' : '') + d.apy + '%/año (backtest ' + (d.years || 9) + 'a)' : '') +
-      '\n\n👉 ' + url + '\n⚠️ No es consejo financiero. #Bitcoin #BTC';
+    const S = d.side === 'LONG' ? '▲ LONG' : '▼ SHORT', bot = d.botName || 'El bot aprobado';
+    const OPS = [
+      '🤖 ' + bot + ' actualiza su ruta:\n' + S + ' BTC ' + money(d.entry) + ' · 🎯 ' + money(d.tp) + ' · 🛑 ' + money(d.sl),
+      S + ' en BTC. ' + bot + ' mueve ficha:\nentrada ' + money(d.entry) + ' · TP ' + money(d.tp) + ' · SL ' + money(d.sl),
+      'Nueva operación del sistema:\n' + S + ' ' + money(d.entry) + ' → 🎯 ' + money(d.tp) + ' · 🛑 ' + money(d.sl),
+      'El bot cambió de ruta: ' + S + ' BTC\n' + money(d.entry) + ' · 🎯 ' + money(d.tp) + ' · 🛑 ' + money(d.sl),
+      'Señal nueva (' + bot + '):\n' + S + ' desde ' + money(d.entry) + ' · TP ' + money(d.tp) + ' · SL ' + money(d.sl),
+      'Ruta actualizada en vivo:\n' + S + ' BTC ' + money(d.entry) + ' · TP ' + money(d.tp) + ' · SL ' + money(d.sl)];
+    const apyLine = (d.apy != null && Math.random() < 0.6) ? '\nHistórico ' + (d.apy >= 0 ? '+' : '') + d.apy + '%/año (backtest ' + (d.years || 9) + 'a)' : '';
+    return fin(pick(HOOKS) + '\n\n' + pick(OPS) + apyLine);
   }
-  const feats = [
-    'cono de 30 días con días análogos y auto-recalibración',
-    'detector de manipulación: barridos, pump&dump y squeezes',
-    '40 bots backtesteados 9 años con costes reales',
-    'todos los ciclos de BTC superpuestos y la ruta del actual',
-    'cuánto dinero hay en long vs short y quién empuja el precio',
-    'bot aprobado 8/8 (walk-forward + Deflated Sharpe) en vivo',
-    'figuras chartistas automáticas con % de acierto real',
-    'on-chain (MVRV/NUPL) con señal de techo y suelo'];
-  const feat = feats[(Math.random() * feats.length) | 0];
-  const datos = [
-    d.probUp != null ? (d.probUp + '% de probabilidad de que BTC suba en 30 días (Monte Carlo).') : null,
-    (d.touchPct != null && d.lvl) ? ('Tocar ' + money(d.lvl) + ' en 30 días: ' + d.touchPct + '% de probabilidad.') : null,
-    d.price ? ('BTC ' + money(d.price) + ' · análisis cuantitativo recién actualizado.') : null].filter(Boolean);
-  const dato = datos.length ? datos[(Math.random() * datos.length) | 0] : '';
-  return hook + '\n\n' + dato + '\n🆕 En la web: ' + feat + '.\n\n👉 ' + url + '\n⚠️ No es consejo financiero. #Bitcoin #BTC';
+  const DATOS = [];
+  if (d.probUp != null) DATOS.push(
+    d.probUp + '% de probabilidad de que BTC suba en 30 días (Monte Carlo).',
+    'El modelo da un ' + d.probUp + '% a que BTC esté más arriba en 30 días.',
+    'Monte Carlo de hoy: ' + d.probUp + '% alcista a 30 días.',
+    '¿Sube BTC este mes? El cono dice ' + d.probUp + '%.');
+  if (d.touchPct != null && d.lvl) DATOS.push(
+    'Tocar ' + money(d.lvl) + ' en 30 días: ' + d.touchPct + '% de probabilidad.',
+    money(d.lvl) + ' tiene un ' + d.touchPct + '% de probabilidad de ser tocado este mes.',
+    'Probabilidad de ver ' + money(d.lvl) + ' en 30 días: ' + d.touchPct + '%.');
+  if (d.price) DATOS.push(
+    'BTC ' + money(d.price) + ' · análisis cuantitativo recién actualizado.',
+    'BTC cotiza en ' + money(d.price) + (Number.isFinite(d.mom) ? ' con momentum ' + (d.mom >= 0 ? '+' : '') + (d.mom * 100).toFixed(1) + '% (21d).' : '.'),
+    'Ahora mismo: BTC ' + money(d.price) + ' y el sistema recalculando cada 20 min.');
+  if (d.con && d.con.n) DATOS.push(
+    'Consenso de bots: ' + d.con.long + ' en long, ' + d.con.short + ' en short ahora mismo.',
+    d.con.long + '▲ vs ' + d.con.short + '▼: así están los bots del sistema.');
+  if (d.fig && d.fig.name) DATOS.push(
+    'Figura detectada: ' + d.fig.name + ' con objetivo ' + money(d.fig.target) + ' (' + d.fig.prob + '% histórico).');
+  const FEATS = [
+    'cono de 30 días con días análogos y auto-recalibración', 'un detector de manipulación: barridos, pump&dump y squeezes',
+    '40 bots backtesteados 9 años con costes reales', 'todos los ciclos de BTC superpuestos y la ruta del actual',
+    'cuánto dinero hay en long vs short, en dólares', 'quién empuja el precio: spot orgánico o futuros apalancados',
+    'el bot que aprobó los 8 filtros innegociables, en vivo', 'figuras chartistas automáticas con % de acierto real',
+    'on-chain en vivo (MVRV, NUPL, Z-Score) con techo/suelo', 'la ruta del mes de BTC según la fase del ciclo',
+    'el patrón semanal de BTC (lunes a domingo) con su ruta', 'probabilidad de TOCAR cada nivel, no solo de cerrar ahí',
+    'un marcador que puntúa si el cono acierta (skill score)', 'el mapa de liquidaciones que actúa como imán del precio',
+    'walk-forward y Deflated Sharpe en todos los bots', 'la correlación con oro y liquidez del dólar, metida al cono',
+    'ranking de 40 bots por rentabilidad real, siempre al día', 'el funding explicado: quién paga a quién y por qué',
+    'velas japonesas detectadas y backtesteadas sobre BTC real', 'eventos macro (CPI/FOMC) que ajustan la ruta',
+    'el ciclo económico mundial país a país', 'la operación combinada de los bots rentables con TP y SL',
+    'avisos de Telegram automáticos con cada cambio de ruta', 'el MVRV Z-Score histórico con zonas de techo y suelo'];
+  const dato = DATOS.length ? pick(DATOS) : 'Análisis cuantitativo de BTC actualizado.';
+  const r = Math.random();
+  const body = r < 0.45 ? pick(HOOKS) + '\n\n' + dato + '\n🆕 En la web: ' + pick(FEATS) + '.'
+    : r < 0.75 ? dato + '\n\n🆕 En la web también: ' + pick(FEATS) + '.'
+    : pick(HOOKS) + '\n\n' + dato;
+  return fin(body);
 }
 
 // Aviso cuando la RUTA del bot cambia: lado, entrada, TP, SL, APY y enlace al bot.
