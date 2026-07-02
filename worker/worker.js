@@ -18,7 +18,27 @@ export default {
   async fetch(req, env) {
     const url = new URL(req.url);
     if (url.pathname === '/send') { const n = await run(env, true); return new Response('ok · publicado en ' + n + ' canal(es)'); }
-    return new Response('VWAFR worker OK · /send para una prueba');
+    // ── PRUEBAS DEL TRADING ──
+    // /balance    → lee el saldo de futuros (verifica claves+firma, SIN riesgo)
+    // /test-trade → orden REAL mínima (0.001) con TP/SL, para verificar el circuito
+    if (url.pathname === '/balance') {
+      if (!env.BITUNIX_API_KEY) return new Response('✗ faltan las claves de Bitunix (secrets)');
+      const bal = await bxBalance(env);
+      return new Response(bal != null
+        ? '✓ CONEXIÓN OK · saldo disponible futuros: ' + bal + ' USDT (claves y firma correctas)'
+        : '✗ no se pudo leer el saldo: revisa BITUNIX_API_KEY/SECRET o mira los Logs');
+    }
+    if (url.pathname === '/test-trade') {
+      if ((env.BITUNIX_TRADE || '').toLowerCase() !== 'live') return new Response('✗ BITUNIX_TRADE no está en "live"');
+      const d = await analyze(env);
+      if (!d) return new Response('✗ no se pudo obtener el análisis');
+      const side = d.side || 'LONG'; // si la señal está fuera, prueba con LONG
+      const px = d.price, slPct = 0.05, tpPct = 0.08;
+      const td = { side, entry: px, tp: side === 'LONG' ? px * (1 + tpPct) : px * (1 - tpPct), sl: side === 'LONG' ? px * (1 - slPct) : px * (1 + slPct) };
+      const out = await bitunixTrade(env, td, '0.001'); // tamaño MÍNIMO forzado
+      return new Response('orden de PRUEBA (0.001 ' + side + ') enviada.\nRespuesta de Bitunix: ' + out + '\n\nSi dice éxito, verás la posición en Bitunix (ciérrala a mano cuando quieras). Si da error, mándale esta respuesta a Claude.');
+    }
+    return new Response('VWAFR worker OK · /send /balance /test-trade');
   }
 };
 
@@ -116,11 +136,11 @@ async function bxBalance(env) {
     return Number.isFinite(av) ? av : null;
   } catch (e) { return null; }
 }
-async function bitunixTrade(env, d) {
-  if (!env.BITUNIX_API_KEY || !env.BITUNIX_API_SECRET || !d.side) return;
-  if ((env.BITUNIX_TRADE || '').toLowerCase() !== 'live') return; // DRY-RUN por defecto
+async function bitunixTrade(env, d, qtyOverride) {
+  if (!env.BITUNIX_API_KEY || !env.BITUNIX_API_SECRET || !d.side) return 'sin claves o sin señal';
+  if ((env.BITUNIX_TRADE || '').toLowerCase() !== 'live') return 'dry-run (no opera)';
   // Tamaño: "auto" = 95% del saldo disponible × apalancamiento / precio (toda la cuenta)
-  let qty = env.BITUNIX_QTY || '0.001';
+  let qty = qtyOverride || env.BITUNIX_QTY || '0.001';
   if (('' + qty).toLowerCase() === 'auto') {
     const bal = await bxBalance(env);
     const lev = parseFloat(env.BITUNIX_LEV || '1.1');
@@ -141,8 +161,10 @@ async function bitunixTrade(env, d) {
   try {
     const r = await fetch(base + path, { method: 'POST', headers, body: bodyStr });
     const j = await r.json().catch(() => null);
-    console.log('bitunix order:', r.status, JSON.stringify(j || {}).slice(0, 300)); // visible en Logs
-  } catch (e) { console.log('bitunix error:', e.message); }
+    const out = r.status + ' ' + JSON.stringify(j || {}).slice(0, 300);
+    console.log('bitunix order:', out); // visible en Logs
+    return out;
+  } catch (e) { console.log('bitunix error:', e.message); return 'error: ' + e.message; }
 }
 
 // Publica un tweet con OAuth 1.0a (firma HMAC-SHA1 con Web Crypto del Worker).
