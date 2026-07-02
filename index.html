@@ -96,8 +96,10 @@
     html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
     html,body{overflow-x:hidden;max-width:100%}
     img,svg,canvas{max-width:100%}
-    /* ajuste automático al dispositivo: en tablet/escritorio todo se ensancha */
-    @media(min-width:900px){.cta-bar .row,.seo,.ftr,.ad-wrap{max-width:clamp(540px,62vw,720px)}}
+    /* ajuste automático al dispositivo: en tablet/escritorio se ESCALA todo el
+       contenido (texto, paneles y gráficos crecen a la vez, no se ve chiquito) */
+    @media(min-width:700px) and (max-width:1099px){body{zoom:1.28}}
+    @media(min-width:1100px){body{zoom:1.5}}
     input,button,textarea{font-family:inherit}
     body{background:var(--bg);font-family:'Sora',system-ui,sans-serif;color:var(--txt);
       -webkit-font-smoothing:antialiased;padding-bottom:70px}
@@ -348,9 +350,9 @@ function vwafrGlobal(data){
 }
 
 // ── estilos compartidos ──
-// El ancho se ajusta SOLO al dispositivo: móvil ocupa la pantalla, tablet/escritorio
-// se ensancha hasta 720px (los gráficos SVG escalan con viewBox, sin romper nada).
-const wrap={maxWidth:'clamp(540px, 62vw, 720px)',margin:'0 auto',padding:'0 16px'};
+// (el ajuste a tablet/escritorio se hace con zoom en el CSS: escala TODO el
+// contenido, no solo el ancho, para que no se vea chiquito en pantallas grandes)
+const wrap={maxWidth:540,margin:'0 auto',padding:'0 16px'};
 const eyebrow={fontSize:10,letterSpacing:3,color:'var(--dim)',textTransform:'uppercase',fontWeight:600};
 const panel=(ex={})=>({background:'var(--panel)',border:'1px solid var(--line)',borderRadius:16,...ex});
 const inp=(c='var(--txt)')=>({background:'#080A10',border:'1px solid var(--line)',borderRadius:7,
@@ -1036,13 +1038,26 @@ function CycleBTC(){
         const cur=mk(hidx);
         if(!cur||cur.s.length<10||past.length<2)return null;
         const Dnow=cur.s[cur.s.length-1][0], mNow=cur.s[cur.s.length-1][1];
+        // ── ALARGAMIENTO DE CICLOS: cada ciclo dura más (el techo llega más tarde).
+        // Se mide el día del techo de cada ciclo previo con los datos reales, se
+        // extrapola el del actual (regresión) y se ESTIRAN los ciclos previos a ese
+        // ritmo antes de proyectar (día dd del actual ≈ día dd/warp del previo). ──
+        const pkOf=c=>{let bm=0,bd=0;for(const p of c.s)if(p[1]>bm){bm=p[1];bd=p[0];}return bd;};
+        const pkDays=past.map(pkOf);
+        let pNow=pkDays[pkDays.length-1]||550;
+        if(pkDays.length>=2){const n3=pkDays.length;let sx=0,sy=0,sxy=0,sxx=0;
+          pkDays.forEach((y,i)=>{sx+=i;sy+=y;sxy+=i*y;sxx+=i*i;});
+          const sl=(n3*sxy-sx*sy)/((n3*sxx-sx*sx)||1),ic=(sy-sl*sx)/n3;
+          pNow=Math.max(pkDays[n3-1],Math.min(900,ic+sl*n3));}
+        const warp=past.map((c,i)=>Math.max(1,Math.min(1.5,pNow/(pkDays[i]||pNow))));
         // ruta proyectada: qué hicieron los ciclos previos DESDE este mismo día del
-        // ciclo (más peso al reciente) con amortiguación del 30% (rend. decrecientes)
+        // ciclo (estirados por el alargamiento, más peso al reciente) con
+        // amortiguación del 30% (rendimientos decrecientes)
         const at=(c,dd)=>{const i=Math.min(c.s.length-1,Math.round(dd/STEP)); return c.s[i][1];};
         const wOf=i=>past.length===3?[0.2,0.3,0.5][i]:1/past.length;
         const proj=[[Dnow,mNow]];
         for(let dd=Dnow+6;dd<=LEN;dd+=6){let sum=0,ws=0;
-          past.forEach((c,i)=>{const a=at(c,Dnow),b=at(c,dd);
+          past.forEach((c,i)=>{const a=at(c,Dnow/warp[i]),b=at(c,dd/warp[i]);
             if(a>0&&b>0){sum+=wOf(i)*Math.log(b/a);ws+=wOf(i);}});
           if(ws>0)proj.push([dd,mNow*Math.exp(0.7*sum/ws)]);}
         let pkM=mNow,pkD=Dnow; for(const p of proj)if(p[1]>pkM){pkM=p[1];pkD=p[0];}
@@ -1095,7 +1110,65 @@ function CycleBTC(){
               <div style={{fontSize:9,color:'var(--faint)',marginTop:2}}>≈ halving {nextHalvingYr}</div>
             </div>
           </div>
-          <p style={{fontSize:9,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>La ruta discontinua aplica desde hoy la media ponderada de lo que hicieron los ciclos anteriores a partir de este mismo día del ciclo (más peso al más reciente, amortiguada un 30% porque cada ciclo rinde menos). Histórico real Binance + Bitstamp desde 2011. No es una predicción ni consejo financiero.</p>
+          <p style={{fontSize:9,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>La ruta discontinua aplica desde hoy la media ponderada de lo que hicieron los ciclos anteriores a partir de este mismo día del ciclo (más peso al más reciente, amortiguada un 30% porque cada ciclo rinde menos). <b style={{color:'var(--dim)'}}>Tiene en cuenta que cada ciclo dura más</b>: los techos llegaron el día {pkDays.map(d=>Math.round(d)).join(' → ')} de su ciclo, así que los previos se estiran al ritmo estimado (techo del actual ~día {Math.round(pNow)}). Histórico real Binance + Bitstamp desde 2011. No es una predicción ni consejo financiero.</p>
+        </div>);
+      })()}
+
+      {/* LA SEMANA DE BTC (chiquito): patrón intrasemanal histórico + la semana
+          actual encima y su ruta proyectada hasta el domingo, igual que los ciclos */}
+      {hist&&Array.isArray(hist.cl)&&hist.cl.length>800&&(()=>{
+        const cl=hist.cl, ts0=hist.ts0, nD=cl.length;
+        const dow=i=>new Date(ts0+i*864e5).getUTCDay(); // 0=dom … 1=lun
+        // lunes de la semana actual (la vela de hoy es la última)
+        let iMon=-1; for(let i=nD-1;i>=nD-8&&i>=1;i--)if(dow(i)===1){iMon=i;break;}
+        if(iMon<1)return null;
+        const k=Math.min(6,nD-1-iMon); // posición en la semana: 0=lun … 6=dom
+        // semanas COMPLETAS pasadas (~2 años): múltiplo lun..dom vs cierre del domingo previo
+        const rows=[];
+        for(let m=iMon-7;m>=30&&rows.length<104;m-=7){
+          if(dow(m)!==1)break;
+          const base=cl[m-1]; if(!(base>0))continue;
+          const p=[]; let ok=true;
+          for(let j=0;j<7;j++){const v=cl[m+j]; if(!(v>0)){ok=false;break;} p.push(v/base);}
+          if(ok)rows.push(p);
+        }
+        if(rows.length<30)return null;
+        const med=[],q25=[],q75=[];
+        for(let j=0;j<7;j++){const vs=rows.map(r=>r[j]).sort((a,b)=>a-b);
+          med.push(vs[Math.floor(vs.length/2)]); q25.push(vs[Math.floor(vs.length*0.25)]); q75.push(vs[Math.floor(vs.length*0.75)]);}
+        const base=cl[iMon-1]; const curW=[]; for(let j=0;j<=k;j++)curW.push(cl[iMon+j]/base);
+        const mNow2=curW[k];
+        // ruta hasta el domingo: sigue el camino MEDIANO desde el día de hoy
+        const projW=[[k,mNow2]]; for(let j=k+1;j<7;j++)projW.push([j,mNow2*med[j]/med[k]]);
+        const endPct=(projW[projW.length-1][1]/mNow2-1)*100;
+        const NAMES=['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+        // geometría
+        const W3=320,H3=92,P3=12;
+        let lo3=1e9,hi3=-1e9; const all=[...q25,...q75,...curW,...projW.map(p=>p[1])];
+        for(const v of all){if(v<lo3)lo3=v;if(v>hi3)hi3=v;}
+        const pad=(hi3-lo3)*0.15||0.01; lo3-=pad; hi3+=pad;
+        const X3=j=>j/6*W3, Y3=v=>H3-P3-(v-lo3)/((hi3-lo3)||1)*(H3-2*P3);
+        const ln=pts=>pts.map((p,i)=>(i?'L':'M')+X3(p[0]).toFixed(1)+','+Y3(p[1]).toFixed(1)).join(' ');
+        const bandD3=ln(q75.map((v,j)=>[j,v]))+' L '+q25.map((v,j)=>[j,v]).reverse().map(p=>X3(p[0]).toFixed(1)+' '+Y3(p[1]).toFixed(1)).join(' L ')+' Z';
+        return(
+        <div style={panel({marginBottom:14,padding:14})}>
+          <div style={{...flx({justifyContent:'space-between'}),marginBottom:3}}>
+            <span style={eyebrow}>La semana de BTC · patrón</span>
+            <span className="mono" style={{fontSize:9,fontWeight:700,color:endPct>=0?'var(--up)':'var(--down)'}}>hasta el Dom: {endPct>=0?'+':''}{endPct.toFixed(1)}% típico</span>
+          </div>
+          <div style={{fontSize:9,color:'var(--faint)',marginBottom:6}}>mediana de {rows.length} semanas (2 años) · <span style={{color:ph.c}}>línea gruesa = esta semana</span> · discontinua = ruta hasta el domingo</div>
+          <svg viewBox={`0 0 ${W3} ${H3}`} width="100%" style={{display:'block',overflow:'visible'}}>
+            <line x1="0" y1={Y3(1)} x2={W3} y2={Y3(1)} stroke="var(--line2)" strokeWidth="1" opacity="0.9"/>
+            <path d={bandD3} fill="var(--accent)" opacity="0.08"/>
+            <path d={ln(med.map((v,j)=>[j,v]))} fill="none" stroke="var(--accent)" strokeWidth="1.2" opacity="0.65"/>
+            <path d={ln(curW.map((v,j)=>[j,v]))} fill="none" stroke={ph.c} strokeWidth="2"/>
+            <path d={ln(projW)} fill="none" stroke="var(--txt)" strokeWidth="1.3" strokeDasharray="4 3" opacity="0.9"/>
+            <circle cx={X3(k)} cy={Y3(mNow2)} r="3.8" fill={ph.c} stroke="var(--bg)" strokeWidth="2"/>
+          </svg>
+          <div style={{display:'flex',justifyContent:'space-between',marginTop:3,fontSize:8,color:'var(--faint)'}} className="mono">
+            {NAMES.map((n,j)=>(<span key={n} style={j===k?{color:ph.c,fontWeight:800}:null}>{n}</span>))}
+          </div>
+          <p style={{fontSize:8.5,color:'var(--faint)',marginTop:6,lineHeight:1.5}}>Igual que el de ciclos pero a 1 semana: cada semana se alinea lunes→domingo (vs el cierre del domingo previo) y la actual se proyecta con la mediana histórica desde el día de hoy. Patrón estadístico, no es consejo financiero.</p>
         </div>);
       })()}
 
