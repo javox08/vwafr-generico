@@ -3523,9 +3523,19 @@ function BotsView({gFunding}){
       return fetch(u,{signal:ac.signal}).then(r=>{if(!r.ok)throw 0;return r.json();}).finally(()=>clearTimeout(tt));};
     const load=async()=>{
       let closes=longRef.current;
-      if(!closes){try{let allc=[],end=Date.now();
+      if(!closes){try{let allc=[],end=Date.now(),firstTs=null;
         for(let pg=0;pg<5;pg++){const k=await jget('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=1000&endTime='+end);
-          if(!Array.isArray(k)||!k.length)break; allc=k.map(x=>parseFloat(x[4])).concat(allc); end=k[0][0]-864e5; if(k.length<1000)break;}
+          if(!Array.isArray(k)||!k.length)break; allc=k.map(x=>parseFloat(x[4])).concat(allc); firstTs=k[0][0]; end=k[0][0]-864e5; if(k.length<1000)break;}
+        // Binance solo llega a ago-2017: EXTENDER hacia atrás con Bitstamp (CORS
+        // abierto, BTC/USD desde 2011) hasta ~9,6 años. Empalme encadenado con un
+        // día de SOLAPE (el tramo viejo se escala al nivel de Binance) → sin saltos.
+        const NEED=210+9*365+2;
+        if(allc.length>800&&allc.length<NEED&&firstTs){try{
+          const j=await jget('https://www.bitstamp.net/api/v2/ohlc/btcusd/?step=86400&limit='+Math.min(1000,(NEED-allc.length)+30)+'&end='+Math.floor(firstTs/1000),10000);
+          const oc=((j.data&&j.data.ohlc)||[]).map(x=>parseFloat(x.close)).filter(Number.isFinite);
+          if(oc.length>30){const ratio=allc[0]/oc[oc.length-1];
+            allc=oc.slice(0,-1).map(v=>v*ratio).concat(allc);}
+        }catch(_){}}
         if(allc.length>800){closes=allc;longRef.current=allc;}
       }catch(_){}}
       // refresca las últimas velas (OHLC, para ATR) y el último cierre en vivo
