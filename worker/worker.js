@@ -25,13 +25,14 @@ export default {
       if (!env.BITUNIX_API_KEY || !env.BITUNIX_API_SECRET) return new Response('✗ faltan los secrets BITUNIX_API_KEY y/o BITUNIX_API_SECRET (con esos nombres exactos)');
       const b = await bxBalanceRaw(env);
       if (b.av != null) return new Response('✓ CONEXIÓN OK · saldo disponible futuros: ' + b.av + ' USDT (claves y firma correctas)');
-      // diagnóstico extra: ¿responde el endpoint PÚBLICO (sin claves) desde este worker?
+      // diagnóstico extra: ¿responde el endpoint PÚBLICO (sin claves) por la misma vía?
       let pub = 'sin respuesta';
       try {
-        const pr = await fetch('https://fapi.bitunix.com/api/v1/futures/market/tickers?symbols=BTCUSDT', { headers: { 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36', 'Accept': 'application/json' } });
+        const pr = await bxFetch(env, '/api/v1/futures/market/tickers?symbols=BTCUSDT', 'GET', { 'Accept': 'application/json' }, '');
         pub = pr.status + ' ' + (await pr.text()).slice(0, 120);
       } catch (e) { pub = 'error: ' + e.message; }
-      return new Response('✗ no se pudo leer el saldo.\nRespuesta de Bitunix (privada): ' + b.raw + '\nPrueba pública (sin claves): ' + pub + '\n\nMándale esta respuesta a Claude tal cual.');
+      const via = env.BITUNIX_PROXY ? 'vía relé (' + env.BITUNIX_PROXY + ')' : 'directa (sin relé; pon BITUNIX_PROXY si Bitunix da 403)';
+      return new Response('✗ no se pudo leer el saldo. Conexión ' + via + '\nRespuesta de Bitunix (privada): ' + b.raw + '\nPrueba pública (sin claves): ' + pub + '\n\nMándale esta respuesta a Claude tal cual.');
     }
     if (url.pathname === '/test-trade') {
       if ((env.BITUNIX_TRADE || '').toLowerCase() !== 'live') return new Response('✗ BITUNIX_TRADE no está en "live"');
@@ -131,6 +132,18 @@ async function bxHeaders(env, queryConcat, bodyStr) {
     'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
     'Accept': 'application/json' };
 }
+// Envía la petición a Bitunix: directa, o a través del relé (BITUNIX_PROXY) si
+// está configurado. El relé hace falta porque Bitunix devuelve 403 a las IPs de
+// Cloudflare Workers; la firma viaja intacta y el relé la reenvía tal cual.
+async function bxFetch(env, path, method, headers, bodyStr) {
+  if (env.BITUNIX_PROXY) {
+    return fetch(env.BITUNIX_PROXY, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p: path, m: method, h: headers, b: bodyStr || '' })
+    });
+  }
+  return fetch('https://fapi.bitunix.com' + path, { method, headers, body: method === 'POST' ? (bodyStr || undefined) : undefined });
+}
 // Fija en Bitunix el modo CRUZADO y el apalancamiento del símbolo. Bitunix solo
 // acepta apalancamientos ENTEROS, así que se manda el entero superior (1.1 → 2);
 // el riesgo real (1.1x la cuenta) lo pone el tamaño "auto" de la orden, no este
@@ -141,7 +154,7 @@ async function bxSetup(env) {
   const post = async (path, obj) => {
     const bodyStr = JSON.stringify(obj);
     const headers = await bxHeaders(env, '', bodyStr);
-    const r = await fetch('https://fapi.bitunix.com' + path, { method: 'POST', headers, body: bodyStr });
+    const r = await bxFetch(env, path, 'POST', headers, bodyStr);
     return r.json().catch(() => null);
   };
   try { await post('/api/v1/futures/account/change_margin_mode', { symbol, marginCoin: 'USDT', marginMode: 'CROSS' }); } catch (_) {}
@@ -151,10 +164,9 @@ async function bxSetup(env) {
 // CRUDA de Bitunix para poder diagnosticar errores de claves/firma/permisos.
 async function bxBalanceRaw(env) {
   try {
-    const base = 'https://fapi.bitunix.com', path = '/api/v1/futures/account';
     // query en la URL como k=v; en la FIRMA concatenado clave+valor (orden alfabético)
     const headers = await bxHeaders(env, 'marginCoinUSDT', '');
-    const r = await fetch(base + path + '?marginCoin=USDT', { headers });
+    const r = await bxFetch(env, '/api/v1/futures/account?marginCoin=USDT', 'GET', headers, '');
     const txt = await r.text();
     let j = null; try { j = JSON.parse(txt); } catch (_) {}
     const dd = j && j.data ? (Array.isArray(j.data) ? j.data[0] : j.data) : null;
@@ -177,7 +189,7 @@ async function bitunixTrade(env, d, qtyOverride) {
       qty = '' + Math.max(0.001, q);
     } else qty = '0.001'; // si el saldo no se puede leer, tamaño mínimo (seguro)
   }
-  const base = 'https://fapi.bitunix.com', path = '/api/v1/futures/trade/place_order';
+  const path = '/api/v1/futures/trade/place_order';
   const bodyObj = {
     symbol: env.BITUNIX_SYMBOL || 'BTCUSDT',
     side: d.side === 'LONG' ? 'BUY' : 'SELL', tradeSide: 'OPEN', orderType: 'MARKET',
@@ -188,7 +200,7 @@ async function bitunixTrade(env, d, qtyOverride) {
   const bodyStr = JSON.stringify(bodyObj);
   const headers = await bxHeaders(env, '', bodyStr);
   try {
-    const r = await fetch(base + path, { method: 'POST', headers, body: bodyStr });
+    const r = await bxFetch(env, path, 'POST', headers, bodyStr);
     const j = await r.json().catch(() => null);
     const out = r.status + ' ' + JSON.stringify(j || {}).slice(0, 300);
     console.log('bitunix order:', out); // visible en Logs

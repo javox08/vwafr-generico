@@ -26,6 +26,10 @@ BITUNIX_LEV = "1.1"
 # Estrategia que se tradea y anuncia: "momaccel" (Aceleración de momentum, el bot
 # aprobado 8/8), "robmom" (Momentum robusto) o "consensus" (consenso de bots).
 BITUNIX_STRATEGY = "robmom"
+# Relé para llegar a Bitunix (bloquea las IPs de Cloudflare Workers con 403).
+# Despliega este repo en Vercel (gratis) y pon aquí la URL de la función:
+#   BITUNIX_PROXY = "https://TU-PROYECTO.vercel.app/api/bx"
+BITUNIX_PROXY = ""
 
 # KV para detectar cambios de ruta y avisar solo cuando cambia (créalo y pega el id):
 #   npx wrangler kv namespace create VWAFR_KV
