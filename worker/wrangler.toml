@@ -20,6 +20,8 @@ BITUNIX_TRADE = "dry"
 BITUNIX_SYMBOL = "BTCUSDT"
 BITUNIX_QTY = "auto"
 # Apalancamiento usado por el tamaño "auto" (toda la cuenta x este factor).
+# Bitunix solo acepta apalancamientos ENTEROS: el worker fija solo el entero
+# superior (1.1 -> 2x cruzado) y el riesgo real 1.1x lo pone el tamaño de la orden.
 BITUNIX_LEV = "1.1"
 # Estrategia que se tradea y anuncia: "momaccel" (Aceleración de momentum, el bot
 # aprobado 8/8), "robmom" (Momentum robusto) o "consensus" (consenso de bots).

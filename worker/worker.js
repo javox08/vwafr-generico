@@ -123,6 +123,22 @@ async function bxHeaders(env, queryConcat, bodyStr) {
   const sign = await sha256Hex(digest + env.BITUNIX_API_SECRET);
   return { 'api-key': env.BITUNIX_API_KEY, 'nonce': nonce, 'timestamp': ts, 'sign': sign, 'language': 'en-US', 'Content-Type': 'application/json' };
 }
+// Fija en Bitunix el modo CRUZADO y el apalancamiento del símbolo. Bitunix solo
+// acepta apalancamientos ENTEROS, así que se manda el entero superior (1.1 → 2);
+// el riesgo real (1.1x la cuenta) lo pone el tamaño "auto" de la orden, no este
+// número. Si hay posiciones abiertas el cambio de modo falla y se ignora.
+async function bxSetup(env) {
+  const symbol = env.BITUNIX_SYMBOL || 'BTCUSDT';
+  const lev = Math.max(1, Math.ceil(parseFloat(env.BITUNIX_LEV || '1.1')));
+  const post = async (path, obj) => {
+    const bodyStr = JSON.stringify(obj);
+    const headers = await bxHeaders(env, '', bodyStr);
+    const r = await fetch('https://fapi.bitunix.com' + path, { method: 'POST', headers, body: bodyStr });
+    return r.json().catch(() => null);
+  };
+  try { await post('/api/v1/futures/account/change_margin_mode', { symbol, marginCoin: 'USDT', marginMode: 'CROSS' }); } catch (_) {}
+  try { await post('/api/v1/futures/account/change_leverage', { symbol, marginCoin: 'USDT', leverage: lev }); } catch (_) {}
+}
 // Saldo DISPONIBLE de la cuenta de futuros (USDT). Devuelve null si falla.
 async function bxBalance(env) {
   try {
@@ -139,6 +155,7 @@ async function bxBalance(env) {
 async function bitunixTrade(env, d, qtyOverride) {
   if (!env.BITUNIX_API_KEY || !env.BITUNIX_API_SECRET || !d.side) return 'sin claves o sin señal';
   if ((env.BITUNIX_TRADE || '').toLowerCase() !== 'live') return 'dry-run (no opera)';
+  await bxSetup(env).catch(() => {}); // modo cruzado + apalancamiento entero en Bitunix
   // Tamaño: "auto" = 95% del saldo disponible × apalancamiento / precio (toda la cuenta)
   let qty = qtyOverride || env.BITUNIX_QTY || '0.001';
   if (('' + qty).toLowerCase() === 'auto') {
