@@ -750,6 +750,40 @@ function CycleBTC(){
     load(); const t=setInterval(load,60000); return()=>{alive=false;clearInterval(t);};
   },[]);
 
+  // Histórico DIARIO completo (Binance mirror + Bitstamp hacia atrás hasta ~2011)
+  // para superponer TODOS los ciclos con datos reales. Cacheado 6h en localStorage.
+  const [hist,setHist]=useState(null);
+  useEffect(()=>{
+    let alive=true;
+    (async()=>{try{
+      try{const c=JSON.parse(localStorage.getItem('vwafr_cychist')||'null');
+        if(c&&c.t&&Date.now()-c.t<21600000&&Array.isArray(c.cl)&&c.cl.length>2500){if(alive)setHist(c);return;}}catch(_){}
+      let cl=[],end=Date.now(),firstTs=null;
+      for(let pg=0;pg<4;pg++){
+        const kk=await fetch('https://data-api.binance.vision/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=1000&endTime='+end).then(r=>r.json());
+        if(!Array.isArray(kk)||!kk.length)break;
+        cl=kk.map(x=>parseFloat(x[4])).concat(cl); firstTs=kk[0][0]; end=kk[0][0]-864e5;
+        if(kk.length<1000)break;
+      }
+      if(cl.length<500)return;
+      // extiende hacia atrás con Bitstamp (empalme con solape de 1 día, escala encadenada)
+      let endB=Math.floor(firstTs/1000);
+      for(let pg=0;pg<7;pg++){
+        const jj=await fetch('https://www.bitstamp.net/api/v2/ohlc/btcusd/?step=86400&limit=1000&end='+endB).then(r=>r.json()).catch(()=>null);
+        const oc=((jj&&jj.data&&jj.data.ohlc)||[]).map(x=>[parseInt(x.timestamp)*1000,parseFloat(x.close)]).filter(x=>Number.isFinite(x[1])&&x[1]>0);
+        if(oc.length<2)break;
+        const ratio=cl[0]/oc[oc.length-1][1];
+        cl=oc.slice(0,-1).map(x=>x[1]*ratio).concat(cl);
+        firstTs=oc[0][0]; endB=Math.floor(oc[0][0]/1000)-86400;
+        if(oc.length<1000)break;
+      }
+      const out={t:Date.now(),ts0:firstTs,cl};
+      if(alive)setHist(out);
+      try{localStorage.setItem('vwafr_cychist',JSON.stringify(out));}catch(_){}
+    }catch(_){}})();
+    return()=>{alive=false;};
+  },[]);
+
   const D=86400000, now=new Date(), nowMs=now.getTime();
   const money=v=>(v==null||!Number.isFinite(v))?'—':'$'+v.toLocaleString('es-ES',{maximumFractionDigits:0});
   // Halvings reales + estimados. El ciclo avanza SOLO al pasar cada halving.
@@ -985,6 +1019,81 @@ function CycleBTC(){
           <span>Halving {nextHalvingYr}</span>
         </div>
       </div>
+
+      {/* TODOS LOS CICLOS con datos REALES superpuestos + ruta del ciclo actual
+          construida con esa misma data (media ponderada de los ciclos previos
+          desde el día equivalente, amortiguada por rendimientos decrecientes) */}
+      {hist&&Array.isArray(hist.cl)&&hist.cl.length>2500&&(()=>{
+        const cl=hist.cl, ts0=hist.ts0, nD=cl.length, LEN=1460, STEP=2;
+        const idxOf=ms=>Math.round((ms-ts0)/864e5);
+        const mk=h=>{const i0=idxOf(HALVINGS[h]); if(i0<0||i0>=nD-30)return null; const base=cl[i0]; if(!(base>0))return null;
+          const s=[]; for(let dd=0;dd<=LEN&&i0+dd<nD;dd+=STEP)s.push([dd,cl[i0+dd]/base]); return {h,base,s};};
+        const past=[]; for(let h=Math.max(0,hidx-3);h<hidx;h++){const c=mk(h); if(c&&c.s.length>200)past.push(c);}
+        const cur=mk(hidx);
+        if(!cur||cur.s.length<10||past.length<2)return null;
+        const Dnow=cur.s[cur.s.length-1][0], mNow=cur.s[cur.s.length-1][1];
+        // ruta proyectada: qué hicieron los ciclos previos DESDE este mismo día del
+        // ciclo (más peso al reciente) con amortiguación del 30% (rend. decrecientes)
+        const at=(c,dd)=>{const i=Math.min(c.s.length-1,Math.round(dd/STEP)); return c.s[i][1];};
+        const wOf=i=>past.length===3?[0.2,0.3,0.5][i]:1/past.length;
+        const proj=[[Dnow,mNow]];
+        for(let dd=Dnow+6;dd<=LEN;dd+=6){let sum=0,ws=0;
+          past.forEach((c,i)=>{const a=at(c,Dnow),b=at(c,dd);
+            if(a>0&&b>0){sum+=wOf(i)*Math.log(b/a);ws+=wOf(i);}});
+          if(ws>0)proj.push([dd,mNow*Math.exp(0.7*sum/ws)]);}
+        let pkM=mNow,pkD=Dnow; for(const p of proj)if(p[1]>pkM){pkM=p[1];pkD=p[0];}
+        const endM=proj[proj.length-1][1];
+        const projTecho=pkM*cur.base, projFin=endM*cur.base;
+        const pkDate=new Date(HALVINGS[hidx]+pkD*864e5);
+        // geometría (escala LOG: los primeros ciclos multiplicaron ×30-90)
+        const W2=320,H2=170,P2=14;
+        let hiM=2; for(const c of past)for(const p of c.s)hiM=Math.max(hiM,p[1]); hiM=Math.max(hiM,pkM);
+        const yLo=Math.log(0.55),yHi=Math.log(hiM*1.25);
+        const X=dd=>dd/LEN*W2, Y=m=>H2-P2-(Math.log(Math.max(0.55,m))-yLo)/((yHi-yLo)||1)*(H2-2*P2);
+        const line=s=>s.map((p,i)=>(i?'L':'M')+X(p[0]).toFixed(1)+','+Y(p[1]).toFixed(1)).join(' ');
+        const cols=['#8AA0FF','#F3BA2F','#5B9BFF'];
+        const gridM=[1,2,5,10,30,100].filter(m=>m<=hiM*1.2);
+        const yrOf=h=>new Date(HALVINGS[h]).getUTCFullYear();
+        return(
+        <div style={panel({marginBottom:14,padding:16})}>
+          <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
+            <span style={eyebrow}>Todos los ciclos · datos reales</span>
+            <span className="mono" style={{fontSize:9.5,color:ph.c,fontWeight:700}}>hoy ×{mNow.toFixed(2)} · día {Dnow}</span>
+          </div>
+          <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:8}}>precio ÷ precio del halving (escala log) · alineados por días desde su halving · <span style={{color:'var(--dim)'}}>discontinua = ruta del ciclo actual creada con esa data</span></div>
+          <svg viewBox={`0 0 ${W2} ${H2}`} width="100%" style={{display:'block',overflow:'visible'}}>
+            {gridM.map(m=>(<g key={m}>
+              <line x1="0" y1={Y(m)} x2={W2} y2={Y(m)} stroke="var(--line2)" strokeWidth="1" strokeDasharray={m===1?'':'2 4'} opacity={m===1?0.9:0.55}/>
+              <text x={W2-2} y={Y(m)-2} textAnchor="end" fontSize="7.5" fill="var(--faint)" fontFamily="JetBrains Mono,monospace">×{m}</text>
+            </g>))}
+            {past.map((c,i)=>(<path key={c.h} d={line(c.s)} fill="none" stroke={cols[i]||'#888'} strokeWidth="1.1" opacity="0.55"/>))}
+            <path d={line(cur.s)} fill="none" stroke={ph.c} strokeWidth="2"/>
+            <path d={line(proj)} fill="none" stroke="var(--txt)" strokeWidth="1.4" strokeDasharray="5 4" opacity="0.9"/>
+            <circle cx={X(Dnow)} cy={Y(mNow)} r="4.5" fill={ph.c} stroke="var(--bg)" strokeWidth="2"/>
+            {pkD>Dnow&&<circle cx={X(pkD)} cy={Y(pkM)} r="3.5" fill="none" stroke="#F3BA2F" strokeWidth="1.5"/>}
+          </svg>
+          <div style={{...flx({justifyContent:'space-between'}),marginTop:4,fontSize:8.5,color:'var(--faint)'}} className="mono">
+            <span>halving · día 0</span><span>día 730</span><span>día 1460</span>
+          </div>
+          <div style={{display:'flex',flexWrap:'wrap',gap:6,marginTop:10}}>
+            {past.map((c,i)=>(<span key={c.h} className="mono" style={{fontSize:9,padding:'3px 8px',borderRadius:12,border:'1px solid var(--line2)',color:cols[i]||'#888'}}>C{c.h+1} · {yrOf(c.h)} · máx ×{Math.round(Math.max(...c.s.map(p=>p[1])))}</span>))}
+            <span className="mono" style={{fontSize:9,padding:'3px 8px',borderRadius:12,border:`1px solid ${ph.c}55`,color:ph.c,fontWeight:700}}>C{hidx+1} · {yrOf(hidx)} · actual</span>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginTop:12}}>
+            <div style={{padding:'10px 12px',borderRadius:10,background:'rgba(243,186,47,.06)',border:'1px solid rgba(243,186,47,.25)'}}>
+              <div style={{fontSize:9,letterSpacing:1,color:'#F3BA2F',textTransform:'uppercase',fontWeight:700,marginBottom:3}}>Techo por esta ruta</div>
+              <div className="mono" style={{fontSize:16,fontWeight:800,color:'var(--txt)'}}>{money(projTecho)}</div>
+              <div style={{fontSize:9,color:'var(--faint)',marginTop:2}}>{pkD>Dnow?('día ~'+pkD+' · '+pkDate.toLocaleDateString('es-ES',{month:'short',year:'numeric'})):'ya visto (la ruta cae desde hoy)'}</div>
+            </div>
+            <div style={{padding:'10px 12px',borderRadius:10,background:'#0A0D14',border:'1px solid var(--line2)'}}>
+              <div style={{fontSize:9,letterSpacing:1,color:'var(--dim)',textTransform:'uppercase',fontWeight:700,marginBottom:3}}>Fin de ciclo (día 1460)</div>
+              <div className="mono" style={{fontSize:16,fontWeight:800,color:'var(--txt)'}}>{money(projFin)}</div>
+              <div style={{fontSize:9,color:'var(--faint)',marginTop:2}}>≈ halving {nextHalvingYr}</div>
+            </div>
+          </div>
+          <p style={{fontSize:9,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>La ruta discontinua aplica desde hoy la media ponderada de lo que hicieron los ciclos anteriores a partir de este mismo día del ciclo (más peso al más reciente, amortiguada un 30% porque cada ciclo rinde menos). Histórico real Binance + Bitstamp desde 2011. No es una predicción ni consejo financiero.</p>
+        </div>);
+      })()}
 
       {/* Niveles clave del modelo (compra/venta) */}
       <div style={panel({marginBottom:14,padding:16})}>
