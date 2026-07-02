@@ -719,6 +719,20 @@ function CycleBTC(){
     };
     load(); const t=setInterval(load,1800000); return()=>{alive=false;clearInterval(t);};
   },[]);
+  // Histórico del MVRV Z-Score (para el gráfico de techo/suelo de ciclo)
+  const [zsH,setZsH]=useState(null);
+  useEffect(()=>{
+    let alive=true;
+    (async()=>{try{
+      const c=new AbortController();const t=setTimeout(()=>c.abort(),12000);
+      const j=await fetch('https://bitcoin-data.com/v1/mvrv-zscore',{signal:c.signal}).then(r=>r.json()).finally(()=>clearTimeout(t));
+      if(Array.isArray(j)&&j.length>100){
+        const vals=j.map(x=>parseFloat(x.mvrvZscore??x.mvrvzscore??x.value)).filter(Number.isFinite);
+        if(alive&&vals.length>100)setZsH(vals.slice(-1600));
+      }
+    }catch(_){}})();
+    return()=>{alive=false;};
+  },[]);
   const [d,setD]=useState(null);
   useEffect(()=>{
     let alive=true;
@@ -1060,6 +1074,23 @@ function CycleBTC(){
           <b>MVRV</b> &lt;1 = suelo de ciclo · &gt;4 = zona techo. <b>NUPL</b> &lt;0 = capitulación (suelo) · &gt;0.75 = euforia (techo). {oc&&oc.est?'Valores aproximados (fuente no disponible).':'Datos en vivo de bitcoin-data.com.'}
         </p>
       </div>
+
+      {/* MVRV Z-SCORE · gráfico histórico con zonas de techo (≥7) y suelo (≤0) */}
+      {zsH&&zsH.length>100&&(()=>{const last=zsH[zsH.length-1];
+        const zone=last>=7?{t:'ZONA TECHO',c:'var(--down)'}:last<=0?{t:'ZONA SUELO',c:'var(--up)'}:last>=5?{t:'caliente',c:'#F3BA2F'}:{t:'zona media',c:'var(--dim)'};
+        return(
+        <div style={panel({marginBottom:14,padding:16})}>
+          <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
+            <span style={eyebrow}>MVRV Z-Score · techo/suelo de ciclo</span>
+            <span className="mono" style={{fontSize:11,fontWeight:800,color:zone.c}}>{last.toFixed(2)} · {zone.t}</span>
+          </div>
+          <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:8}}>históricamente ≥7 marcó los TECHOS de ciclo y ≤0 los SUELOS</div>
+          <TVChart series={zsH.filter((_,i)=>i%Math.max(1,Math.floor(zsH.length/360))===0)} color="#8AA0FF" H={92} glow grid
+            hlines={[{v:7,c:'var(--down)',label:'techo'},{v:0,c:'var(--up)',label:'suelo'}]}
+            fmt={v=>v.toFixed(1)} label={i=>''}/>
+          <p style={{fontSize:9,color:'var(--faint)',marginTop:7,lineHeight:1.5}}>Z-Score = cuántas desviaciones típicas está el valor de mercado sobre el realizado. Fuente: bitcoin-data.com.</p>
+        </div>);
+      })()}
     </div>
   );
 }
@@ -1836,6 +1867,12 @@ function chartPatterns(cl){
   const triDesc=j=>{const h=recent(PH,j,3),l=recent(PL,j,3);if(h.length<3||l.length<2)return null;const sh=slope(h.map(x=>[x,cl[x]])),sl=slope(l.map(x=>[x,cl[x]]));if(!(sh<-0.0008&&Math.abs(sl)<0.0008))return null;const d=minN(j,20);return(cl[j]<d&&cl[j-1]>=d)?{target:cl[j]*0.9}:null;};
   const rangeUp=j=>{const d=maxN(j,25);return(cl[j]>d&&cl[j-1]<=d&&(maxN(j,25)-minN(j,25))/cl[j]<0.18)?{target:cl[j]*1.1}:null;};
   const rangeDn=j=>{const d=minN(j,25);return(cl[j]<d&&cl[j-1]>=d&&(maxN(j,25)-minN(j,25))/cl[j]<0.18)?{target:cl[j]*0.92}:null;};
+  // BANDERAS: mástil fuerte (~±12% en 10 días) + consolidación estrecha en contra
+  // (5 días, rango <6%) + ruptura en la dirección del mástil. Objetivo = 60% del mástil.
+  const poleUp=j=>j>16?cl[j-6]/cl[j-16]-1:0, poleDn=j=>j>16?1-cl[j-6]/cl[j-16]:0;
+  const tight=j=>{const hi=maxN(j,5),lo=minN(j,5);return (hi-lo)/cl[j-1]<0.06;};
+  const flagUp=j=>{if(j<20)return null;const g=poleUp(j);if(g<0.12||!tight(j)||cl[j-1]>cl[j-6]*1.02)return null;const d=maxN(j,5);return(cl[j]>d&&cl[j-1]<=d)?{target:cl[j]*(1+g*0.6)}:null;};
+  const flagDn=j=>{if(j<20)return null;const g=poleDn(j);if(g<0.12||!tight(j)||cl[j-1]<cl[j-6]*0.98)return null;const d=minN(j,5);return(cl[j]<d&&cl[j-1]>=d)?{target:cl[j]*(1-g*0.6)}:null;};
   // detectores de FIGURA EN FORMACIÓN: la estructura ya está y el precio se acerca al
   // disparo (aún no ha roto). Devuelven {target} si la figura se está formando ahora.
   const px=cl[n-1];
@@ -1849,6 +1886,8 @@ function chartPatterns(cl){
   const fTriDesc=()=>{const h=recent(PH,n-1,3),l=recent(PL,n-1,3);if(h.length<3||l.length<2)return null;const sh=slope(h.map(x=>[x,cl[x]])),sl=slope(l.map(x=>[x,cl[x]]));if(!(sh<-0.0008&&Math.abs(sl)<0.0008))return null;const d=minN(n-1,20);return(px>=d&&px<=d*1.07)?{target:px*0.9}:null;};
   const fRangeUp=()=>{const d=maxN(n-1,25);return(px<=d&&px>=d*0.95&&(maxN(n-1,25)-minN(n-1,25))/px<0.18)?{target:px*1.1}:null;};
   const fRangeDn=()=>{const d=minN(n-1,25);return(px>=d&&px<=d*1.05&&(maxN(n-1,25)-minN(n-1,25))/px<0.18)?{target:px*0.92}:null;};
+  const fFlagUp=()=>{const g=poleUp(n-1);if(g<0.12||!tight(n-1))return null;const d=maxN(n-1,5);return(px<=d&&px>=d*0.96)?{target:px*(1+g*0.6)}:null;};
+  const fFlagDn=()=>{const g=poleDn(n-1);if(g<0.12||!tight(n-1))return null;const d=minN(n-1,5);return(px>=d&&px<=d*1.04)?{target:px*(1-g*0.6)}:null;};
   let muD=0;for(let j=1;j<n;j++)muD+=(cl[j]-cl[j-1])/cl[j-1];muD/=(n-1);
   const start=Math.max(60,Math.floor(n*0.25));
   const bt=(fn,sgn)=>{let k=0,win=0;const acc=new Array(HM+1).fill(0),cnt=new Array(HM+1).fill(0);
@@ -1868,15 +1907,23 @@ function chartPatterns(cl){
     ['Triángulo descendente',-1,'máximos a la baja + mínimos planos · ruptura ↓',triDesc,fTriDesc],
     ['Ruptura de rango ↑',1,'sale del rango lateral por arriba',rangeUp,fRangeUp],
     ['Ruptura de rango ↓',-1,'sale del rango lateral por abajo',rangeDn,fRangeDn],
+    ['Bandera alcista (bull flag)',1,'mástil ↑ + consolidación · ruptura al alza',flagUp,fFlagUp],
+    ['Bandera bajista (bear flag)',-1,'mástil ↓ + consolidación · ruptura a la baja',flagDn,fFlagDn],
   ];
   const out=[];
   for(const [t,sig,d,fn,ffn] of figs){
-    let trig=null,forming=false;
-    for(let j=n-1;j>=Math.max(start,n-R);j--){const r=fn(j);if(r){trig=r;break;}} // confirmada (rotura reciente)
+    let trig=null,forming=false,trigJ=-1;
+    for(let j=n-1;j>=Math.max(start,n-R);j--){const r=fn(j);if(r){trig=r;trigJ=j;break;}} // confirmada (rotura reciente)
     if(!trig&&ffn){const fr=ffn();if(fr){trig=fr;forming=true;}}                    // o en formación (cerca del disparo)
     if(!trig)continue;
+    // INVALIDACIÓN ("fake"): si tras confirmar, el precio vuelve a cruzar el nivel de
+    // ruptura en contra, la figura se marca cancelada y DEJA de inclinar el cono.
+    let fake=false;
+    if(!forming&&trigJ>0&&trigJ<n-1){const ref=cl[trigJ-1];
+      if(sig>0&&cl[n-1]<ref*0.99)fake=true;
+      if(sig<0&&cl[n-1]>ref*1.01)fake=true;}
     const st=bt(fn,sig);
-    out.push({t,sig,d,target:trig.target,forming,st,win:st?st.win:null,avg:st?st.avg:null});
+    out.push({t,sig,d,target:trig.target,forming,fake,st,win:st?st.win:null,avg:st?st.avg:null});
   }
   return out;
 }
@@ -1894,6 +1941,8 @@ const FIG_ART={
   'Triángulo descendente':{d:'M10,42 L50,104 L90,70 L130,104 L168,84 L205,104 L242,126',neck:104,dir:-1,tgt:126,key:[[50,104,''],[130,104,''],[205,104,'']],trend:'M14,30 L235,102'},
   'Ruptura de rango ↑':{d:'M10,55 L40,42 L70,68 L100,42 L130,68 L160,42 L190,68 L220,42 L245,14',neck:42,dir:1,tgt:14,box:[28,42,210,26]},
   'Ruptura de rango ↓':{d:'M10,55 L40,42 L70,68 L100,42 L130,68 L160,42 L190,68 L220,68 L245,110',neck:68,dir:-1,tgt:110,box:[28,42,210,26]},
+  'Bandera alcista (bull flag)':{d:'M12,130 L70,48 L92,58 L114,50 L136,60 L158,52 L180,62 L245,14',neck:52,dir:1,tgt:14,box:[86,46,100,20]},
+  'Bandera bajista (bear flag)':{d:'M12,20 L70,102 L92,92 L114,100 L136,90 L158,98 L180,88 L245,136',neck:98,dir:-1,tgt:136,box:[86,84,100,20]},
 };
 // Dibujo SVG de una figura idealizada (para el visor que se abre al tocarla).
 function PatternArt({t}){
@@ -1910,6 +1959,61 @@ function PatternArt({t}){
       <path d={a.d} fill="none" stroke="#F7931A" strokeWidth="2.6" strokeLinejoin="round" strokeLinecap="round"/>
       {(a.key||[]).map((k,i)=>k[2]?<g key={i}><circle cx={k[0]} cy={k[1]} r="4.5" fill={col}/><text x={k[0]} y={k[1]-8} fill="#E8ECF4" fontSize="8.5" textAnchor="middle" fontWeight="700">{k[2]}</text></g>:<circle key={i} cx={k[0]} cy={k[1]} r="3" fill={col} opacity=".8"/>)}
       <polygon points={up?'242,6 236,18 248,18':'242,144 236,132 248,132'} fill={col}/>
+    </svg>
+  );
+}
+// Dibujos ESQUEMÁTICOS de patrones de VELA para el visor (cada vela = [o,c,hi,lo]
+// en escala 0-100; verde si c>o). vol = barras de volumen relativas (opcional).
+const CANDLE_ART={
+  'Martillo':{c:[[95,80,97,78],[80,62,82,60],[50,58,60,18]]},
+  'Estrella fugaz':{c:[[20,35,37,18],[35,52,54,33],[62,54,95,52]]},
+  'Envolvente alcista':{c:[[80,66,82,64],[70,55,72,53],[50,78,80,48]]},
+  'Envolvente bajista':{c:[[25,40,42,23],[50,65,67,48],[70,44,72,42]]},
+  'Doji':{c:[[80,64,82,62],[60,60,78,42]]},
+  'Estrella del amanecer':{c:[[85,60,87,58],[55,52,58,45],[54,80,82,52]]},
+  'Estrella del atardecer':{c:[[25,50,52,23],[55,58,65,52],[56,30,58,28]]},
+  'Tres soldados blancos':{c:[[30,50,52,28],[45,65,67,43],[60,80,82,58]]},
+  'Tres cuervos negros':{c:[[80,60,82,58],[65,45,67,43],[50,30,52,28]]},
+  'Marubozu alcista':{c:[[45,58,60,43],[30,80,81,29]]},
+  'Marubozu bajista':{c:[[60,48,62,46],[80,30,81,29]]},
+  'Harami alcista':{c:[[80,45,82,43],[55,65,68,52]]},
+  'Harami bajista':{c:[[45,80,82,43],[70,58,73,55]]},
+  'Línea penetrante':{c:[[80,50,82,48],[45,68,70,40]]},
+  'Nube oscura':{c:[[40,70,72,38],[78,52,80,50]]},
+  'Hueco alcista':{c:[[40,55,57,38],[65,80,82,63]]},
+  'Hueco bajista':{c:[[70,55,72,53],[45,30,47,28]]},
+  'Pinzas de suelo':{c:[[70,45,72,25],[44,60,62,25]]},
+  'Pinzas de techo':{c:[[40,70,90,38],[68,50,90,48]]},
+  'Tres métodos alcistas':{c:[[30,55,57,28],[52,46,54,44],[48,44,50,42],[46,78,80,44]]},
+  'Vela de gran rango':{c:[[55,60,62,53],[50,88,94,42]]},
+  'Peonza (spinning top)':{c:[[70,58,72,56],[55,60,80,35]]},
+  'Hombre colgado':{c:[[20,38,40,18],[40,58,60,38],[70,64,72,30]]},
+  'Martillo invertido':{c:[[95,78,97,76],[78,60,80,58],[50,56,88,48]]},
+  'Belt hold alcista':{c:[[75,58,77,56],[30,70,74,30]]},
+  'Belt hold bajista':{c:[[35,52,54,33],[80,40,80,36]]},
+  'Doji libélula':{c:[[85,68,87,66],[70,70,73,30]]},
+  'Doji lápida':{c:[[25,40,42,23],[40,40,82,38]]},
+  'Vela de pánico + volumen':{c:[[80,70,82,68],[72,62,74,60],[64,22,66,18]],vol:[0.3,0.35,1]},
+  'Vela de impulso + volumen':{c:[[25,35,37,23],[33,42,44,31],[40,84,88,38]],vol:[0.3,0.35,1]},
+  'Clímax de ventas':{c:[[78,64,80,62],[64,50,66,48],[52,26,54,20]],vol:[0.25,0.4,1]},
+  'Clímax de compras':{c:[[26,42,44,24],[42,58,60,40],[56,84,88,54]],vol:[0.25,0.4,1]},
+};
+// Dibujo SVG de un patrón de velas idealizado (para el visor al tocar una vela).
+function CandleArt({t}){
+  const a=CANDLE_ART[t]; if(!a)return null;
+  const W=270,Htop=a.vol?112:140,n=a.c.length,slot=W/(n+1);
+  const Y=v=>8+(100-v)/100*(Htop-16);
+  return(
+    <svg viewBox={`0 0 270 150`} width="100%" style={{display:'block'}}>
+      {a.c.map((cd,i)=>{const [o,c2,hi,lo]=cd,up=c2>=o,col=up?'#1FE0A0':'#FF5470';
+        const x=slot*(i+1),bw=Math.min(26,slot*0.5);
+        return(<g key={i}>
+          <line x1={x} y1={Y(hi)} x2={x} y2={Y(lo)} stroke={col} strokeWidth="2.4" strokeLinecap="round"/>
+          <rect x={x-bw/2} y={Y(Math.max(o,c2))} width={bw} height={Math.max(2.5,Math.abs(Y(o)-Y(c2)))} rx="3" fill={col}/>
+        </g>);})}
+      {a.vol&&a.c.map((cd,i)=>{const up=cd[1]>=cd[0],x=slot*(i+1),bw=Math.min(26,slot*0.5),h=a.vol[i]*28;
+        return <rect key={'v'+i} x={x-bw/2} y={146-h} width={bw} height={h} rx="2" fill={up?'rgba(31,224,160,.5)':'rgba(255,84,112,.5)'}/>;})}
+      {a.vol&&<text x="6" y="145" fill="#7C8699" fontSize="7.5" className="mono">volumen</text>}
     </svg>
   );
 }
@@ -1963,6 +2067,16 @@ function candlePatterns(oh){
     [rng(i)>0&&body(i)<0.1*rng(i)&&dnW(i)>3*body(i)&&upW(i)<body(i),1,'Doji libélula','rechazo de mínimos (giro alcista)',j=>rng(j)>0&&body(j)<0.1*rng(j)&&dnW(j)>3*body(j)&&upW(j)<body(j)],
     [rng(i)>0&&body(i)<0.1*rng(i)&&upW(i)>3*body(i)&&dnW(i)<body(i),-1,'Doji lápida','rechazo de máximos (giro bajista)',j=>rng(j)>0&&body(j)<0.1*rng(j)&&upW(j)>3*body(j)&&dnW(j)<body(j)],
   ];
+  // ── VELAS CON VOLUMEN: caída/subida fuerte acompañada de volumen alto ──
+  if(oh[n-1].v!=null){
+    const vol=j=>oh[j].v||0;
+    const aVol=(j,w=20)=>{let s=0,c=0;for(let m=Math.max(0,j-w);m<j;m++){s+=vol(m);c++;}return c?s/c:0;};
+    defs.push(
+      [bear(i)&&body(i)>aBody(i)*1.8&&vol(i)>aVol(i)*2,1,'Vela de pánico + volumen','caída fuerte con volumen alto (capitulación · suele rebotar)',j=>bear(j)&&body(j)>aBody(j)*1.8&&vol(j)>aVol(j)*2],
+      [bull(i)&&body(i)>aBody(i)*1.8&&vol(i)>aVol(i)*2,1,'Vela de impulso + volumen','subida fuerte con volumen alto (convicción compradora)',j=>bull(j)&&body(j)>aBody(j)*1.8&&vol(j)>aVol(j)*2],
+      [bear(i)&&vol(i)>aVol(i)*3,1,'Clímax de ventas','volumen extremo vendiendo (agotamiento del pánico)',j=>bear(j)&&vol(j)>aVol(j)*3],
+      [bull(i)&&vol(i)>aVol(i)*3,-1,'Clímax de compras','volumen extremo comprando (posible euforia/techo)',j=>bull(j)&&vol(j)>aVol(j)*3]);
+  }
   const out=[];for(const d of defs){if(d[0])out.push({t:d[2],sig:d[1],d:d[3],st:bt(d[4]),vela:true});}
   return out;
 }
@@ -2025,6 +2139,7 @@ function QuantView({gFunding}){
   const [showBias,setShowBias]=useState(false);
   const [tgt,setTgt]=useState(''); // calculadora de probabilidad de tocar un precio
   const [figSel,setFigSel]=useState(null); // visor de figura gráfica (modal)
+  const [velaSel,setVelaSel]=useState(null); // visor de patrón de velas (modal)
   const longRef=React.useRef(null); // caché del histórico largo (no se re-pagina en cada refresco)
   const macroRef=React.useRef(null); // caché del ciclo económico (dato anual)
   useEffect(()=>{
@@ -2046,7 +2161,10 @@ function QuantView({gFunding}){
         jget('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1w&limit=300').then(k=>{out.weekly=k.map(x=>parseFloat(x[4]));}),
         jget('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=4h&limit=400').then(k=>{out.h4=k.map(x=>parseFloat(x[4]));}),
         // histórico largo (≈2.7 años) para backtests, Monte Carlo y volatilidad más fiables
-        jget('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=1000').then(k=>{out.ohlc=k.map(x=>({o:+x[1],h:+x[2],l:+x[3],c:+x[4]}));}),
+        jget('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=1000').then(k=>{out.ohlc=k.map(x=>({o:+x[1],h:+x[2],l:+x[3],c:+x[4],v:+x[5],tb:+x[9]}));}),
+        // oro (PAXG) y liquidez cripto (stablecoins, proxy de M2 cripto) para correlaciones
+        jget('https://api.coingecko.com/api/v3/coins/pax-gold/market_chart?vs_currency=usd&days=120&interval=daily').then(j=>{out.gold=j.prices.map(p=>p[1]);}),
+        jget('https://stablecoins.llama.fi/stablecoincharts/all',12000).then(j=>{if(Array.isArray(j))out.liq=j.slice(-430).map(x=>{const t=x.totalCirculatingUSD||x.totalCirculating||{};let s=0;for(const kk in t)s+=(+t[kk]||0);return s;}).filter(x=>x>0);}),
         jget('https://api.coingecko.com/api/v3/coins/ethereum/market_chart?vs_currency=usd&days=90&interval=daily').then(j=>{out.eth=j.prices.map(p=>p[1]);}),
         jget('https://api.coingecko.com/api/v3/coins/solana/market_chart?vs_currency=usd&days=90&interval=daily').then(j=>{out.sol=j.prices.map(p=>p[1]);}),
         // volatilidad IMPLÍCITA (índice DVOL de Deribit, anualizada %): expectativa del mercado
@@ -2132,6 +2250,52 @@ function QuantView({gFunding}){
     // ══ SESGOS DEL MONTE CARLO ══ cada señal aporta una deriva diaria (log-retorno);
     // la suma acotada inclina la simulación y, con ella, las 2 rutas proyectadas.
     const cl0=(x,lim)=>Math.max(-lim,Math.min(lim,x));
+    // ── ORO: correlación BTC–oro (PAXG) y sesgo pequeño si van de la mano ──
+    const corrG=(q.gold&&q.gold.length>10)?pearson(dret(cl),dret(q.gold)):null;
+    const goldB=(corrG!=null&&q.gold&&q.gold.length>31)?cl0(corrG*(q.gold[q.gold.length-1]/q.gold[q.gold.length-31]-1)*0.01,0.0004):null;
+    // ── LIQUIDEZ (stablecoins) con RETARDO: la liquidez cripto va meses por delante
+    // del precio. Se busca el retardo (0–120d) con mayor correlación entre el cambio
+    // 30d de la liquidez y el retorno 30d de BTC, y se usa la liquidez de hace ese
+    // retardo como sesgo (si crecía entonces → viento de cola ahora). ──
+    let liq=null;
+    if(q.liq&&q.liq.length>200&&cl.length>200){
+      const L=q.liq, chg=(a,i,w)=>(a[i]&&a[i-w])?a[i]/a[i-w]-1:null;
+      let best={lag:0,corr:-2};
+      for(let lag=0;lag<=120;lag+=10){
+        const xs=[],ys=[];
+        for(let i=cl.length-1;i>=60;i-=7){const li=L.length-1-(cl.length-1-i)-lag;
+          if(li<30)break; const x=chg(L,li,30),y=chg(cl,i,30);
+          if(x!=null&&y!=null){xs.push(x);ys.push(y);}}
+        if(xs.length>10){const c2=pearson(xs,ys);if(c2!=null&&c2>best.corr)best={lag,corr:c2};}
+      }
+      const li=L.length-1-best.lag, now30=li>30?L[li]/L[li-30]-1:null;
+      if(now30!=null)liq={lag:best.lag,corr:best.corr,chg:now30};
+    }
+    const liqB=liq?cl0(liq.chg*Math.max(0,liq.corr)*0.02,0.0006):null;
+    // ── FLUJO SPOT (taker buy/sell) que guarda la vista de Funding ──
+    let flow=null;try{const ff=JSON.parse(localStorage.getItem('vwafr_flow')||'null');if(ff&&Date.now()-ff.t<3*3600e3)flow=ff;}catch(_){}
+    const flowB=(flow&&Number.isFinite(flow.takerBuy))?cl0((flow.takerBuy-0.5)*2*0.003,0.0008):null;
+    // ── RITUAL DE CICLO: qué hizo BTC este MISMO día del ciclo en halvings previos.
+    // Alinea por días-desde-halving, promedia el camino 1..30d de ciclos anteriores y
+    // lo aplica ENCOGIDO (30%) como deriva día a día. Se actualiza solo cada día. ──
+    const ritDrift=new Array(31).fill(0); let ritual=null;
+    {
+      const HALV2=[Date.UTC(2012,10,28),Date.UTC(2016,6,9),Date.UTC(2020,4,11),Date.UTC(2024,3,20),Date.UTC(2028,3,18)];
+      const nowMs=Date.now(); let hix=0; for(let i2=0;i2<HALV2.length;i2++)if(nowMs>=HALV2[i2])hix=i2;
+      const Dd=Math.floor((nowMs-HALV2[hix])/864e5); // día del ciclo actual
+      const src=(q.longCloses&&q.longCloses.length>1500)?q.longCloses:cl;
+      const rpaths=[];
+      for(let hh=0;hh<hix;hh++){
+        const idx=src.length-1-Math.round((nowMs-(HALV2[hh]+Dd*864e5))/864e5); // ese mismo día en el ciclo hh
+        if(idx>=30&&idx<src.length-31){const pp=[];for(let h=1;h<=30;h++)pp.push(src[idx+h]/src[idx]-1);rpaths.push(pp);}
+      }
+      if(rpaths.length){
+        const avg=new Array(30).fill(0);
+        for(const pp of rpaths)for(let h=0;h<30;h++)avg[h]+=pp[h]/rpaths.length;
+        let prev=0;for(let h=1;h<=30;h++){const cur=Math.log(1+Math.max(-0.5,avg[h-1]));ritDrift[h]=cl0((cur-prev)*0.3,0.0025);prev=cur;}
+        ritual={n:rpaths.length,day:Dd,ret30:avg[29]};
+      }
+    }
     const mvrvB=Number.isFinite(q.mvrv)?cl0((1.7-q.mvrv)*0.0007,0.0011):null;  // infravalorado = alcista
     const fngB=Number.isFinite(q.fng)?(q.fng>=80?-0.0006:q.fng<=20?0.0006:0):null; // contrario en extremos
     // Opciones (calls/puts): Put/Call ratio → posicionamiento (más calls = alcista)
@@ -2172,10 +2336,15 @@ function QuantView({gFunding}){
     // Ciclo económico de EE.UU. (risk-on/off): datos macro positivos/negativos inclinan la ruta
     const macroB=(q.macro&&Number.isFinite(q.macro.score))?cl0(q.macro.score*0.0009,0.0009):null;
     if(macroB!=null&&macroB!==0)biases.push({k:'Ciclo económico EE.UU.',v:macroB,why:q.macro.phase.t+' · '+(q.macro.score>0?'risk-on (+)':'risk-off (−)')});
+    // Liquidez cripto con retardo (stablecoins), oro y flujo spot (taker)
+    if(liqB!=null&&liq)biases.push({k:'Liquidez (retardo '+liq.lag+'d)',v:liqB,why:'stablecoins '+(liq.chg>=0?'+':'')+(liq.chg*100).toFixed(1)+'% hace '+liq.lag+'d · corr '+liq.corr.toFixed(2)});
+    if(goldB!=null&&goldB!==0)biases.push({k:'Oro (correlación)',v:goldB,why:'corr BTC–oro '+corrG.toFixed(2)+' · oro '+((q.gold[q.gold.length-1]/q.gold[q.gold.length-31]-1)>=0?'subiendo':'bajando')+' 30d'});
+    if(flowB!=null&&flowB!==0)biases.push({k:'Flujo spot (taker)',v:flowB,why:(flow.takerBuy*100).toFixed(0)+'% compras agresivas 24h '+(flow.takerBuy>=0.5?'(compradores)':'(vendedores)')});
+    if(ritual)biases.push({k:'Ritual de ciclo (halvings)',v:qMean(ritDrift.slice(1,31)),why:'día '+ritual.day+' del ciclo · en '+ritual.n+' ciclo(s) previos BTC hizo '+(ritual.ret30>=0?'+':'')+(ritual.ret30*100).toFixed(1)+'% en 30d'});
     // Perfil de retorno día a día (path histórico 1..30d) de TODO lo que afecta al
     // precio: patrones técnicos, de velas y figuras gráficas. AHORA las figuras
     // también traen su perfil REAL backtesteado sobre BTC (1…60d), igual que el resto.
-    const actPath=patterns.filter(p=>p.st&&p.st.path).concat(chartPats.filter(p=>p.st&&p.st.path&&!p.forming)); // las figuras EN FORMACIÓN no inclinan el cono hasta confirmar
+    const actPath=patterns.filter(p=>p.st&&p.st.path).concat(chartPats.filter(p=>p.st&&p.st.path&&!p.forming&&!p.fake)); // ni EN FORMACIÓN ni CANCELADAS (fake) inclinan el cono
     let cumPath=null;
     if(actPath.length){cumPath=new Array(31).fill(0);let wsum=0;
       for(const p of actPath){const w=Math.min(p.st.n,40),pa=p.st.pathX||p.st.path;wsum+=w;for(let h=1;h<=30;h++)cumPath[h]+=pa[h]*w;}
@@ -2192,7 +2361,8 @@ function QuantView({gFunding}){
     // señales (anti doble-conteo), atenuada por la confianza media del bucket; los
     // buckets (≈ortogonales) se suman. Los Patrones van aparte (perfil día a día).
     const bk={};
-    for(const b of biases){const g=BUCKET[b.k]; if(!g)continue; (bk[g]||(bk[g]=[])).push(b);}
+    const bucketOf=k=>BUCKET[k]||(k.startsWith('Liquidez')?'macro':k.startsWith('Oro')?'macro':k.startsWith('Flujo spot')?'posicion':null);
+    for(const b of biases){const g=bucketOf(b.k); if(!g)continue; (bk[g]||(bk[g]=[])).push(b);}
     let constOther=0;
     for(const g in bk){const arr=bk[g]; let ws=0,vs=0;
       for(const b of arr){const w=b.w!=null?b.w:0.5; ws+=w; vs+=b.v*w;}
@@ -2201,7 +2371,7 @@ function QuantView({gFunding}){
     // DEBIASING ONLINE: corrección que cierra el lazo sobre la mediana (sesgo EWMA)
     const db=debiasRead(price);
     // deriva TOTAL por día = parte constante (buckets) + perfil de patrones + corrección
-    const drift30=[];for(let d=1;d<=30;d++)drift30[d-1]=cl0(constOther+(cumPath?patDrift[d]:techDaily)+db.adj,0.008);
+    const drift30=[];for(let d=1;d<=30;d++)drift30[d-1]=cl0(constOther+(cumPath?patDrift[d]:techDaily)+db.adj+ritDrift[d],0.008);
     const drift=qMean(drift30); // escalar representativo (para mostrar)
     // ── IMÁN del mapa de liquidez: el precio tiende hacia los clústeres de
     // liquidaciones (niveles de apalancamiento) y hacia los máximos/mínimos recientes.
@@ -2277,7 +2447,7 @@ function QuantView({gFunding}){
         for(const S of ks){let pay=0;for(const K of ks){const oo=sk[K];pay+=oo.c*Math.max(0,S-K)+oo.p*Math.max(0,K-S);}if(pay<minp){minp=pay;mp=S;}}
         optExp={date:big,oi:exp[big].oi,maxPain:mp,days:Math.ceil((big-Date.now())/864e5)};}}
     return {price,annVol,rsi,ma200,ma50,ma200w,mc,probUp,probUp15,probDn15,var99,cvar99,
-      fair,lo,hi,valPct,realized,models,plSup,plRes,H,regime,fund,gf,opt,levels,cyc,patterns,corrE,corrS,corrAvg,optExp,
+      fair,lo,hi,valPct,realized,models,plSup,plRes,H,regime,fund,gf,opt,levels,cyc,patterns,corrE,corrS,corrG,corrAvg,liq,ritual,optExp,
       route,tomorrow,tomPct,sig10,pdrift,trap,swingHi,swingLo,routes,biases,chartPats,drift,drift30,shutdown,
       cal,volScale,sigTarget,dvol:q.dvol,obImb:q.obImb,impDaily,closes:cl,db,skill};
   },[q,gFunding]);
@@ -2458,7 +2628,7 @@ function QuantView({gFunding}){
           </div>
         )}
         {c.patterns.length?c.patterns.map((pt,i)=>(
-          <div key={i} style={{...flx({gap:9}),padding:'9px 0',borderTop:i?'1px solid #12151F':'none'}}>
+          <div key={i} onClick={()=>{if(pt.vela&&CANDLE_ART[pt.t])setVelaSel(pt);}} style={{...flx({gap:9}),padding:'9px 0',borderTop:i?'1px solid #12151F':'none',cursor:(pt.vela&&CANDLE_ART[pt.t])?'pointer':'default'}}>
             <span style={{fontSize:15,color:pt.sig>0?'var(--up)':pt.sig<0?'var(--down)':'var(--faint)'}}>{pt.sig>0?'▲':pt.sig<0?'▼':'◆'}{pt.vela?'🕯️':''}</span>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:12.5,fontWeight:700,color:pt.sig>0?'var(--up)':pt.sig<0?'var(--down)':'var(--txt)'}}>{pt.t}</div>
@@ -2488,7 +2658,7 @@ function QuantView({gFunding}){
               <div style={{...flx({gap:6})}}>
                 <span style={{fontSize:12.5,fontWeight:700,color:pt.sig>0?'var(--up)':pt.sig<0?'var(--down)':'var(--txt)'}}>{pt.t}</span>
                 <span className="mono" style={{fontSize:7.5,fontWeight:700,flexShrink:0,padding:'1px 5px',borderRadius:7,
-                  color:pt.forming?'#F3BA2F':'var(--up)',background:'rgba(255,255,255,.04)'}}>{pt.forming?'⏳ en formación':'✓ confirmada'}</span>
+                  color:pt.fake?'var(--down)':pt.forming?'#F3BA2F':'var(--up)',background:'rgba(255,255,255,.04)'}}>{pt.fake?'✗ cancelada (fake)':pt.forming?'⏳ en formación':'✓ confirmada'}</span>
               </div>
               <div style={{fontSize:9.5,color:'var(--faint)'}}>{pt.d}</div>
               <div className="mono" style={{fontSize:9.5,color:'var(--dim)',marginTop:2}}>objetivo {money(pt.target)}</div>
@@ -2750,7 +2920,7 @@ function QuantView({gFunding}){
             <span style={eyebrow}>Correlación · 90d</span>
             <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>retornos diarios</span>
           </div>
-          {[['ETH',c.corrE],['SOL',c.corrS]].filter(x=>x[1]!=null).map(([nm,cv],i)=>(
+          {[['ETH',c.corrE],['SOL',c.corrS],['ORO 🥇',c.corrG]].filter(x=>x[1]!=null).map(([nm,cv],i)=>(
             <div key={i} style={{...flx({gap:9}),padding:'7px 0',borderTop:i?'1px solid #12151F':'none'}}>
               <span style={{fontSize:12,fontWeight:700,width:42}}>BTC·{nm}</span>
               <div style={{flex:1,position:'relative',height:7,borderRadius:4,background:'#0A0D14',overflow:'hidden'}}>
@@ -2849,6 +3019,17 @@ function QuantView({gFunding}){
         <div style={{fontSize:10.5,color:"var(--faint)",marginTop:6,lineHeight:1.55}}>El trade recomendado, el backtest y el <b>ranking de bots por rentabilidad</b> (todos sobre el mismo periodo y validados con walk-forward y Deflated Sharpe) están ahora en la pestaña <b style={{color:"var(--up)"}}>Bots</b>, arriba.</div>
       </div>
 
+      {/* NUMÉRICO CHICO: ¿la ruta 30d está acertando? (marcador acumulado) */}
+      {c.skill&&c.skill.n>=1&&(()=>{const sk=c.skill, ok=sk.skill>0;
+        return(
+        <div style={{...flx({justifyContent:'center',gap:16}),marginBottom:10,padding:'9px 12px',borderRadius:10,background:'#0A0D14',border:'1px solid var(--line2)'}}>
+          <span style={{fontSize:8.5,color:'var(--faint)'}}>Ruta 30d</span>
+          <span className="mono" style={{fontSize:11,fontWeight:800,color:ok?'var(--up)':'#F3BA2F'}}>{ok?'✓ acierta':'~ sin ventaja'} {(sk.skill*100).toFixed(0)}%</span>
+          <span className="mono" style={{fontSize:9,color:'var(--dim)'}}>dirección {(sk.hit*100).toFixed(0)}%</span>
+          <span className="mono" style={{fontSize:9,color:'var(--dim)'}}>{sk.n} días</span>
+        </div>);
+      })()}
+
       <p style={{fontSize:9.5,color:'var(--faint)',lineHeight:1.5,textAlign:'center',padding:'0 8px',marginBottom:8}}>
         Análisis automático con datos públicos (Binance · Deribit · CoinGecko · bitcoin-data). Modelos estadísticos.
       </p>
@@ -2857,6 +3038,33 @@ function QuantView({gFunding}){
         <div style={{fontSize:12,fontWeight:800,color:'var(--down)'}}>⚠️ Esto NO es consejo de inversión</div>
         <div style={{fontSize:9.5,color:'var(--faint)',marginTop:4,lineHeight:1.5}}>El "trade recomendado" es una simulación automática con fines educativos. Opera bajo tu responsabilidad; puedes perder tu capital.</div>
       </div>
+
+      {/* VISOR DE PATRÓN DE VELAS (modal: toca fuera o la ✕ para cerrar) */}
+      {velaSel&&(()=>{const pt=velaSel, up=pt.sig>0, col=up?'var(--up)':pt.sig<0?'var(--down)':'var(--dim)';
+        return(
+        <div onClick={()=>setVelaSel(null)} style={{position:'fixed',inset:0,zIndex:300,background:'rgba(3,5,9,.88)',
+          backdropFilter:'blur(5px)',WebkitBackdropFilter:'blur(5px)',display:'flex',alignItems:'center',justifyContent:'center',padding:14}}>
+          <div onClick={e=>e.stopPropagation()} style={{...panel({padding:16}),width:'100%',maxWidth:400,maxHeight:'92vh',overflowY:'auto'}}>
+            <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
+              <span style={{fontSize:15,fontWeight:800,color:col}}>{up?'▲':pt.sig<0?'▼':'◆'} 🕯️ {pt.t}</span>
+              <span onClick={()=>setVelaSel(null)} style={{fontSize:20,color:'var(--faint)',cursor:'pointer',lineHeight:1,padding:'0 4px'}}>✕</span>
+            </div>
+            <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:10}}>{pt.d}</div>
+            <div style={{fontSize:8.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.7,fontWeight:700,marginBottom:5}}>Cómo es el patrón</div>
+            <div style={{background:'#0A0D14',borderRadius:10,padding:'10px 8px'}}><CandleArt t={pt.t}/></div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:12}}>
+              {[['Acierto 10d',pt.st?pt.st.win+'%'+(pt.st.ci!=null?' ±'+pt.st.ci:''):'—',pt.st&&pt.st.win>=55?'var(--up)':'#F3BA2F'],
+                ['Retorno típico',pt.st?(pt.st.avg>=0?'+':'')+pt.st.avg+'%':'—',pt.st&&pt.st.avg>=0?'var(--up)':'var(--down)'],
+                ['Casos',pt.st?'n='+pt.st.n:'pocos','var(--txt)']].map((m,i)=>(
+                <div key={i} style={{background:'#0A0D14',borderRadius:8,padding:'8px 4px',textAlign:'center'}}>
+                  <div className="mono" style={{fontSize:11,fontWeight:800,color:m[2]}}>{m[1]}</div>
+                  <div style={{fontSize:7.5,color:'var(--dim)',marginTop:2}}>{m[0]}</div>
+                </div>))}
+            </div>
+            <p style={{fontSize:8.5,color:'var(--faint)',marginTop:10,lineHeight:1.5}}>Dibujo idealizado del patrón. La estadística es el backtest REAL sobre BTC (retorno a 10 días cada vez que apareció). Está activo AHORA en el gráfico diario. Toca fuera para cerrar.</p>
+          </div>
+        </div>);
+      })()}
 
       {/* VISOR DE FIGURA (modal estilo foto de perfil: toca fuera o la ✕ para cerrar) */}
       {figSel&&(()=>{const pt=figSel, up=pt.sig>0;
@@ -3013,11 +3221,21 @@ function PIBView(){
             <div style={{...eyebrow,fontSize:9}}>indicadores macro · fase del ciclo · automático</div>
           </div>
         </div>
-        <select value={cur.iso3} onChange={e=>setSel(e.target.value)}
-          style={{background:'var(--panel2)',color:'var(--txt)',border:'1px solid var(--line2)',borderRadius:9,
-            padding:'8px 9px',fontSize:12,fontWeight:700,maxWidth:140,cursor:'pointer'}}>
-          {countries.map(c=>(<option key={c.iso3} value={c.iso3}>{flagOf(c.iso2)} {c.name}</option>))}
-        </select>
+        {/* selector de país estilo chip (bandera + nombre + flecha) */}
+        <div style={{position:'relative',flexShrink:0}}>
+          <div style={{...flx({gap:7}),padding:'9px 30px 9px 12px',borderRadius:12,pointerEvents:'none',
+            background:'linear-gradient(135deg, rgba(110,139,255,.14), rgba(110,139,255,.05))',
+            border:'1px solid rgba(110,139,255,.35)',boxShadow:'0 4px 14px -6px rgba(110,139,255,.35)'}}>
+            <span style={{fontSize:17,lineHeight:1}}>{flagOf(cur.iso2)}</span>
+            <span style={{fontSize:12,fontWeight:800,color:'var(--txt)',whiteSpace:'nowrap',maxWidth:104,overflow:'hidden',textOverflow:'ellipsis'}}>{cur.name}</span>
+            <span style={{position:'absolute',right:11,top:'50%',transform:'translateY(-50%)',fontSize:9,color:'var(--accent)'}}>▼</span>
+          </div>
+          <select value={cur.iso3} onChange={e=>setSel(e.target.value)} aria-label="País"
+            style={{position:'absolute',inset:0,width:'100%',height:'100%',opacity:0,cursor:'pointer',
+              WebkitAppearance:'none',appearance:'none'}}>
+            {countries.map(c=>(<option key={c.iso3} value={c.iso3}>{flagOf(c.iso2)} {c.name}</option>))}
+          </select>
+        </div>
       </div>
 
       {/* FASE DEL CICLO (hero) */}
@@ -3759,6 +3977,25 @@ function App(){
   },[]);
   const doInstall=async()=>{if(!installEvt)return;installEvt.prompt();try{await installEvt.userChoice;}catch(_){}setInstallEvt(null);};
 
+  // ── FLUJO SPOT (taker buy/sell 24h): explica POR QUÉ se mueve el funding y
+  // alimenta el cono del Cuantitativo (se guarda en localStorage). ──
+  const [flow,setFlow]=useState(null);
+  useEffect(()=>{
+    let alive=true;
+    const load=async()=>{try{
+      const k=await fetch('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1h&limit=24').then(r=>r.json());
+      if(!Array.isArray(k)||k.length<10)return;
+      let vol=0,buy=0;for(const x of k){vol+=+x[5];buy+=+x[9];}
+      const takerBuy=vol>0?buy/vol:0.5, priceChg=(+k[k.length-1][4])/(+k[0][1])-1;
+      if(!Number.isFinite(takerBuy)||!Number.isFinite(priceChg))return;
+      const f={takerBuy,priceChg,t:Date.now()};
+      if(alive)setFlow(f);
+      try{localStorage.setItem('vwafr_flow',JSON.stringify(f));}catch(_){}
+    }catch(_){}};
+    load(); const t=setInterval(load,300000);
+    return()=>{alive=false;clearInterval(t);};
+  },[]);
+
   // ── TELEGRAM: avisos automáticos a TUS chats/grupos ──
   const [tgTok,setTgTok]=useState(()=>{try{return localStorage.getItem('vwafr_tg_tok')||'';}catch(_){return '';}});
   // destinos: uno por línea ("id  etiqueta"). Migra el chat único antiguo.
@@ -3938,6 +4175,40 @@ function App(){
         <span className="mono" style={{fontSize:10,color:'var(--accent)',fontWeight:700}}>{fundOpen?'▲ ocultar historial':'▼ ver historial + gráfico BTC'}</span>
       </div>
       {fundOpen&&<FundingHistory g={g}/>}
+
+      {/* ── ¿POR QUÉ se mueve? · quién empuja el precio/funding (spot vs futuros) ── */}
+      {flow&&(()=>{
+        const tb=flow.takerBuy, up=flow.priceChg>=0.004, dn=flow.priceChg<=-0.004;
+        let hist=[];try{hist=JSON.parse(localStorage.getItem('vwafr_fh')||'[]');}catch(_){}
+        const old=hist.length?hist.filter(h=>Date.now()-h.t>6*3600e3).slice(-1)[0]:null;
+        const fNow=g.vwafr, fPrev=old?old.f:fNow;
+        const fUp=fNow>fPrev+0.002, fDn=fNow<fPrev-0.002;
+        let why,who,col;
+        if(dn&&tb<0.48){why='Ventas SPOT agresivas'+(fDn?' + cierre de longs':'');who='vendedores al contado';col='var(--down)';}
+        else if(dn&&fDn){why='Cierre de LONGS apalancados';who='futuros desapalancándose';col='var(--down)';}
+        else if(dn&&fUp){why='SHORTS agresivos abriendo';who='futuros vendiendo';col='var(--down)';}
+        else if(up&&tb>0.52){why='Compras SPOT agresivas'+(fUp?' + longs abriendo':'');who='compradores al contado';col='var(--up)';}
+        else if(up&&fUp){why='LONGS apalancados abriendo';who='futuros comprando';col='var(--up)';}
+        else if(up&&fDn){why='Cierre de cortos (squeeze)';who='shorts recomprando';col='var(--up)';}
+        else{why='Mercado equilibrado';who='sin dominio claro';col='var(--dim)';}
+        return(
+        <div style={panel({marginBottom:16,padding:'12px 14px'})}>
+          <div style={{...flx({justifyContent:'space-between'}),marginBottom:8}}>
+            <span style={eyebrow}>¿Por qué se mueve?</span>
+            <span className="mono" style={{fontSize:10.5,fontWeight:800,color:col}}>{why}</span>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:7}}>
+            {[['Spot 24h',(tb*100).toFixed(0)+'% compras',tb>0.52?'var(--up)':tb<0.48?'var(--down)':'var(--txt)'],
+              ['Precio 24h',(flow.priceChg>=0?'+':'')+(flow.priceChg*100).toFixed(1)+'%',flow.priceChg>=0?'var(--up)':'var(--down)'],
+              ['Funding',fUp?'subiendo':fDn?'bajando':'estable',fUp?'var(--up)':fDn?'var(--down)':'var(--dim)']].map((m,i)=>(
+              <div key={i} style={{background:'#0A0D14',borderRadius:8,padding:'8px 5px',textAlign:'center'}}>
+                <div className="mono" style={{fontSize:10.5,fontWeight:800,color:m[2]}}>{m[1]}</div>
+                <div style={{fontSize:7.5,color:'var(--dim)',marginTop:2}}>{m[0]}</div>
+              </div>))}
+          </div>
+          <div style={{fontSize:8.5,color:'var(--faint)',marginTop:8,lineHeight:1.5}}>Ahora mandan: <b style={{color:'var(--txt)'}}>{who}</b>. "Spot % compras" = órdenes agresivas de compra sobre el volumen total (taker). Esta lectura también <b>alimenta el cono</b> de la ruta del Cuantitativo.</div>
+        </div>);
+      })()}
 
       {/* ── Referido Bitunix (central) ── */}
       <div style={{marginBottom:16}}>
