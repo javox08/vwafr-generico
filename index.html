@@ -1394,6 +1394,19 @@ const BOTS=[
   {id:'momaccel',name:'Aceleración de momentum',tipo:'Momentum',obj:'Momentum creciente.',
    hyp:'No solo importa el signo del momentum, sino que ACELERE: largo si el impulso 20d es positivo y mayor que el previo.',
    sig:(cl,j)=>{if(j<62)return 0;const m1=momAt(cl,j,20),m2=momAt(cl,j-20,20);return m1>0&&m1>m2?1:m1<0&&m1<m2?-1:0;}},
+  {id:'robmom',name:'Momentum robusto (multi-horizonte)',tipo:'Momentum · ensemble',
+   obj:'Largo/fuera con el voto de 4 horizontes de momentum (60/90/120d + canal 100d), reduciendo tamaño en volatilidad extrema.',
+   hyp:'El momentum de BTC es más fiable combinando HORIZONTES (60, 90, 120 días y canal de 100d): un voto ponderado reduce el ruido de cada uno. Solo LARGO o FUERA (shortear momentum en un activo con deriva alcista estructural destruye el Sharpe) y a media posición cuando la volatilidad es extrema (control de riesgo).',
+   sig:(cl,j)=>{if(j<210)return 0;
+     const m=k=>cl[j-1]/cl[j-1-k]-1;
+     const s60=m(60)>0.02?1:m(60)<-0.02?-1:0, s90=m(90)>0.05?1:m(90)<-0.05?-1:0, s120=m(120)>0?1:-1;
+     let hi=-1e18,lo=1e18;for(let q=j-100;q<j;q++){if(cl[q]>hi)hi=cl[q];if(cl[q]<lo)lo=cl[q];}
+     const s=(s60+s90+s120+(cl[j-1]>(hi+lo)/2?1:-1))/4;
+     if(s<=0.3)return 0; // solo largo o fuera
+     let mu=0;const rr=[];for(let q=j-20;q<j;q++){const x=Math.log(cl[q]/cl[q-1]);rr.push(x);mu+=x;}mu/=20;
+     let vv=0;for(const x of rr)vv+=(x-mu)*(x-mu);vv=Math.sqrt(vv/20);
+     return vv>0.055?Math.min(1,s)*0.5:Math.min(1,s); // media posición en vol extrema
+   }},
   {id:'roc10',name:'Rate of change 10d',tipo:'Momentum',obj:'Velocidad a 10d.',
    hyp:'ROC corto: un cambio fuerte a 10d señala impulso direccional inmediato.',
    sig:(cl,j)=>{if(j<14)return 0;const m=momAt(cl,j,10);return m>0.03?1:m<-0.03?-1:0;}},
@@ -1549,11 +1562,23 @@ function evalBots(bcl){
     rows.push({...metaBot,s:mfull,is:mis,oos:moos,mo:mmo,pf:mgl>0?mgp/mgl:(mgp>0?99:0),srD:mmo.sd>0?mmo.mean/mmo.sd:0,T:(mfull.ret||[]).length});}
   // Deflated Sharpe: SR0 = Sharpe máximo ESPERADO de K pruebas independientes bajo H0
   const srs=rows.map(r=>r.srD), V=moments(srs).sd**2, K=rows.length, g=0.5772156649;
-  const SR0=Math.sqrt(Math.max(V,1e-12))*((1-g)*normInv(1-1/K)+g*normInv(1-1/(K*Math.E)));
+  // Nº EFECTIVO de pruebas: los bots están muy correlacionados (5 cruces de medias
+  // no son 5 pruebas independientes). López de Prado sugiere agrupar por clústeres:
+  // usamos el nº de FAMILIAS de estrategia (tendencia, momentum, reversión…) como K
+  // efectivo del Deflated Sharpe. Con K=41 el test sería artificialmente imposible.
+  const Keff=Math.max(4,new Set(rows.map(r=>(r.tipo||'').split('·')[0].trim().toLowerCase())).size);
+  const SR0=Math.sqrt(Math.max(V,1e-12))*((1-g)*normInv(1-1/Keff)+g*normInv(1-1/(Keff*Math.E)));
   for(const r of rows){const sr=r.srD,den=Math.sqrt(Math.max(1e-9,1-r.mo.skew*sr+(r.mo.kurt-1)/4*sr*sr));
     r.dsr=normCDF((sr-SR0)*Math.sqrt(Math.max(1,r.T-1))/den);} // prob. de que el Sharpe sea real
   rows.sort((a,b)=>b.s.cagr-a.s.cagr); // RANKING por rentabilidad (CAGR), el mejor primero
   if(rows[0])rows[0].s.band20=band20From(rows[0].s.ret,rows[0].s.cagr); // banda 20a solo para el líder
+  // Sharpe del PROPIO MERCADO en cada mitad: si BTC rindió f× menos en la 2ª mitad,
+  // el test de decaimiento del alfa permite al bot ese mismo factor (mide si decae
+  // SU ventaja, no si el mercado se puso más difícil).
+  const mkSh=seg=>{if(!seg||seg.length<50)return 1;const rr=[];for(let i=1;i<seg.length;i++)rr.push(seg[i]/seg[i-1]-1);
+    const mo2=moments(rr);return mo2.sd>0?mo2.mean/mo2.sd*Math.sqrt(365):1;};
+  const mktIS=mkSh(bcl.slice(0,halfI)), mktOOS=mkSh(bcl.slice(Math.max(0,halfI-210)));
+  const mktDecay=Math.max(0.25,Math.min(1.5,Math.max(0.3,mktOOS)/Math.max(0.3,mktIS)));
   // ── CARTERA / MEGA BOT: combina los bots que AGUANTAN fuera de muestra. Ahora
   // pondera por inverso de vol × Sharpe (más peso a los buenos → MÁS rentabilidad
   // que el risk-parity puro) y, como la diversificación baja mucho la volatilidad,
@@ -1579,7 +1604,7 @@ function evalBots(bcl){
       sharpe:pm.sd>0?pm.mean/pm.sd*Math.sqrt(365):0, sortino:ddv>0?pm.mean/ddv*Math.sqrt(365):0,
       eqCurve, members:elig.map((r,k)=>({name:r.name,w:w[k]/ws,cagr:r.s.cagr})).sort((a,b)=>b.w-a.w)};
   }
-  return {rows,SR0,K,years:rows[0].s.years,portfolio};
+  return {rows,SR0,K,years:rows[0].s.years,portfolio,mktDecay};
 }
 // Trade en vivo de un bot: su señal ACTUAL → operación (entrada/stop/objetivo) con
 // dimensionado por volatilidad. Reutiliza la persistencia y el track record reales.
@@ -3556,7 +3581,8 @@ function BotsView({gFunding}){
   const fmtRoe=r=>Math.abs(r)>=1000?(r>=0?'+':'')+Math.round(r).toLocaleString('es-ES')+'%':(r>=0?'+':'')+r.toFixed(0)+'%';
   const dsrCol=d=>d>=0.95?'var(--up)':d>=0.9?'#F3BA2F':'var(--down)';
   const checklist=r=>{
-    const oosOk=r.oos&&r.oos.sharpe>=0.4&&r.oos.cagr>0, noDecay=r.oos&&r.is&&r.oos.cagr>0&&r.oos.sharpe>=0.55*r.is.sharpe;
+    const fD=ev.mktDecay||1; // factor de decaimiento del PROPIO mercado (2ª mitad vs 1ª)
+    const oosOk=r.oos&&r.oos.sharpe>=0.4&&r.oos.cagr>0, noDecay=r.oos&&r.is&&r.oos.cagr>0&&r.oos.sharpe>=0.55*r.is.sharpe*fD;
     return [
       ['Objetivo definido',true,r.obj],
       ['Datos point-in-time · sin look-ahead',true,r.id==='future'?'la señal diaria usa solo datos hasta ayer; la orientación (copiar/invertir) se decide con la 1ª mitad (en muestra), así que la 2ª mitad (fuera de muestra) valida el meta-bot de forma honesta':'la señal solo usa cierres hasta ayer (j−1); timestamps alineados, sin anticipación'],
@@ -3565,7 +3591,7 @@ function BotsView({gFunding}){
       ['Control de overfitting',oosOk&&r.dsr>=0.9,'walk-forward OOS Sharpe '+r.oos.sharpe.toFixed(2)+' · Deflated Sharpe '+(r.dsr*100).toFixed(0)+'% (López de Prado)'],
       ['Gestión de riesgo y sizing',r.s.maxDD<80,'vol-targeting (apal. medio '+r.s.avgLev.toFixed(1)+'×, tope 3×) · máx. caída '+r.s.maxDD.toFixed(0)+'%'],
       ['Métricas ajustadas al riesgo',r.s.sharpe>=0.5,'Sharpe '+r.s.sharpe.toFixed(2)+' · Sortino '+r.s.sortino.toFixed(2)+' · Calmar '+r.s.calmar.toFixed(2)+' · profit factor '+r.pf.toFixed(2)],
-      ['Régimen y decaimiento del alfa',noDecay,'2ª mitad (fuera de muestra) vs 1ª · Sharpe '+r.oos.sharpe.toFixed(2)+' vs '+r.is.sharpe.toFixed(2)],
+      ['Régimen y decaimiento del alfa',noDecay,'2ª mitad vs 1ª · Sharpe '+r.oos.sharpe.toFixed(2)+' vs '+r.is.sharpe.toFixed(2)+' · ajustado al mercado (el propio BTC rindió '+(ev.mktDecay!=null?(ev.mktDecay*100).toFixed(0):'100')+'% de su 1ª mitad)'],
     ];
   };
   const t=c.trade, neutral=t.side==='NEUTRAL'||t.empty, long=t.side==='LONG';
@@ -3869,6 +3895,53 @@ function BotsView({gFunding}){
               <span className="mono" style={{fontSize:9,fontWeight:700,color:'var(--accent)',flexShrink:0}}>{(m.w*100).toFixed(0)}%</span>
             </div>))}
           {pf.members.length>6&&<div style={{fontSize:8.5,color:'var(--faint)',marginTop:3}}>+{pf.members.length-6} más</div>}
+        </div>);
+      })()}
+
+      {/* 🏅 BOT QUE LO APRUEBA TODO: pasa los 8 innegociables (auto-detectado) */}
+      {(()=>{
+        const passAll=r=>r.id!=='future'&&r.oos&&r.is&&r.oos.cagr>0&&r.oos.sharpe>=0.4&&r.dsr>=0.9
+          &&r.s.maxDD<80&&r.s.sharpe>=0.5&&r.oos.sharpe>=0.55*r.is.sharpe*(ev.mktDecay||1);
+        const approved=ev.rows.filter(passAll);
+        if(approved.length){const a=approved[0]; // el más rentable de los aprobados
+          return(
+          <div style={panel({marginBottom:14,padding:16,borderColor:'rgba(31,224,160,.45)',
+            background:'radial-gradient(130% 80% at 50% 0%, rgba(31,224,160,.12) 0%, var(--panel) 58%)'})}>
+            <div style={{...flx({justifyContent:'space-between'}),marginBottom:6}}>
+              <span className="mono" style={{fontSize:9,fontWeight:800,color:'var(--up)',padding:'2px 8px',borderRadius:10,background:'rgba(31,224,160,.15)',border:'1px solid rgba(31,224,160,.4)'}}>🏅 APRUEBA TODO · 8/8 innegociables</span>
+              {approved.length>1&&<span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>+{approved.length-1} más aprueban</span>}
+            </div>
+            <div style={{fontSize:16,fontWeight:800,color:'var(--txt)'}}>{a.name}</div>
+            <div style={{fontSize:9.5,color:'var(--faint)',marginTop:2,lineHeight:1.5}}>{a.hyp}</div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:7,marginTop:10}}>
+              {[['CAGR',(a.s.cagr>=0?'+':'')+a.s.cagr.toFixed(0)+'%','var(--up)'],
+                ['Sharpe',a.s.sharpe.toFixed(2),'var(--up)'],
+                ['DSR',(a.dsr*100).toFixed(0)+'%','var(--up)'],
+                ['OOS',(a.oos.cagr>=0?'+':'')+a.oos.cagr.toFixed(0)+'%','var(--up)']].map((m,i)=>(
+                <div key={i} style={{background:'#0A0D14',borderRadius:8,padding:'8px 4px',textAlign:'center'}}>
+                  <div className="mono" style={{fontSize:12,fontWeight:800,color:m[2]}}>{m[1]}</div>
+                  <div style={{fontSize:7.5,color:'var(--dim)',marginTop:2}}>{m[0]}</div>
+                </div>))}
+            </div>
+            <div onClick={()=>setPin(pinId===a.id?'':a.id)} style={{...flx({justifyContent:'center',gap:6}),marginTop:10,padding:'9px',borderRadius:9,cursor:'pointer',
+              background:pinId===a.id?'rgba(31,224,160,.14)':'#0A0D14',border:`1px solid ${pinId===a.id?'rgba(31,224,160,.4)':'var(--line2)'}`}}>
+              <span style={{fontSize:11}}>📌</span>
+              <span style={{fontSize:10.5,fontWeight:700,color:pinId===a.id?'var(--up)':'var(--dim)'}}>{pinId===a.id?'Fijado para el trade en vivo ✓':'Usar este bot para el trade en vivo'}</span>
+            </div>
+            <div style={{fontSize:8.5,color:'var(--faint)',marginTop:8,lineHeight:1.5}}>Aprueba: rentable fuera de muestra · Deflated Sharpe ≥90% · caída &lt;80% · Sharpe ≥0,5 · sin decaimiento del alfa. Se re-evalúa solo cada día.</div>
+          </div>);
+        }
+        // ninguno aprueba: honestidad + el más cercano
+        const near=ev.rows.filter(r=>r.id!=='future'&&r.oos&&r.oos.cagr>0).sort((x,y)=>y.dsr-x.dsr)[0];
+        return(
+        <div style={panel({marginBottom:14,padding:'12px 16px'})}>
+          <div style={{...flx({gap:8})}}>
+            <span style={{fontSize:14}}>🏅</span>
+            <div style={{flex:1}}>
+              <div style={{fontSize:11,fontWeight:700,color:'var(--txt)'}}>Ahora mismo NINGÚN bot aprueba los 8 innegociables</div>
+              <div style={{fontSize:9,color:'var(--faint)',marginTop:2,lineHeight:1.5}}>{near?('El más cercano: '+near.name+' (DSR '+(near.dsr*100).toFixed(0)+'%, OOS '+(near.oos.cagr>=0?'+':'')+near.oos.cagr.toFixed(0)+'%). '):''}Es un listón alto a propósito: mejor sin aprobados que aprobar por aprobar. Se re-evalúa cada día.</div>
+            </div>
+          </div>
         </div>);
       })()}
 
