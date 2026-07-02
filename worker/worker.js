@@ -20,7 +20,8 @@ export default {
     if (url.pathname === '/send') { const n = await run(env, true); return new Response('ok · publicado en ' + n + ' canal(es)'); }
     // ── PRUEBAS DEL TRADING ──
     // /balance    → lee el saldo de futuros (verifica claves+firma, SIN riesgo)
-    // /test-trade → orden REAL mínima (0.001) con TP/SL, para verificar el circuito
+    // /test-trade → orden REAL con TP/SL y el tamaño configurado (BITUNIX_QTY;
+    //               "auto" = toda la cuenta × BITUNIX_LEV), para verificar el circuito
     if (url.pathname === '/balance') {
       if (!env.BITUNIX_API_KEY || !env.BITUNIX_API_SECRET) return new Response('✗ faltan los secrets BITUNIX_API_KEY y/o BITUNIX_API_SECRET (con esos nombres exactos)');
       const b = await bxBalanceRaw(env);
@@ -41,8 +42,8 @@ export default {
       const side = d.side || 'LONG'; // si la señal está fuera, prueba con LONG
       const px = d.price, slPct = 0.05, tpPct = 0.08;
       const td = { side, entry: px, tp: side === 'LONG' ? px * (1 + tpPct) : px * (1 - tpPct), sl: side === 'LONG' ? px * (1 - slPct) : px * (1 + slPct) };
-      const out = await bitunixTrade(env, td, '0.001'); // tamaño MÍNIMO forzado
-      return new Response('orden de PRUEBA (0.001 ' + side + ') enviada.\nRespuesta de Bitunix: ' + out + '\n\nSi dice éxito, verás la posición en Bitunix (ciérrala a mano cuando quieras). Si da error, mándale esta respuesta a Claude.');
+      const out = await bitunixTrade(env, td); // tamaño según BITUNIX_QTY ("auto" = toda la cuenta)
+      return new Response('orden de PRUEBA (' + side + ', tamaño ' + (env.BITUNIX_QTY || '0.001') + ') enviada.\nRespuesta de Bitunix: ' + out + '\n\n⚠️ Con BITUNIX_QTY=auto esta orden usa TODA la cuenta. Si dice éxito, verás la posición en Bitunix (ciérrala a mano si no la quieres). Si da error, mándale esta respuesta a Claude.');
     }
     return new Response('VWAFR worker OK · /send /balance /test-trade');
   }
