@@ -3940,6 +3940,19 @@ function BotsView({gFunding}){
               <span style={{fontSize:11}}>📌</span>
               <span style={{fontSize:10.5,fontWeight:700,color:pinId===a.id?'var(--up)':'var(--dim)'}}>{pinId===a.id?'Fijado para el trade en vivo ✓':'Usar este bot para el trade en vivo'}</span>
             </div>
+            {/* APY + Bitunix: que el bot aprobado se tradee SOLO */}
+            <div style={{marginTop:10,padding:'11px 12px',borderRadius:10,background:'linear-gradient(135deg, rgba(243,186,47,.10), rgba(31,224,160,.07))',border:'1px solid rgba(243,186,47,.3)'}}>
+              <div style={{...flx({justifyContent:'space-between'}),marginBottom:6}}>
+                <span style={{fontSize:9,fontWeight:800,color:'#F3BA2F',textTransform:'uppercase',letterSpacing:.6}}>💱 APY histórico del bot</span>
+                <span className="mono" style={{fontSize:16,fontWeight:800,color:'var(--up)'}}>{(a.s.cagr>=0?'+':'')+a.s.cagr.toFixed(0)}%<span style={{fontSize:9,color:'var(--dim)'}}> /año</span></span>
+              </div>
+              <div style={{fontSize:8.5,color:'var(--faint)',lineHeight:1.5,marginBottom:9}}>backtest {yr} años con comisiones · fuera de muestra {(a.oos.cagr>=0?'+':'')+a.oos.cagr.toFixed(0)}%/año (expectativa realista) · no garantizado</div>
+              <a href={BITUNIX} target="_blank" rel="noopener nofollow" style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,padding:'10px',borderRadius:9,textDecoration:'none',
+                background:'linear-gradient(100deg,#F3BA2F,#1FE0A0)',color:'#07090E',fontWeight:800,fontSize:12}}>
+                ⚡ Tradealo en Bitunix · código ffcczq →
+              </a>
+              <div style={{fontSize:8,color:'var(--faint)',marginTop:7,lineHeight:1.5}}>¿Que <b style={{color:'var(--txt)'}}>tradee él solo 24/7</b>? El worker del proyecto (carpeta <b>worker/</b>) ejecuta esta señal en Bitunix Futures con TP/SL automáticos: pon tu API y <b>BITUNIX_TRADE=live</b> (README, ~5 min). Empieza con tamaño mínimo.</div>
+            </div>
             <div style={{fontSize:8.5,color:'var(--faint)',marginTop:8,lineHeight:1.5}}>Aprueba: rentable fuera de muestra · Deflated Sharpe ≥90% · caída &lt;80% · Sharpe ≥0,5 · sin decaimiento del alfa. Se re-evalúa solo cada día.</div>
           </div>);
         }

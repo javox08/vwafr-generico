@@ -60,12 +60,14 @@ async function broadcast(env, text) {
   return count;
 }
 
-// Aviso cuando la RUTA del bot cambia: lado, entrada, TP, SL y enlace al bot.
+// Aviso cuando la RUTA del bot cambia: lado, entrada, TP, SL, APY y enlace al bot.
 function updateText(env, d) {
   const url = env.BOT_URL || 'https://vwafr-generico.pages.dev/';
-  return '🔄 Ruta actualizada · Operación de los bots rentables\n' +
+  return '🔄 Ruta actualizada · ' + (d.botName || 'Bot aprobado') + '\n' +
     (d.side === 'LONG' ? '▲ LONG' : '▼ SHORT') + ' BTC ' + money(d.entry) + '\n' +
-    '🎯 TP ' + money(d.tp) + '  ·  🛑 SL ' + money(d.sl) + '\n' +
+    '🎯 TP ' + money(d.tp) + '  ·  🛑 SL ' + money(d.sl) +
+    (d.apy != null ? '\n💱 APY histórico del bot: ' + (d.apy >= 0 ? '+' : '') + d.apy + '%/año (' + (d.years || 9) + 'a, backtest)' : '') + '\n' +
+    '⚡ Tradealo en Bitunix · código ffcczq · https://www.bitunix.com/register?inviteCode=ffcczq\n' +
     '👉 Ver el bot: ' + url +
     '\n\n⚠️ No es consejo financiero.';
 }
@@ -144,12 +146,65 @@ function money(v) {
   return '$' + (v < 0 ? '-' : '') + s;
 }
 
-// Calcula el análisis ligero de BTC y la operación del consenso de los bots.
+// ── ESTRATEGIA QUE SE TRADEA (por defecto, el BOT APROBADO 8/8) ──
+// 'momaccel' = Aceleración de momentum (el aprobado) · 'robmom' = Momentum
+// robusto multi-horizonte · 'consensus' = consenso de estrategias.
+function momaccelSig(cl, j) {
+  if (j < 62) return 0;
+  const m1 = cl[j - 1] / cl[j - 21] - 1, m2 = cl[j - 21] / cl[j - 41] - 1;
+  return (m1 > 0 && m1 > m2) ? 1 : (m1 < 0 && m1 < m2) ? -1 : 0;
+}
+function robmomSig(cl, j) {
+  if (j < 210) return 0;
+  const m = k => cl[j - 1] / cl[j - 1 - k] - 1;
+  const s60 = m(60) > 0.02 ? 1 : m(60) < -0.02 ? -1 : 0, s90 = m(90) > 0.05 ? 1 : m(90) < -0.05 ? -1 : 0, s120 = m(120) > 0 ? 1 : -1;
+  let hi = -1e18, lo = 1e18; for (let q = j - 100; q < j; q++) { if (cl[q] > hi) hi = cl[q]; if (cl[q] < lo) lo = cl[q]; }
+  const s = (s60 + s90 + s120 + (cl[j - 1] > (hi + lo) / 2 ? 1 : -1)) / 4;
+  if (s <= 0.3) return 0;
+  let mu = 0; const rr = []; for (let q = j - 21; q < j - 1; q++) { const x = Math.log(cl[q] / cl[q - 1]); rr.push(x); mu += x; } mu /= 20;
+  let vv = 0; for (const x of rr) vv += (x - mu) * (x - mu); vv = Math.sqrt(vv / 20);
+  return vv > 0.055 ? Math.min(1, s) * 0.5 : Math.min(1, s);
+}
+// Backtest LIGERO de la estrategia (mismos costes que la web) → APY histórico.
+function simLite(cl, sig) {
+  const n = cl.length; if (n < 300) return null;
+  const cost = 0.0004 + 0.0005, fund = 0.0003;
+  const lr = []; for (let i = 1; i < n; i++) lr.push(Math.log(cl[i] / cl[i - 1]));
+  const vol = j => { let m = 0; for (let k = j - 20; k < j; k++) m += lr[k - 1]; m /= 20; let s = 0; for (let k = j - 20; k < j; k++) { const x = lr[k - 1] - m; s += x * x; } return Math.sqrt(s / 20); };
+  let eq = 1, pos = 0, sz = 0;
+  for (let j = 220; j < n; j++) {
+    const s = sig(cl, j), lev = Math.max(0.25, Math.min(3, 0.022 / (vol(j) || 0.02)));
+    if (Math.sign(s) !== Math.sign(pos) || Math.abs(s - pos) >= 0.08) {
+      if (pos !== 0) eq *= (1 - cost * Math.abs(sz));
+      if (s !== 0) eq *= (1 - cost * lev);
+      pos = s; sz = s * lev;
+    }
+    const r = cl[j] / cl[j - 1] - 1;
+    if (pos !== 0) eq *= Math.max(1e-4, 1 + sz * r - Math.abs(sz) * fund);
+  }
+  const years = (n - 220) / 365;
+  return { cagr: years > 0 ? (Math.pow(Math.max(eq, 1e-6), 1 / years) - 1) * 100 : 0, years };
+}
+// Calcula el análisis de BTC y la operación de la ESTRATEGIA elegida.
 async function analyze(env) {
   try {
-    const k = await fetch('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=1000').then(r => r.json());
-    if (!Array.isArray(k) || k.length < 260) return null;
-    const cl = k.map(x => parseFloat(x[4]));
+    // histórico LARGO por el mirror público de Binance (funciona desde Cloudflare)
+    // + extensión Bitstamp pre-2017 (mismo empalme con solape que la web)
+    let cl = [], end = Date.now(), firstTs = null;
+    for (let pg = 0; pg < 4; pg++) {
+      const kk = await fetch('https://data-api.binance.vision/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=1000&endTime=' + end).then(r => r.json());
+      if (!Array.isArray(kk) || !kk.length) break;
+      cl = kk.map(x => parseFloat(x[4])).concat(cl); firstTs = kk[0][0]; end = kk[0][0] - 864e5;
+      if (kk.length < 1000) break;
+    }
+    if (cl.length < 260) return null;
+    const NEED = 210 + 9 * 365 + 2;
+    if (cl.length < NEED && firstTs) { try {
+      const jj = await fetch('https://www.bitstamp.net/api/v2/ohlc/btcusd/?step=86400&limit=' + Math.min(1000, (NEED - cl.length) + 30) + '&end=' + Math.floor(firstTs / 1000)).then(r => r.json());
+      const oc = ((jj.data && jj.data.ohlc) || []).map(x => parseFloat(x.close)).filter(Number.isFinite);
+      if (oc.length > 30) { const ratio = cl[0] / oc[oc.length - 1]; cl = oc.slice(0, -1).map(v => v * ratio).concat(cl); }
+    } catch (e) {} }
+    cl = cl.slice(-NEED);
     const n = cl.length, price = cl[n - 1];
     const rets = []; for (let i = 1; i < n; i++) rets.push(Math.log(cl[i] / cl[i - 1]));
     const recent = rets.slice(-30);
@@ -167,9 +222,15 @@ async function analyze(env) {
     }
     const probUp = Math.round(up / N * 100), touchPct = Math.round(touch / N * 100);
 
-    // SEÑAL DE LOS BOTS: consenso de varias estrategias (la operación de los 25 bots).
+    // ESTRATEGIA elegida (por defecto, el BOT APROBADO) + consenso para contexto
     const con = botConsensus(cl);
-    const side = con.side;
+    const stratName = (env && env.BITUNIX_STRATEGY) || 'momaccel';
+    const stratSig = stratName === 'robmom' ? robmomSig : stratName === 'consensus' ? null : momaccelSig;
+    const botName = stratName === 'robmom' ? 'Momentum robusto (multi-horizonte)' : stratName === 'consensus' ? 'Consenso de bots' : 'Aceleración de momentum';
+    const raw = stratSig ? stratSig(cl, n) : (con.side === 'LONG' ? 1 : con.side === 'SHORT' ? -1 : 0);
+    const side = raw > 0 ? 'LONG' : raw < 0 ? 'SHORT' : null;
+    const sim = stratSig ? simLite(cl, stratSig) : null;
+    const apy = sim ? Math.round(sim.cagr) : null;
     let entry = null, tp = null, sl = null;
     if (side) {
       let mu = 0; for (const r of recent) mu += r; mu /= recent.length;
@@ -181,7 +242,7 @@ async function analyze(env) {
     }
     const fig = detectFigure(cl);
     const mom = price / cl[n - 22] - 1;
-    return { price, probUp, touchPct, lvl, mom, con, side, entry, tp, sl, fig };
+    return { price, probUp, touchPct, lvl, mom, con, side, entry, tp, sl, fig, botName, apy, years: sim ? +sim.years.toFixed(1) : null };
   } catch (e) { return null; }
 }
 
@@ -194,7 +255,8 @@ function normalText(env, d) {
     '📈 BTC ' + money(d.price) + ' · sesgo ' + (d.mom >= 0 ? '+' : '') + (d.mom * 100).toFixed(1) + '% (momentum 21d).'
   ];
   if (side) pool.push('🤖 Bots (' + con.long + '▲/' + con.short + '▼ de ' + con.n + '): ' + side + '.');
-  if (side) pool.push('🤖 Operación bots: ' + side + ' · entrada ' + money(d.entry) + ' · 🎯 TP ' + money(d.tp) + ' · 🛑 SL ' + money(d.sl) + '.');
+  if (side) pool.push('🤖 ' + (d.botName || 'Bot') + ': ' + side + ' · entrada ' + money(d.entry) + ' · 🎯 TP ' + money(d.tp) + ' · 🛑 SL ' + money(d.sl) + '.');
+  if (d.apy != null) pool.push('🏅 Bot aprobado (' + d.botName + '): ' + (d.apy >= 0 ? '+' : '') + d.apy + '%/año histórico en ' + (d.years || 9) + ' años (con comisiones)' + (side ? ' · ahora ' + side : ' · ahora fuera') + '. Tradealo en Bitunix (código ffcczq).');
   if (fig) pool.push('📐 Posible ' + fig.name + (fig.forming ? ' (en formación)' : ' (confirmada)') + ': objetivo ' + money(fig.target) + ' · ' + fig.prob + '% de acierto histórico.');
   const tail = ['', '', ' ⚡', ' 🟠', ' #BTC'][(Math.random() * 5) | 0];
   let msg = pool[(Math.random() * pool.length) | 0] + tail;
