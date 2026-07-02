@@ -121,7 +121,7 @@ async function bxHeaders(env, queryConcat, bodyStr) {
   const ts = Date.now() + '', nonce = Math.random().toString(36).slice(2) + Date.now().toString(36);
   const digest = await sha256Hex(nonce + ts + env.BITUNIX_API_KEY + (queryConcat || '') + (bodyStr || ''));
   const sign = await sha256Hex(digest + env.BITUNIX_API_SECRET);
-  return { 'api-key': env.BITUNIX_API_KEY, 'nonce': nonce, 'timestamp': ts, 'sign': sign, 'Content-Type': 'application/json' };
+  return { 'api-key': env.BITUNIX_API_KEY, 'nonce': nonce, 'timestamp': ts, 'sign': sign, 'language': 'en-US', 'Content-Type': 'application/json' };
 }
 // Saldo DISPONIBLE de la cuenta de futuros (USDT). Devuelve null si falla.
 async function bxBalance(env) {
@@ -154,7 +154,8 @@ async function bitunixTrade(env, d, qtyOverride) {
     symbol: env.BITUNIX_SYMBOL || 'BTCUSDT',
     side: d.side === 'LONG' ? 'BUY' : 'SELL', tradeSide: 'OPEN', orderType: 'MARKET',
     qty: '' + qty,
-    tpPrice: '' + Math.round(d.tp), slPrice: '' + Math.round(d.sl)
+    tpPrice: '' + Math.round(d.tp), tpStopType: 'LAST_PRICE', tpOrderType: 'MARKET',
+    slPrice: '' + Math.round(d.sl), slStopType: 'LAST_PRICE', slOrderType: 'MARKET'
   };
   const bodyStr = JSON.stringify(bodyObj);
   const headers = await bxHeaders(env, '', bodyStr);
