@@ -24,9 +24,14 @@ export default {
     if (url.pathname === '/balance') {
       if (!env.BITUNIX_API_KEY || !env.BITUNIX_API_SECRET) return new Response('✗ faltan los secrets BITUNIX_API_KEY y/o BITUNIX_API_SECRET (con esos nombres exactos)');
       const b = await bxBalanceRaw(env);
-      return new Response(b.av != null
-        ? '✓ CONEXIÓN OK · saldo disponible futuros: ' + b.av + ' USDT (claves y firma correctas)'
-        : '✗ no se pudo leer el saldo.\nRespuesta de Bitunix: ' + b.raw + '\n\nMándale esta respuesta a Claude tal cual.');
+      if (b.av != null) return new Response('✓ CONEXIÓN OK · saldo disponible futuros: ' + b.av + ' USDT (claves y firma correctas)');
+      // diagnóstico extra: ¿responde el endpoint PÚBLICO (sin claves) desde este worker?
+      let pub = 'sin respuesta';
+      try {
+        const pr = await fetch('https://fapi.bitunix.com/api/v1/futures/market/tickers?symbols=BTCUSDT', { headers: { 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36', 'Accept': 'application/json' } });
+        pub = pr.status + ' ' + (await pr.text()).slice(0, 120);
+      } catch (e) { pub = 'error: ' + e.message; }
+      return new Response('✗ no se pudo leer el saldo.\nRespuesta de Bitunix (privada): ' + b.raw + '\nPrueba pública (sin claves): ' + pub + '\n\nMándale esta respuesta a Claude tal cual.');
     }
     if (url.pathname === '/test-trade') {
       if ((env.BITUNIX_TRADE || '').toLowerCase() !== 'live') return new Response('✗ BITUNIX_TRADE no está en "live"');
@@ -121,7 +126,10 @@ async function bxHeaders(env, queryConcat, bodyStr) {
   const ts = Date.now() + '', nonce = Math.random().toString(36).slice(2) + Date.now().toString(36);
   const digest = await sha256Hex(nonce + ts + env.BITUNIX_API_KEY + (queryConcat || '') + (bodyStr || ''));
   const sign = await sha256Hex(digest + env.BITUNIX_API_SECRET);
-  return { 'api-key': env.BITUNIX_API_KEY, 'nonce': nonce, 'timestamp': ts, 'sign': sign, 'language': 'en-US', 'Content-Type': 'application/json' };
+  return { 'api-key': env.BITUNIX_API_KEY, 'nonce': nonce, 'timestamp': ts, 'sign': sign, 'language': 'en-US', 'Content-Type': 'application/json',
+    // cabeceras de navegador: el WAF de Bitunix devuelve 403 a peticiones "sin identidad"
+    'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+    'Accept': 'application/json' };
 }
 // Fija en Bitunix el modo CRUZADO y el apalancamiento del símbolo. Bitunix solo
 // acepta apalancamientos ENTEROS, así que se manda el entero superior (1.1 → 2);
