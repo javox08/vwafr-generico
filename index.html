@@ -2165,6 +2165,14 @@ function QuantView({gFunding}){
         // oro (PAXG) y liquidez cripto (stablecoins, proxy de M2 cripto) para correlaciones
         jget('https://api.coingecko.com/api/v3/coins/pax-gold/market_chart?vs_currency=usd&days=120&interval=daily').then(j=>{out.gold=j.prices.map(p=>p[1]);}),
         jget('https://stablecoins.llama.fi/stablecoincharts/all',12000).then(j=>{if(Array.isArray(j))out.liq=j.slice(-430).map(x=>{const t=x.totalCirculatingUSD||x.totalCirculating||{};let s=0;for(const kk in t)s+=(+t[kk]||0);return s;}).filter(x=>x>0);}),
+        // LIQUIDEZ DEL DÓLAR: índice proxy (USD vs EUR/JPY/GBP, datos BCE). Dólar
+        // débil = más liquidez global = viento de cola para BTC. Se une con el oro.
+        (()=>{const d2=new Date(),d1=new Date(Date.now()-200*864e5),iso=d=>d.toISOString().slice(0,10);
+          return jget('https://api.frankfurter.app/'+iso(d1)+'..'+iso(d2)+'?from=USD&to=EUR,JPY,GBP',10000).then(j=>{
+            if(!j||!j.rates)return; const days=Object.keys(j.rates).sort(); if(days.length<30)return;
+            const r0=j.rates[days[0]];
+            out.usd=days.map(dd=>{const r=j.rates[dd];let s=0,c2=0;for(const k2 of ['EUR','JPY','GBP']){if(r[k2]&&r0[k2]){s+=r[k2]/r0[k2];c2++;}}return c2?s/c2*100:null;}).filter(x=>x!=null);
+          });})(),
         jget('https://api.coingecko.com/api/v3/coins/ethereum/market_chart?vs_currency=usd&days=90&interval=daily').then(j=>{out.eth=j.prices.map(p=>p[1]);}),
         jget('https://api.coingecko.com/api/v3/coins/solana/market_chart?vs_currency=usd&days=90&interval=daily').then(j=>{out.sol=j.prices.map(p=>p[1]);}),
         // volatilidad IMPLÍCITA (índice DVOL de Deribit, anualizada %): expectativa del mercado
@@ -2253,6 +2261,21 @@ function QuantView({gFunding}){
     // ── ORO: correlación BTC–oro (PAXG) y sesgo pequeño si van de la mano ──
     const corrG=(q.gold&&q.gold.length>10)?pearson(dret(cl),dret(q.gold)):null;
     const goldB=(corrG!=null&&q.gold&&q.gold.length>31)?cl0(corrG*(q.gold[q.gold.length-1]/q.gold[q.gold.length-31]-1)*0.015,0.0006):null;
+    // ── LIQUIDEZ DEL DÓLAR + ORO → SENTIMIENTO combinado (alimenta el cono) ──
+    // Dólar débil (índice cayendo) = liquidez global expansiva; oro subiendo =
+    // huida del fiat. Juntos forman un sentimiento risk-on/off para BTC.
+    let usdLiq=null;
+    if(q.usd&&q.usd.length>25){
+      const U=q.usd, usdChg=U[U.length-1]/U[Math.max(0,U.length-23)]-1;         // ~30 días naturales (22 hábiles)
+      const goldChg=(q.gold&&q.gold.length>31)?q.gold[q.gold.length-1]/q.gold[q.gold.length-31]-1:null;
+      const sLiq=-usdChg, sGold=goldChg!=null?goldChg:0;
+      const combo=sLiq*0.6+sGold*0.4;
+      const verdict=combo>0.012?{t:'RISK-ON · liquidez expansiva',c:'var(--up)',e:'🟢'}
+        :combo<-0.012?{t:'RISK-OFF · liquidez contractiva',c:'var(--down)',e:'🔴'}
+        :{t:'MIXTO · sin señal clara',c:'#F3BA2F',e:'🟡'};
+      usdLiq={usdChg,goldChg,combo,verdict,serie:U};
+    }
+    const usdLiqB=usdLiq?cl0(usdLiq.combo*0.03,0.0008):null;
     // ── LIQUIDEZ (stablecoins) con RETARDO: la liquidez cripto va meses por delante
     // del precio. Se busca el retardo (0–120d) con mayor correlación entre el cambio
     // 30d de la liquidez y el retorno 30d de BTC, y se usa la liquidez de hace ese
@@ -2338,6 +2361,7 @@ function QuantView({gFunding}){
     if(macroB!=null&&macroB!==0)biases.push({k:'Ciclo económico EE.UU.',v:macroB,why:q.macro.phase.t+' · '+(q.macro.score>0?'risk-on (+)':'risk-off (−)')});
     // Liquidez cripto con retardo (stablecoins), oro y flujo spot (taker)
     if(liqB!=null&&liq)biases.push({k:'Liquidez (retardo '+liq.lag+'d)',v:liqB,why:'stablecoins '+(liq.chg>=0?'+':'')+(liq.chg*100).toFixed(1)+'% hace '+liq.lag+'d · corr '+liq.corr.toFixed(2)});
+    if(usdLiqB!=null&&usdLiq)biases.push({k:'Dólar + Oro (sentimiento)',v:usdLiqB,why:'dólar '+(usdLiq.usdChg>=0?'+':'')+(usdLiq.usdChg*100).toFixed(1)+'% · oro '+(usdLiq.goldChg!=null?(usdLiq.goldChg>=0?'+':'')+(usdLiq.goldChg*100).toFixed(1)+'%':'—')+' · '+usdLiq.verdict.t});
     if(goldB!=null&&goldB!==0)biases.push({k:'Oro (correlación)',v:goldB,why:'corr BTC–oro '+corrG.toFixed(2)+' · oro '+((q.gold[q.gold.length-1]/q.gold[q.gold.length-31]-1)>=0?'subiendo':'bajando')+' 30d'});
     if(flowB!=null&&flowB!==0)biases.push({k:'Flujo spot (taker)',v:flowB,why:(flow.takerBuy*100).toFixed(0)+'% compras agresivas 24h '+(flow.takerBuy>=0.5?'(compradores)':'(vendedores)')});
     if(ritual)biases.push({k:'Ritual de ciclo (halvings)',v:qMean(ritDrift.slice(1,31)),why:'día '+ritual.day+' del ciclo · en '+ritual.n+' ciclo(s) previos BTC hizo '+(ritual.ret30>=0?'+':'')+(ritual.ret30*100).toFixed(1)+'% en 30d'});
@@ -2356,14 +2380,14 @@ function QuantView({gFunding}){
     biases[0].v=techDaily;
     if(cumPath)biases[0].why+=' · perfil día a día (1-30d)';
     // CONFIANZA por señal (peso) — IC online para las de precio, prior para las externas
-    for(const b of biases)b.w=SIGW[b.k]!=null?SIGW[b.k]:(b.k.startsWith('Liquidez')?0.65:b.k.startsWith('Oro')?0.6:0.5);
+    for(const b of biases)b.w=SIGW[b.k]!=null?SIGW[b.k]:(b.k.startsWith('Liquidez')?0.65:b.k.startsWith('Oro')?0.6:b.k.startsWith('Dólar')?0.65:0.5);
     // COMBINACIÓN POR BUCKETS: cada bucket = media ponderada por confianza de sus
     // señales (anti doble-conteo), atenuada por la confianza media del bucket; los
     // buckets (≈ortogonales) se suman. Los Patrones van aparte (perfil día a día).
     const bk={};
     // liquidez y oro llevan BUCKET PROPIO: se SUMAN al total del cono (no se diluyen
     // en la media del bucket macro) → efecto directo en la ruta de 30 días
-    const bucketOf=k=>BUCKET[k]||(k.startsWith('Liquidez')?'liquidez':k.startsWith('Oro')?'oro':k.startsWith('Flujo spot')?'posicion':null);
+    const bucketOf=k=>BUCKET[k]||(k.startsWith('Liquidez')?'liquidez':k.startsWith('Oro')?'oro':k.startsWith('Dólar')?'usdliq':k.startsWith('Flujo spot')?'posicion':null);
     for(const b of biases){const g=bucketOf(b.k); if(!g)continue; (bk[g]||(bk[g]=[])).push(b);}
     let constOther=0;
     for(const g in bk){const arr=bk[g]; let ws=0,vs=0;
@@ -2449,7 +2473,7 @@ function QuantView({gFunding}){
         for(const S of ks){let pay=0;for(const K of ks){const oo=sk[K];pay+=oo.c*Math.max(0,S-K)+oo.p*Math.max(0,K-S);}if(pay<minp){minp=pay;mp=S;}}
         optExp={date:big,oi:exp[big].oi,maxPain:mp,days:Math.ceil((big-Date.now())/864e5)};}}
     return {price,annVol,rsi,ma200,ma50,ma200w,mc,probUp,probUp15,probDn15,var99,cvar99,
-      fair,lo,hi,valPct,realized,models,plSup,plRes,H,regime,fund,gf,opt,levels,cyc,patterns,corrE,corrS,corrG,corrAvg,liq,ritual,optExp,
+      fair,lo,hi,valPct,realized,models,plSup,plRes,H,regime,fund,gf,opt,levels,cyc,patterns,corrE,corrS,corrG,corrAvg,liq,usdLiq,gold:q.gold,ritual,optExp,
       route,tomorrow,tomPct,sig10,pdrift,trap,swingHi,swingLo,routes,biases,chartPats,drift,drift30,shutdown,
       cal,volScale,sigTarget,dvol:q.dvol,obImb:q.obImb,impDaily,closes:cl,db,skill};
   },[q,gFunding]);
@@ -2940,6 +2964,37 @@ function QuantView({gFunding}){
           <p style={{fontSize:9,color:'var(--faint)',marginTop:8,lineHeight:1.5}}>Cerca de 1 = se mueven igual. BTC suele liderar el mercado.</p>
         </div>
       )}
+
+      {/* LIQUIDEZ DEL DÓLAR + ORO → SENTIMIENTO (dos gráficos separados que se unen) */}
+      {c.usdLiq&&(()=>{const ul=c.usdLiq, v=ul.verdict;
+        const goldS=(c.gold||[]).slice(-90);
+        return(
+        <div style={panel({marginBottom:14,padding:16,background:`radial-gradient(130% 80% at 50% 0%, ${v.c}12 0%, var(--panel) 55%)`})}>
+          <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
+            <span style={eyebrow}>Liquidez del dólar + Oro</span>
+            <span className="mono" style={{fontSize:10,fontWeight:800,color:v.c}}>{v.e} {v.t}</span>
+          </div>
+          <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:10,lineHeight:1.5}}>dos señales que se UNEN en un sentimiento: <b>dólar débil</b> = más liquidez global (alcista BTC) · <b>oro subiendo</b> = huida del fiat. El sentimiento <b>alimenta el cono de 30 días</b>.</div>
+          {/* Gráfico 1: índice del dólar (proxy) */}
+          <div style={{...flx({justifyContent:'space-between'}),marginBottom:3}}>
+            <span style={{fontSize:10,fontWeight:700,color:'var(--txt)'}}>💵 Índice del dólar <span style={{fontSize:8,color:'var(--faint)',fontWeight:400}}>(vs EUR·JPY·GBP · BCE)</span></span>
+            <span className="mono" style={{fontSize:10.5,fontWeight:800,color:ul.usdChg<=0?'var(--up)':'var(--down)'}}>{(ul.usdChg>=0?'+':'')+(ul.usdChg*100).toFixed(1)}% 30d {ul.usdChg<=0?'· más liquidez ✓':'· menos liquidez'}</span>
+          </div>
+          <TVChart series={ul.serie.slice(-120)} color={ul.usdChg<=0?'#1FE0A0':'#FF5470'} H={58} area fmt={vv=>vv.toFixed(1)} label={i=>''}/>
+          {/* Gráfico 2: oro */}
+          {goldS.length>10&&<>
+            <div style={{...flx({justifyContent:'space-between'}),margin:'12px 0 3px'}}>
+              <span style={{fontSize:10,fontWeight:700,color:'var(--txt)'}}>🥇 Oro <span style={{fontSize:8,color:'var(--faint)',fontWeight:400}}>(PAXG)</span></span>
+              <span className="mono" style={{fontSize:10.5,fontWeight:800,color:(ul.goldChg||0)>=0?'var(--up)':'var(--down)'}}>{ul.goldChg!=null?((ul.goldChg>=0?'+':'')+(ul.goldChg*100).toFixed(1)+'% 30d'):'—'}</span>
+            </div>
+            <TVChart series={goldS} color="#F3BA2F" H={58} area fmt={vv=>'$'+Math.round(vv).toLocaleString('es-ES')} label={i=>''}/>
+          </>}
+          <div style={{...flx({justifyContent:'space-between'}),marginTop:10,padding:'9px 11px',borderRadius:9,background:'#0A0D14'}}>
+            <span style={{fontSize:9.5,color:'var(--faint)'}}>Sentimiento combinado (60% dólar · 40% oro)</span>
+            <span className="mono" style={{fontSize:11,fontWeight:800,color:v.c}}>{(ul.combo>=0?'+':'')+(ul.combo*100).toFixed(1)}% → cono</span>
+          </div>
+        </div>);
+      })()}
 
       {/* MAPA DE LIQUIDEZ */}
       <div style={panel({marginBottom:14,padding:16})}>
