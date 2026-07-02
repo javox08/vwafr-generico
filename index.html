@@ -240,6 +240,9 @@
 const {useState,useEffect,useCallback,useMemo}=React;
 
 const FALLBACK_COINS=['BTC','ETH','SOL','XRP','BNB','DOGE','ADA','AVAX','LINK','LTC'];
+// Relé de datos long/short (Vercel, mismo proyecto que el relé de Bitunix):
+// OKX no envía CORS y el navegador no puede llamarle directo.
+const LS_RELAY='https://vwafr-generico.vercel.app/api/ls';
 
 // Exchanges base (color)
 const META=[
@@ -4541,22 +4544,29 @@ function App(){
       let vol=0,buy=0;for(const x of k){vol+=+x[5];buy+=+x[9];}
       const takerBuy=vol>0?buy/vol:0.5, priceChg=(+k[k.length-1][4])/(+k[0][1])-1;
       if(!Number.isFinite(takerBuy)||!Number.isFinite(priceChg))return;
-      // ratio LONG/SHORT (OKX, público con CORS): CUENTAS (todo el mercado) y
-      // DINERO (posiciones de top traders). La fuerza del posicionamiento se mide
-      // con el z-score del ratio frente a su propia historia reciente. Explica el
-      // funding y alimenta el cono del Cuantitativo como señal contraria.
+      // ratio LONG/SHORT: CUENTAS (todo el mercado) y DINERO (posiciones de top
+      // traders). OKX no permite CORS desde el navegador, así que se intenta
+      // directo y, si falla, se usa el RELÉ de Vercel (api/ls.js, con caché).
+      // La fuerza se mide con el z-score del ratio vs su historia reciente.
       let lsr=null,lsrPos=null,lsrZ=null;
+      const zOf=(hs,v)=>{if(!(hs&&hs.length>30&&v))return null;
+        const m=hs.reduce((s,x)=>s+x,0)/hs.length;
+        const sd=Math.sqrt(hs.reduce((s,x)=>s+(x-m)*(x-m),0)/hs.length);
+        return sd>1e-6?(v-m)/sd:null;};
       try{const j=await fetch('https://www.okx.com/api/v5/rubik/stat/contracts/long-short-account-ratio?ccy=BTC&period=1H').then(r=>r.json());
         const arr=(j&&j.data)||[]; const v=parseFloat(arr[0]&&(Array.isArray(arr[0])?arr[0][1]:arr[0].ratio));
         if(Number.isFinite(v)&&v>0)lsr=v;
-        const hs=arr.map(x=>parseFloat(Array.isArray(x)?x[1]:x&&x.ratio)).filter(x=>Number.isFinite(x)&&x>0);
-        if(hs.length>30&&lsr){const m=hs.reduce((s,x)=>s+x,0)/hs.length;
-          const sd=Math.sqrt(hs.reduce((s,x)=>s+(x-m)*(x-m),0)/hs.length);
-          if(sd>1e-6)lsrZ=(lsr-m)/sd;}
+        lsrZ=zOf(arr.map(x=>parseFloat(Array.isArray(x)?x[1]:x&&x.ratio)).filter(x=>Number.isFinite(x)&&x>0),lsr);
       }catch(_){}
-      try{const j=await fetch('https://www.okx.com/api/v5/rubik/stat/contracts/long-short-position-ratio-contract-top-trader?instId=BTC-USDT-SWAP&period=1H').then(r=>r.json());
+      if(lsr!=null){try{const j=await fetch('https://www.okx.com/api/v5/rubik/stat/contracts/long-short-position-ratio-contract-top-trader?instId=BTC-USDT-SWAP&period=1H').then(r=>r.json());
         const dd=j&&j.data&&j.data[0]; const v=parseFloat(Array.isArray(dd)?dd[1]:dd&&dd.ratio);
-        if(Number.isFinite(v)&&v>0)lsrPos=v;}catch(_){}
+        if(Number.isFinite(v)&&v>0)lsrPos=v;}catch(_){}}
+      if(lsr==null){try{ // RESPALDO por el relé (el navegador no puede con OKX)
+        const j=await fetch(LS_RELAY).then(r=>r.json());
+        const hs=(j&&j.btc&&j.btc.hist)||[];
+        if(hs.length){lsr=hs[0];lsrZ=zOf(hs,lsr);}
+        if(j&&j.btc&&Number.isFinite(j.btc.pos)&&j.btc.pos>0)lsrPos=j.btc.pos;
+      }catch(_){}}
       const f={takerBuy,priceChg,lsr,lsrPos,lsrZ,t:Date.now()};
       if(alive)setFlow(f);
       try{localStorage.setItem('vwafr_flow',JSON.stringify(f));}catch(_){}
@@ -4566,19 +4576,24 @@ function App(){
   },[]);
 
   // ── LONG/SHORT del TOP 10 (cuentas OKX por moneda) + CME institucional
-  // (Commitment of Traders de la CFTC, semanal, público y con CORS) ──
+  // (Commitment of Traders de la CFTC, semanal, público y con CORS).
+  // OKX directo no funciona desde el navegador (sin CORS) → se usa el RELÉ. ──
   const [lsTop,setLsTop]=useState(null);
   const [cot,setCot]=useState(null);
   useEffect(()=>{
     let alive=true;
     const load=async()=>{
       try{
-        const out=[];
+        let out=[];
         await Promise.all(FALLBACK_COINS.slice(0,10).map(async c2=>{try{
           const j=await fetch('https://www.okx.com/api/v5/rubik/stat/contracts/long-short-account-ratio?ccy='+c2+'&period=1H').then(r=>r.json());
           const dd=j&&j.data&&j.data[0]; const v=parseFloat(Array.isArray(dd)?dd[1]:NaN);
           if(Number.isFinite(v)&&v>0)out.push({c:c2,pl:v/(1+v)});
         }catch(_){}}));
+        if(!out.length){try{ // RESPALDO por el relé de Vercel
+          const j=await fetch(LS_RELAY).then(r=>r.json());
+          out=((j&&j.coins)||[]).filter(x=>Number.isFinite(x.r)&&x.r>0).map(x=>({c:x.c,pl:x.r/(1+x.r)}));
+        }catch(_){}}
         if(alive&&out.length)setLsTop(out.sort((a,b)=>b.pl-a.pl));
       }catch(_){}
       try{
