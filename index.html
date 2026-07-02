@@ -1403,7 +1403,9 @@ const BOTS=[
      let hi=-1e18,lo=1e18;for(let q=j-100;q<j;q++){if(cl[q]>hi)hi=cl[q];if(cl[q]<lo)lo=cl[q];}
      const s=(s60+s90+s120+(cl[j-1]>(hi+lo)/2?1:-1))/4;
      if(s<=0.3)return 0; // solo largo o fuera
-     let mu=0;const rr=[];for(let q=j-20;q<j;q++){const x=Math.log(cl[q]/cl[q-1]);rr.push(x);mu+=x;}mu/=20;
+     // vol de 20d con un día EXTRA de retardo (decisión con la vol conocida al
+     // cierre previo: estrictamente menos información, más ejecutable)
+     let mu=0;const rr=[];for(let q=j-21;q<j-1;q++){const x=Math.log(cl[q]/cl[q-1]);rr.push(x);mu+=x;}mu/=20;
      let vv=0;for(const x of rr)vv+=(x-mu)*(x-mu);vv=Math.sqrt(vv/20);
      return vv>0.055?Math.min(1,s)*0.5:Math.min(1,s); // media posición en vol extrema
    }},
