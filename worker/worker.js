@@ -22,11 +22,11 @@ export default {
     // /balance    → lee el saldo de futuros (verifica claves+firma, SIN riesgo)
     // /test-trade → orden REAL mínima (0.001) con TP/SL, para verificar el circuito
     if (url.pathname === '/balance') {
-      if (!env.BITUNIX_API_KEY) return new Response('✗ faltan las claves de Bitunix (secrets)');
-      const bal = await bxBalance(env);
-      return new Response(bal != null
-        ? '✓ CONEXIÓN OK · saldo disponible futuros: ' + bal + ' USDT (claves y firma correctas)'
-        : '✗ no se pudo leer el saldo: revisa BITUNIX_API_KEY/SECRET o mira los Logs');
+      if (!env.BITUNIX_API_KEY || !env.BITUNIX_API_SECRET) return new Response('✗ faltan los secrets BITUNIX_API_KEY y/o BITUNIX_API_SECRET (con esos nombres exactos)');
+      const b = await bxBalanceRaw(env);
+      return new Response(b.av != null
+        ? '✓ CONEXIÓN OK · saldo disponible futuros: ' + b.av + ' USDT (claves y firma correctas)'
+        : '✗ no se pudo leer el saldo.\nRespuesta de Bitunix: ' + b.raw + '\n\nMándale esta respuesta a Claude tal cual.');
     }
     if (url.pathname === '/test-trade') {
       if ((env.BITUNIX_TRADE || '').toLowerCase() !== 'live') return new Response('✗ BITUNIX_TRADE no está en "live"');
@@ -139,19 +139,22 @@ async function bxSetup(env) {
   try { await post('/api/v1/futures/account/change_margin_mode', { symbol, marginCoin: 'USDT', marginMode: 'CROSS' }); } catch (_) {}
   try { await post('/api/v1/futures/account/change_leverage', { symbol, marginCoin: 'USDT', leverage: lev }); } catch (_) {}
 }
-// Saldo DISPONIBLE de la cuenta de futuros (USDT). Devuelve null si falla.
-async function bxBalance(env) {
+// Saldo DISPONIBLE de la cuenta de futuros (USDT). Devuelve también la respuesta
+// CRUDA de Bitunix para poder diagnosticar errores de claves/firma/permisos.
+async function bxBalanceRaw(env) {
   try {
     const base = 'https://fapi.bitunix.com', path = '/api/v1/futures/account';
     // query en la URL como k=v; en la FIRMA concatenado clave+valor (orden alfabético)
     const headers = await bxHeaders(env, 'marginCoinUSDT', '');
     const r = await fetch(base + path + '?marginCoin=USDT', { headers });
-    const j = await r.json();
+    const txt = await r.text();
+    let j = null; try { j = JSON.parse(txt); } catch (_) {}
     const dd = j && j.data ? (Array.isArray(j.data) ? j.data[0] : j.data) : null;
     const av = dd ? parseFloat(dd.available ?? dd.availableBalance ?? dd.crossAvailable) : NaN;
-    return Number.isFinite(av) ? av : null;
-  } catch (e) { return null; }
+    return { av: Number.isFinite(av) ? av : null, raw: r.status + ' ' + txt.slice(0, 400) };
+  } catch (e) { return { av: null, raw: 'error: ' + e.message }; }
 }
+async function bxBalance(env) { return (await bxBalanceRaw(env)).av; }
 async function bitunixTrade(env, d, qtyOverride) {
   if (!env.BITUNIX_API_KEY || !env.BITUNIX_API_SECRET || !d.side) return 'sin claves o sin señal';
   if ((env.BITUNIX_TRADE || '').toLowerCase() !== 'live') return 'dry-run (no opera)';
