@@ -64,27 +64,65 @@ async function run(env, force) {
     (d.sl && last.sl && Math.abs(d.sl / last.sl - 1) > 0.005));
   let sent = 0;
   if (changed) {
-    sent = await broadcast(env, updateText(env, d));   // aviso de ruta actualizada
+    // Telegram recibe el aviso técnico; X/LinkedIn una versión con GANCHO (marketing)
+    sent = await broadcast(env, updateText(env, d), socialText(env, d, true));
     await bitunixTrade(env, d).catch(() => {});         // ejecuta en Bitunix (si está activo)
   } else if (force || Math.random() < 0.34) {
-    sent = await broadcast(env, normalText(env, d));    // mensaje normal
+    sent = await broadcast(env, normalText(env, d), socialText(env, d, false));
   }
   if (kv && d.side) { try { await kv.put('op', JSON.stringify({ side: d.side, tp: d.tp, sl: d.sl, ts: Date.now() })); } catch (_) {} }
   return sent;
 }
 
-// Difunde el mismo texto a todos los canales configurados (Telegram, X, LinkedIn).
-async function broadcast(env, text) {
+// Difunde a todos los canales. Telegram recibe `text` (técnico); X y LinkedIn
+// reciben `social` (versión con gancho de marketing) si se pasa.
+async function broadcast(env, text, social) {
   if (!text) return 0;
+  const s = social || text;
   let count = 0;
-  const token = env.TELEGRAM_TOKEN, chats = (env.CHAT_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+  const token = env.TELEGRAM_TOKEN, chats = (env.CHAT_IDS || '').split(',').map(s2 => s2.trim()).filter(Boolean);
   if (token && chats.length) for (const chat of chats) {
     await fetch('https://api.telegram.org/bot' + token + '/sendMessage', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: chat, text, disable_web_page_preview: true }) }).catch(() => {});
     count++;
   }
-  if (env.X_API_KEY && env.X_API_SECRET && env.X_ACCESS_TOKEN && env.X_ACCESS_SECRET) { if (await postX(env, text.slice(0, 270)).catch(() => false)) count++; }
-  if (env.LINKEDIN_TOKEN && env.LINKEDIN_AUTHOR) { if (await postLinkedIn(env, text).catch(() => false)) count++; }
+  if (env.X_API_KEY && env.X_API_SECRET && env.X_ACCESS_TOKEN && env.X_ACCESS_SECRET) { if (await postX(env, s.slice(0, 278)).catch(() => false)) count++; }
+  if (env.LINKEDIN_TOKEN && env.LINKEDIN_AUTHOR) { if (await postLinkedIn(env, s).catch(() => false)) count++; }
   return count;
+}
+
+// ── POST SOCIAL con GANCHO (X/LinkedIn): atrae gente a la web. Rota entre muchos
+// ganchos y, en los posts normales, promociona una función de la página. Los de
+// operación anuncian la ruta nueva del bot. Siempre ≤ ~275 caracteres (límite X). ──
+function socialText(env, d, update) {
+  const url = env.BOT_URL || 'https://vwafr-generico.pages.dev/';
+  const hooks = [
+    '🧠 Datos, no opiniones:', '🚨 El retail mira otra cosa:', '🎯 Deja de adivinar con BTC:',
+    '🤖 Mientras duermes, los bots trabajan:', '🔍 Lo que el precio no te cuenta:',
+    '💡 Esto separa a los que aciertan:', '📉 El 90% pierde por no mirar esto:',
+    '🧲 El dinero inteligente deja huellas:', '⚡ Señal fresca del sistema:', '👀 Nadie te enseña esto gratis:'];
+  const hook = hooks[(Math.random() * hooks.length) | 0];
+  if (update && d.side) {
+    return hook + '\n\n🤖 ' + (d.botName || 'El bot aprobado') + ' actualiza su ruta:\n' +
+      (d.side === 'LONG' ? '▲ LONG' : '▼ SHORT') + ' BTC ' + money(d.entry) + ' · 🎯 ' + money(d.tp) + ' · 🛑 ' + money(d.sl) +
+      (d.apy != null ? '\nHistórico ' + (d.apy >= 0 ? '+' : '') + d.apy + '%/año (backtest ' + (d.years || 9) + 'a)' : '') +
+      '\n\n👉 ' + url + '\n⚠️ No es consejo financiero. #Bitcoin #BTC';
+  }
+  const feats = [
+    'cono de 30 días con días análogos y auto-recalibración',
+    'detector de manipulación: barridos, pump&dump y squeezes',
+    '40 bots backtesteados 9 años con costes reales',
+    'todos los ciclos de BTC superpuestos y la ruta del actual',
+    'cuánto dinero hay en long vs short y quién empuja el precio',
+    'bot aprobado 8/8 (walk-forward + Deflated Sharpe) en vivo',
+    'figuras chartistas automáticas con % de acierto real',
+    'on-chain (MVRV/NUPL) con señal de techo y suelo'];
+  const feat = feats[(Math.random() * feats.length) | 0];
+  const datos = [
+    d.probUp != null ? (d.probUp + '% de probabilidad de que BTC suba en 30 días (Monte Carlo).') : null,
+    (d.touchPct != null && d.lvl) ? ('Tocar ' + money(d.lvl) + ' en 30 días: ' + d.touchPct + '% de probabilidad.') : null,
+    d.price ? ('BTC ' + money(d.price) + ' · análisis cuantitativo recién actualizado.') : null].filter(Boolean);
+  const dato = datos.length ? datos[(Math.random() * datos.length) | 0] : '';
+  return hook + '\n\n' + dato + '\n🆕 En la web: ' + feat + '.\n\n👉 ' + url + '\n⚠️ No es consejo financiero. #Bitcoin #BTC';
 }
 
 // Aviso cuando la RUTA del bot cambia: lado, entrada, TP, SL, APY y enlace al bot.
