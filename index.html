@@ -4311,6 +4311,19 @@ function BotsView({gFunding}){
         </div>);
       })()}
 
+      {/* Enlace directo al bot de trading en Bitunix — siempre visible */}
+      <a href={BITUNIX} target="_blank" rel="noopener noreferrer" style={{textDecoration:'none',display:'block'}}>
+        <div style={panel({marginBottom:14,padding:'12px 14px',display:'flex',alignItems:'center',gap:10,
+          background:'linear-gradient(135deg, rgba(31,224,160,.10), var(--panel) 60%)',borderColor:'rgba(31,224,160,.35)',cursor:'pointer'})}>
+          <span style={{fontSize:20}}>🤖</span>
+          <div style={{flex:1}}>
+            <div style={{fontSize:12.5,fontWeight:800,color:'var(--txt)'}}>Tradea el bot en Bitunix</div>
+            <div style={{fontSize:9.5,color:'var(--dim)',lineHeight:1.4}}>ábrete cuenta con el código <b style={{color:'var(--up)'}}>ffcczq</b> y copia las señales del bot aprobado · no es consejo financiero</div>
+          </div>
+          <span className="mono" style={{fontSize:10.5,fontWeight:800,color:'var(--up)',flexShrink:0}}>Entrar →</span>
+        </div>
+      </a>
+
       {/* 🏅 BOT QUE LO APRUEBA TODO: pasa los 8 innegociables (auto-detectado) */}
       {(()=>{
         const passAll=r=>r.id!=='future'&&r.oos&&r.is&&r.oos.cagr>0&&r.oos.sharpe>=0.4&&r.dsr>=0.9
