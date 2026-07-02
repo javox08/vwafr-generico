@@ -88,32 +88,61 @@ async function postLinkedIn(env, text) {
 }
 
 // ── TRADING EN BITUNIX (opcional) ─────────────────────────────────────────────
-// Ejecuta la señal del CONSENSO de los bots en Bitunix Futures cuando cambia la
-// ruta. Por SEGURIDAD va en DRY-RUN salvo que pongas BITUNIX_TRADE = "live".
-// IMPORTANTE: verifica endpoints/firma con la doc oficial y PRUEBA con tamaño
-// mínimo antes de operar en serio. Es dinero real: puedes perderlo.
+// Ejecuta la señal del bot en Bitunix Futures cuando cambia la ruta. Por
+// SEGURIDAD va en DRY-RUN salvo BITUNIX_TRADE = "live". Tamaño: BITUNIX_QTY fija
+// o "auto" = TODO el saldo disponible × BITUNIX_LEV (1,1 por defecto).
+// Firma según la doc de Bitunix: sign = sha256( sha256(nonce+timestamp+apiKey+
+// queryParams+body) + secretKey ), en hex minúsculas.
+async function sha256Hex(s) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+async function bxHeaders(env, queryConcat, bodyStr) {
+  const ts = Date.now() + '', nonce = Math.random().toString(36).slice(2) + Date.now().toString(36);
+  const digest = await sha256Hex(nonce + ts + env.BITUNIX_API_KEY + (queryConcat || '') + (bodyStr || ''));
+  const sign = await sha256Hex(digest + env.BITUNIX_API_SECRET);
+  return { 'api-key': env.BITUNIX_API_KEY, 'nonce': nonce, 'timestamp': ts, 'sign': sign, 'Content-Type': 'application/json' };
+}
+// Saldo DISPONIBLE de la cuenta de futuros (USDT). Devuelve null si falla.
+async function bxBalance(env) {
+  try {
+    const base = 'https://fapi.bitunix.com', path = '/api/v1/futures/account';
+    // query en la URL como k=v; en la FIRMA concatenado clave+valor (orden alfabético)
+    const headers = await bxHeaders(env, 'marginCoinUSDT', '');
+    const r = await fetch(base + path + '?marginCoin=USDT', { headers });
+    const j = await r.json();
+    const dd = j && j.data ? (Array.isArray(j.data) ? j.data[0] : j.data) : null;
+    const av = dd ? parseFloat(dd.available ?? dd.availableBalance ?? dd.crossAvailable) : NaN;
+    return Number.isFinite(av) ? av : null;
+  } catch (e) { return null; }
+}
 async function bitunixTrade(env, d) {
   if (!env.BITUNIX_API_KEY || !env.BITUNIX_API_SECRET || !d.side) return;
   if ((env.BITUNIX_TRADE || '').toLowerCase() !== 'live') return; // DRY-RUN por defecto
+  // Tamaño: "auto" = 95% del saldo disponible × apalancamiento / precio (toda la cuenta)
+  let qty = env.BITUNIX_QTY || '0.001';
+  if (('' + qty).toLowerCase() === 'auto') {
+    const bal = await bxBalance(env);
+    const lev = parseFloat(env.BITUNIX_LEV || '1.1');
+    if (bal != null && d.entry > 0) {
+      const q = Math.floor((bal * 0.95 * lev / d.entry) * 1000) / 1000; // redondeo ↓ a 0.001
+      qty = '' + Math.max(0.001, q);
+    } else qty = '0.001'; // si el saldo no se puede leer, tamaño mínimo (seguro)
+  }
   const base = 'https://fapi.bitunix.com', path = '/api/v1/futures/trade/place_order';
   const bodyObj = {
     symbol: env.BITUNIX_SYMBOL || 'BTCUSDT',
     side: d.side === 'LONG' ? 'BUY' : 'SELL', tradeSide: 'OPEN', orderType: 'MARKET',
-    qty: '' + (env.BITUNIX_QTY || '0.001'),
+    qty: '' + qty,
     tpPrice: '' + Math.round(d.tp), slPrice: '' + Math.round(d.sl)
   };
-  const bodyStr = JSON.stringify(bodyObj), ts = Date.now() + '', nonce = Math.random().toString(36).slice(2);
-  const sign = await hmacHex(env.BITUNIX_API_SECRET, nonce + ts + env.BITUNIX_API_KEY + bodyStr);
-  await fetch(base + path, {
-    method: 'POST',
-    headers: { 'api-key': env.BITUNIX_API_KEY, 'nonce': nonce, 'timestamp': ts, 'sign': sign, 'Content-Type': 'application/json' },
-    body: bodyStr
-  }).catch(() => {});
-}
-async function hmacHex(secret, msg) {
-  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(msg));
-  return [...new Uint8Array(sig)].map(b => b.toString(16).padStart(2, '0')).join('');
+  const bodyStr = JSON.stringify(bodyObj);
+  const headers = await bxHeaders(env, '', bodyStr);
+  try {
+    const r = await fetch(base + path, { method: 'POST', headers, body: bodyStr });
+    const j = await r.json().catch(() => null);
+    console.log('bitunix order:', r.status, JSON.stringify(j || {}).slice(0, 300)); // visible en Logs
+  } catch (e) { console.log('bitunix error:', e.message); }
 }
 
 // Publica un tweet con OAuth 1.0a (firma HMAC-SHA1 con Web Crypto del Worker).

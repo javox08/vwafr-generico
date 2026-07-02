@@ -18,7 +18,9 @@ BOT_URL = "https://vwafr-generico.pages.dev/"
 # Trading real en Bitunix: "dry" (no opera, por defecto) o "live" (opera de verdad).
 BITUNIX_TRADE = "dry"
 BITUNIX_SYMBOL = "BTCUSDT"
-BITUNIX_QTY = "0.001"
+BITUNIX_QTY = "auto"
+# Apalancamiento usado por el tamaño "auto" (toda la cuenta x este factor).
+BITUNIX_LEV = "1.1"
 # Estrategia que se tradea y anuncia: "momaccel" (Aceleración de momentum, el bot
 # aprobado 8/8), "robmom" (Momentum robusto) o "consensus" (consenso de bots).
 BITUNIX_STRATEGY = "robmom"
