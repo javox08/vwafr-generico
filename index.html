@@ -4879,18 +4879,48 @@ function App(){
             <span style={eyebrow}>Long vs Short · top {lsTop.length}</span>
             <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>cuentas en futuros (OKX) · 1h</span>
           </div>
-          {lsTop.map(r=>(
-            <div key={r.c} style={{...flx({gap:8}),padding:'4px 0'}}>
-              <span style={{fontSize:10.5,fontWeight:700,minWidth:40}}>{r.c}</span>
-              <div style={{flex:1,display:'flex',height:6,borderRadius:4,overflow:'hidden'}}>
-                <div style={{width:(r.pl*100)+'%',background:'var(--up)',opacity:.75}}/>
-                <div style={{flex:1,background:'var(--down)',opacity:.75}}/>
-              </div>
-              <span className="mono" style={{fontSize:9.5,fontWeight:700,color:r.pl>=0.5?'var(--up)':'var(--down)',minWidth:88,textAlign:'right'}}>{(r.pl*100).toFixed(0)}% L / {((1-r.pl)*100).toFixed(0)}% S</span>
-            </div>
-          ))}
-          {(()=>{const avg=lsTop.reduce((s2,r)=>s2+r.pl,0)/lsTop.length;
-            return <div style={{fontSize:9,color:'var(--dim)',marginTop:6,lineHeight:1.5}}>Media del mercado: <b style={{color:avg>=0.5?'var(--up)':'var(--down)'}}>{(avg*100).toFixed(0)}% long</b> — {avg>=0.5?'hay MÁS cuentas en LONG':'hay MÁS cuentas en SHORT'} en el top {lsTop.length}.</div>;})()}
+          {(()=>{
+            // interés abierto por moneda (suma de los exchanges del panel, $B)
+            const oiOf=c2=>{const bd=(data&&data[c2])||{};let oi=0;
+              for(const ex in bd){const o=bd[ex];if(o&&o.ok&&Number.isFinite(o.oi)&&o.oi>0)oi+=o.oi;}return oi;};
+            const fmtB=v=>v>=1?('$'+v.toFixed(1).replace('.',',')+'B'):v>0?('$'+Math.round(v*1000)+'M'):'';
+            return(<React.Fragment>
+              {lsTop.map(r=>{const oi=oiOf(r.c);
+                return(
+                <div key={r.c} style={{...flx({gap:8}),padding:'4px 0'}}>
+                  <div style={{minWidth:44}}>
+                    <div style={{fontSize:10.5,fontWeight:700,lineHeight:1.1}}>{r.c}</div>
+                    {oi>0&&<div className="mono" style={{fontSize:7.5,color:'var(--faint)'}}>OI {fmtB(oi)}</div>}
+                  </div>
+                  <div style={{flex:1,display:'flex',height:6,borderRadius:4,overflow:'hidden'}}>
+                    <div style={{width:(r.pl*100)+'%',background:'var(--up)',opacity:.75}}/>
+                    <div style={{flex:1,background:'var(--down)',opacity:.75}}/>
+                  </div>
+                  <span className="mono" style={{fontSize:9.5,fontWeight:700,color:r.pl>=0.5?'var(--up)':'var(--down)',minWidth:88,textAlign:'right'}}>{(r.pl*100).toFixed(0)}% L / {((1-r.pl)*100).toFixed(0)}% S</span>
+                </div>);})}
+              {(()=>{
+                let totL=0,totS=0,tot=0;
+                for(const r of lsTop){const oi=oiOf(r.c);if(oi>0){totL+=oi*r.pl;totS+=oi*(1-r.pl);tot+=oi;}}
+                const avg=lsTop.reduce((s2,r)=>s2+r.pl,0)/lsTop.length;
+                const wAvg=tot>0?totL/tot:null;
+                if(tot>0)return(
+                <div style={{marginTop:8,padding:'9px 11px',borderRadius:9,background:'#0A0D14',border:'1px solid var(--line2)'}}>
+                  <div style={{...flx({justifyContent:'space-around'}),marginBottom:4}}>
+                    <div style={{textAlign:'center'}}>
+                      <div className="mono" style={{fontSize:13.5,fontWeight:800,color:'var(--up)'}}>{fmtB(totL)}</div>
+                      <div style={{fontSize:7.5,color:'var(--dim)'}}>en LONG</div></div>
+                    <div style={{textAlign:'center'}}>
+                      <div className="mono" style={{fontSize:11.5,fontWeight:800,color:totL>=totS?'var(--up)':'var(--down)'}}>{totL>=totS?'▲ más LONG':'▼ más SHORT'}</div>
+                      <div style={{fontSize:7.5,color:'var(--dim)'}}>ponderado por OI · {(wAvg*100).toFixed(0)}% long</div></div>
+                    <div style={{textAlign:'center'}}>
+                      <div className="mono" style={{fontSize:13.5,fontWeight:800,color:'var(--down)'}}>{fmtB(totS)}</div>
+                      <div style={{fontSize:7.5,color:'var(--dim)'}}>en SHORT</div></div>
+                  </div>
+                  <div style={{fontSize:8,color:'var(--faint)',lineHeight:1.5}}>Interés abierto total {fmtB(tot)} del top {lsTop.length}, repartido con el ratio long/short de CADA moneda (media simple sin ponderar: {(avg*100).toFixed(0)}% long). Las monedas con más OI pesan más: es el reparto del DINERO, no de las cuentas.</div>
+                </div>);
+                return <div style={{fontSize:9,color:'var(--dim)',marginTop:6,lineHeight:1.5}}>Media del mercado: <b style={{color:avg>=0.5?'var(--up)':'var(--down)'}}>{(avg*100).toFixed(0)}% long</b> — {avg>=0.5?'hay MÁS cuentas en LONG':'hay MÁS cuentas en SHORT'} en el top {lsTop.length}.</div>;
+              })()}
+            </React.Fragment>);})()}
           {cot&&(cot.levL+cot.levS)>0&&(()=>{const pl=cot.levL/(cot.levL+cot.levS), am=(cot.amL+cot.amS)>0?cot.amL/(cot.amL+cot.amS):null;
             return(<div style={{marginTop:10,paddingTop:9,borderTop:'1px solid var(--line2)'}}>
               <div style={{...flx({justifyContent:'space-between'}),marginBottom:5}}>
