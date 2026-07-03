@@ -35,9 +35,10 @@ module.exports = async (req, res) => {
     if (rs.length || rp != null) out.coins.push({ c, r: rs.length ? rs.reduce((a, x) => a + x, 0) / rs.length : null, srcs: rs.length, rp });
     await new Promise(r2 => setTimeout(r2, 120));
   }
-  // ratio por POSICIONES de TOP TRADERS (el "dinero de los pros"): se juntan
-  // varios exchanges y se PONDERAN por el interés abierto (en USD) de cada uno,
-  // así el exchange más grande pesa más. posSrcs = cuántos lo confirman.
+  // ratio por POSICIONES de TOP TRADERS (el "dinero de los pros"): SOLO fuentes que
+  // son de verdad de top traders por posición (OKX y Binance). Bybit no publica
+  // top-traders (solo cuentas = la masa), así que NO entra aquí — iría al lado
+  // largo de la multitud y falsearía el dato. Ponderado por OI (USD).
   {
     const items = []; // {ex, r, oi}
     try {
@@ -59,20 +60,12 @@ module.exports = async (req, res) => {
       const p = parseFloat(px && px.markPrice), oiB = parseFloat(oi && oi.openInterest);
       if (Number.isFinite(v) && v > 0) items.push({ ex: 'Binance', r: v, oi: (Number.isFinite(p) && Number.isFinite(oiB)) ? p * oiB / 1e9 : 1 });
     } catch (e) {}
-    try {
-      const [rt, tk] = await Promise.all([
-        fetch('https://api.bybit.com/v5/market/account-ratio?category=linear&symbol=BTCUSDT&period=1h&limit=1').then(r => r.json()).catch(() => null),
-        fetch('https://api.bybit.com/v5/market/tickers?category=linear&symbol=BTCUSDT').then(r => r.json()).catch(() => null)
-      ]);
-      const l = rt && rt.result && rt.result.list && rt.result.list[0];
-      const t = tk && tk.result && tk.result.list && tk.result.list[0];
-      if (l) { const bl = parseFloat(l.buyRatio), s = parseFloat(l.sellRatio); const w = parseFloat(t && t.openInterestValue);
-        if (bl > 0 && s > 0) items.push({ ex: 'Bybit', r: bl / s, oi: Number.isFinite(w) && w > 0 ? w / 1e9 : 1 }); }
-    } catch (e) {}
     if (items.length) {
       let wsum = 0, rsum = 0; for (const it of items) { wsum += it.oi; rsum += it.r * it.oi; }
       out.btc.pos = wsum > 0 ? rsum / wsum : items.reduce((a, x) => a + x.r, 0) / items.length;
-      out.btc.posSrcs = items.length; out.btc.posEx = items.map(x => x.ex); out.btc.posW = true;
+      out.btc.posSrcs = items.length; out.btc.posEx = items.map(x => x.ex); out.btc.posW = items.length > 1;
+      // COHERENCIA: la fila de BTC del top-10 usa el MISMO valor (pros multi-exchange)
+      const bc = out.coins.find(x => x.c === 'BTC'); if (bc) bc.rp = out.btc.pos;
     }
   }
   res.status(200).json(out);
