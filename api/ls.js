@@ -30,25 +30,44 @@ module.exports = async (req, res) => {
     await new Promise(r2 => setTimeout(r2, 120));
   }
   // ratio por POSICIONES de TOP TRADERS (el "dinero de los pros"): se juntan
-  // varios exchanges y se promedia; posSrcs = cuántos lo confirman.
+  // varios exchanges y se PONDERAN por el interés abierto (en USD) de cada uno,
+  // así el exchange más grande pesa más. posSrcs = cuántos lo confirman.
   {
-    const pr = [], names = [];
+    const items = []; // {ex, r, oi}
     try {
-      const j = await fetch('https://www.okx.com/api/v5/rubik/stat/contracts/long-short-position-ratio-contract-top-trader?instId=BTC-USDT-SWAP&period=1H').then(r => r.json());
-      const v = parseFloat(j && j.data && j.data[0] && j.data[0][1]);
-      if (Number.isFinite(v) && v > 0) { pr.push(v); names.push('OKX'); }
+      const [rt, oi] = await Promise.all([
+        fetch('https://www.okx.com/api/v5/rubik/stat/contracts/long-short-position-ratio-contract-top-trader?instId=BTC-USDT-SWAP&period=1H').then(r => r.json()).catch(() => null),
+        fetch('https://www.okx.com/api/v5/public/open-interest?instId=BTC-USDT-SWAP').then(r => r.json()).catch(() => null)
+      ]);
+      const v = parseFloat(rt && rt.data && rt.data[0] && rt.data[0][1]);
+      const w = parseFloat(oi && oi.data && oi.data[0] && oi.data[0].oiUsd);
+      if (Number.isFinite(v) && v > 0) items.push({ ex: 'OKX', r: v, oi: Number.isFinite(w) && w > 0 ? w / 1e9 : 1 });
     } catch (e) {}
     try {
-      const j = await fetch('https://fapi.binance.com/futures/data/topLongShortPositionRatio?symbol=BTCUSDT&period=1h&limit=1').then(r => r.json());
-      const v = parseFloat(Array.isArray(j) && j[0] && j[0].longShortRatio);
-      if (Number.isFinite(v) && v > 0) { pr.push(v); names.push('Binance'); }
+      const [rt, px, oi] = await Promise.all([
+        fetch('https://fapi.binance.com/futures/data/topLongShortPositionRatio?symbol=BTCUSDT&period=1h&limit=1').then(r => r.json()).catch(() => null),
+        fetch('https://fapi.binance.com/fapi/v1/premiumIndex?symbol=BTCUSDT').then(r => r.json()).catch(() => null),
+        fetch('https://fapi.binance.com/fapi/v1/openInterest?symbol=BTCUSDT').then(r => r.json()).catch(() => null)
+      ]);
+      const v = parseFloat(Array.isArray(rt) && rt[0] && rt[0].longShortRatio);
+      const p = parseFloat(px && px.markPrice), oiB = parseFloat(oi && oi.openInterest);
+      if (Number.isFinite(v) && v > 0) items.push({ ex: 'Binance', r: v, oi: (Number.isFinite(p) && Number.isFinite(oiB)) ? p * oiB / 1e9 : 1 });
     } catch (e) {}
     try {
-      const j = await fetch('https://api.bybit.com/v5/market/account-ratio?category=linear&symbol=BTCUSDT&period=1h&limit=1').then(r => r.json());
-      const l = j && j.result && j.result.list && j.result.list[0];
-      if (l) { const bl = parseFloat(l.buyRatio), s = parseFloat(l.sellRatio); if (bl > 0 && s > 0) { pr.push(bl / s); names.push('Bybit'); } }
+      const [rt, tk] = await Promise.all([
+        fetch('https://api.bybit.com/v5/market/account-ratio?category=linear&symbol=BTCUSDT&period=1h&limit=1').then(r => r.json()).catch(() => null),
+        fetch('https://api.bybit.com/v5/market/tickers?category=linear&symbol=BTCUSDT').then(r => r.json()).catch(() => null)
+      ]);
+      const l = rt && rt.result && rt.result.list && rt.result.list[0];
+      const t = tk && tk.result && tk.result.list && tk.result.list[0];
+      if (l) { const bl = parseFloat(l.buyRatio), s = parseFloat(l.sellRatio); const w = parseFloat(t && t.openInterestValue);
+        if (bl > 0 && s > 0) items.push({ ex: 'Bybit', r: bl / s, oi: Number.isFinite(w) && w > 0 ? w / 1e9 : 1 }); }
     } catch (e) {}
-    if (pr.length) { out.btc.pos = pr.reduce((a, x) => a + x, 0) / pr.length; out.btc.posSrcs = pr.length; out.btc.posEx = names; }
+    if (items.length) {
+      let wsum = 0, rsum = 0; for (const it of items) { wsum += it.oi; rsum += it.r * it.oi; }
+      out.btc.pos = wsum > 0 ? rsum / wsum : items.reduce((a, x) => a + x.r, 0) / items.length;
+      out.btc.posSrcs = items.length; out.btc.posEx = items.map(x => x.ex); out.btc.posW = true;
+    }
   }
   res.status(200).json(out);
 };
