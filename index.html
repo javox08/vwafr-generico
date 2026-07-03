@@ -1307,19 +1307,21 @@ function CycleBTC(){
           let g=0,l=0;for(let i=1;i<w.length;i++){const c=w[i]-w[i-1];if(c>=0)g+=c;else l-=c;}const rs=l===0?100:g/l;return 100-100/(1+rs);})();
         const zs=oc&&Number.isFinite(oc.zscore)?oc.zscore:(zsH&&zsH.length?zsH[zsH.length-1]:null);
         const cl01=x=>Math.max(0,Math.min(1,x));
-        // cada indicador: score 0..1 de "cuán FONDO estamos" (1 = fondo claro)
+        // score 0..1 de "cuán FONDO": lineal entre el extremo de SUELO (→1) y el de
+        // TECHO (→0). lin(v,bottom,top) = 1 en el suelo histórico, 0 en el techo.
+        const lin=(v,bt,tp)=>cl01((tp-v)/(tp-bt));
         const ind=[];
-        if(oc&&Number.isFinite(oc.mvrv))ind.push({t:'MVRV',v:oc.mvrv.toFixed(2),s:cl01((1.4-oc.mvrv)/1.2),lo:'< 1 fondo',hi:'> 3,5 techo'});
-        if(oc&&Number.isFinite(oc.nupl))ind.push({t:'NUPL',v:oc.nupl.toFixed(2),s:cl01((0.25-oc.nupl)/0.6),lo:'< 0 capitulación',hi:'> 0,75 euforia'});
-        if(Number.isFinite(zs))ind.push({t:'MVRV Z-Score',v:zs.toFixed(1),s:cl01((1.2-zs)/2.2),lo:'≤ 0 suelo',hi:'≥ 7 techo'});
-        if(oc&&Number.isFinite(oc.puell))ind.push({t:'Puell Multiple',v:oc.puell.toFixed(2),s:cl01((0.6-oc.puell)/0.5),lo:'< 0,5 fondo minero',hi:'> 4 techo'});
-        if(oc&&Number.isFinite(oc.sopr))ind.push({t:'SOPR',v:oc.sopr.toFixed(3),s:cl01((1.0-oc.sopr)/0.06),lo:'< 1 se vende en pérdidas',hi:'> 1,05 beneficios'});
-        if(mayer)ind.push({t:'Múltiplo de Mayer',v:mayer.toFixed(2),s:cl01((0.85-mayer)/0.45),lo:'< 0,8 barato',hi:'> 2,4 caro'});
-        if(dd!=null)ind.push({t:'Caída desde ATH',v:(dd*100).toFixed(0)+'%',s:cl01((-dd-0.45)/0.35),lo:'-75% suelo típico',hi:'0% en máximos'});
-        if(ma200w)ind.push({t:'Precio vs MA 200 sem',v:(price/ma200w).toFixed(2)+'×',s:cl01((1.05-price/ma200w)/0.5),lo:'< 1 zona de suelo',hi:'> 3 zona de techo'});
-        if(ma200)ind.push({t:'Precio vs MA 200 d',v:(price/ma200).toFixed(2)+'×',s:cl01((0.9-price/ma200)/0.4),lo:'< 0,8 sobreventa',hi:'> 2 sobrecompra'});
-        if(rsiW!=null)ind.push({t:'RSI semanal',v:rsiW.toFixed(0),s:cl01((40-rsiW)/25),lo:'< 30 sobreventa',hi:'> 75 sobrecompra'});
-        if(oc&&Number.isFinite(oc.fng))ind.push({t:'Miedo y codicia',v:oc.fng.toFixed(0),s:cl01((35-oc.fng)/30),lo:'< 20 miedo extremo',hi:'> 80 codicia'});
+        if(oc&&Number.isFinite(oc.mvrv))ind.push({t:'MVRV',v:oc.mvrv.toFixed(2),s:lin(oc.mvrv,0.8,3.5),lo:'< 1 fondo',hi:'> 3,5 techo'});
+        if(oc&&Number.isFinite(oc.nupl))ind.push({t:'NUPL',v:oc.nupl.toFixed(2),s:lin(oc.nupl,-0.25,0.75),lo:'< 0 capitulación',hi:'> 0,75 euforia'});
+        if(Number.isFinite(zs))ind.push({t:'MVRV Z-Score',v:zs.toFixed(1),s:lin(zs,-0.5,7),lo:'≤ 0 suelo',hi:'≥ 7 techo'});
+        if(oc&&Number.isFinite(oc.puell))ind.push({t:'Puell Multiple',v:oc.puell.toFixed(2),s:lin(oc.puell,0.4,4),lo:'< 0,5 fondo minero',hi:'> 4 techo'});
+        if(oc&&Number.isFinite(oc.sopr))ind.push({t:'SOPR',v:oc.sopr.toFixed(3),s:lin(oc.sopr,0.93,1.06),lo:'< 1 se vende en pérdidas',hi:'> 1,05 beneficios'});
+        if(mayer)ind.push({t:'Múltiplo de Mayer',v:mayer.toFixed(2),s:lin(mayer,0.7,2.4),lo:'< 0,8 barato',hi:'> 2,4 caro'});
+        if(dd!=null)ind.push({t:'Caída desde ATH',v:(dd*100).toFixed(0)+'%',s:lin(-dd,0,0.75),lo:'-75% suelo típico',hi:'0% en máximos'});
+        if(ma200w)ind.push({t:'Precio vs MA 200 sem',v:(price/ma200w).toFixed(2)+'×',s:lin(price/ma200w,0.8,3),lo:'< 1 zona de suelo',hi:'> 3 zona de techo'});
+        if(ma200)ind.push({t:'Precio vs MA 200 d',v:(price/ma200).toFixed(2)+'×',s:lin(price/ma200,0.75,2),lo:'< 0,8 sobreventa',hi:'> 2 sobrecompra'});
+        if(rsiW!=null)ind.push({t:'RSI semanal',v:rsiW.toFixed(0),s:lin(rsiW,30,80),lo:'< 30 sobreventa',hi:'> 75 sobrecompra'});
+        if(oc&&Number.isFinite(oc.fng))ind.push({t:'Miedo y codicia',v:oc.fng.toFixed(0),s:lin(oc.fng,15,85),lo:'< 20 miedo extremo',hi:'> 80 codicia'});
         if(ind.length<3)return null;
         const prob=Math.round(ind.reduce((a,x)=>a+x.s,0)/ind.length*100);
         const verd=prob>=70?{t:'FONDO MUY PROBABLE',c:'#1FE0A0',e:'🟢'}:prob>=55?{t:'Cerca del fondo',c:'#26C99E',e:'🟢'}:
