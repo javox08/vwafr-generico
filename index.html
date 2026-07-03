@@ -2159,6 +2159,18 @@ function chartPatterns(cl){
   const tight=j=>{const hi=maxN(j,5),lo=minN(j,5);return (hi-lo)/cl[j-1]<0.06;};
   const flagUp=j=>{if(j<20)return null;const g=poleUp(j);if(g<0.12||!tight(j)||cl[j-1]>cl[j-6]*1.02)return null;const d=maxN(j,5);return(cl[j]>d&&cl[j-1]<=d)?{target:cl[j]*(1+g*0.6)}:null;};
   const flagDn=j=>{if(j<20)return null;const g=poleDn(j);if(g<0.12||!tight(j)||cl[j-1]<cl[j-6]*0.98)return null;const d=minN(j,5);return(cl[j]<d&&cl[j-1]>=d)?{target:cl[j]*(1-g*0.6)}:null;};
+  // CUÑAS: convergentes con pendiente (ascendente=bajista, descendente=alcista)
+  const wedgeUp=j=>{const h=recent(PH,j,3),l=recent(PL,j,3);if(h.length<3||l.length<3)return null;const sh=slope(h.map(x=>[x,cl[x]])),sl=slope(l.map(x=>[x,cl[x]]));if(!(sh>0.0008&&sl>0.0012&&sl>sh*1.2))return null;const d=minN(j,10);return(cl[j]<d&&cl[j-1]>=d)?{target:cl[j]*0.90}:null;};
+  const wedgeDn=j=>{const h=recent(PH,j,3),l=recent(PL,j,3);if(h.length<3||l.length<3)return null;const sh=slope(h.map(x=>[x,cl[x]])),sl=slope(l.map(x=>[x,cl[x]]));if(!(sh<-0.0012&&sl<-0.0008&&sh<sl*1.2))return null;const d=maxN(j,10);return(cl[j]>d&&cl[j-1]<=d)?{target:cl[j]*1.10}:null;};
+  // CANALES paralelos rotos en contra de su pendiente
+  const chanUp=j=>{const h=recent(PH,j,3),l=recent(PL,j,3);if(h.length<3||l.length<3)return null;const sh=slope(h.map(x=>[x,cl[x]])),sl=slope(l.map(x=>[x,cl[x]]));if(!(sh>0.0008&&sl>0.0008&&Math.abs(sh-sl)<0.0005))return null;const d=minN(j,8);return(cl[j]<d&&cl[j-1]>=d)?{target:cl[j]*0.92}:null;};
+  const chanDn=j=>{const h=recent(PH,j,3),l=recent(PL,j,3);if(h.length<3||l.length<3)return null;const sh=slope(h.map(x=>[x,cl[x]])),sl=slope(l.map(x=>[x,cl[x]]));if(!(sh<-0.0008&&sl<-0.0008&&Math.abs(sh-sl)<0.0005))return null;const d=maxN(j,8);return(cl[j]>d&&cl[j-1]<=d)?{target:cl[j]*1.10}:null;};
+  // MEGÁFONO (broadening): máximos al alza + mínimos a la baja, ruptura por abajo
+  const mega=j=>{const h=recent(PH,j,3),l=recent(PL,j,3);if(h.length<3||l.length<3)return null;const sh=slope(h.map(x=>[x,cl[x]])),sl=slope(l.map(x=>[x,cl[x]]));if(!(sh>0.0008&&sl<-0.0008))return null;const d=minN(j,12);return(cl[j]<d&&cl[j-1]>=d)?{target:cl[j]*0.90}:null;};
+  // SUELO REDONDEADO: valle suave (centro claramente por debajo de ambos extremos) + ruptura
+  const roundBot=j=>{if(j<50)return null;const avg=(a,b)=>{let s=0,c=0;for(let z=a;z<=b;z++){s+=cl[z];c++;}return s/c;};
+    const A=avg(j-45,j-31),M=avg(j-27,j-16),B=avg(j-10,j-1);
+    if(!(M<A*0.93&&M<B*0.93&&near(A,B,0.10)))return null;const d=maxN(j,45);return(cl[j]>d&&cl[j-1]<=d)?{target:cl[j]*(1+Math.min(0.2,(A/M-1)*0.8))}:null;};
   // detectores de FIGURA EN FORMACIÓN: la estructura ya está y el precio se acerca al
   // disparo (aún no ha roto). Devuelven {target} si la figura se está formando ahora.
   const px=cl[n-1];
@@ -2195,6 +2207,12 @@ function chartPatterns(cl){
     ['Ruptura de rango ↓',-1,'sale del rango lateral por abajo',rangeDn,fRangeDn],
     ['Bandera alcista (bull flag)',1,'mástil ↑ + consolidación · ruptura al alza',flagUp,fFlagUp],
     ['Bandera bajista (bear flag)',-1,'mástil ↓ + consolidación · ruptura a la baja',flagDn,fFlagDn],
+    ['Cuña ascendente',-1,'líneas convergentes al alza (agotamiento) · rompe abajo',wedgeUp,null],
+    ['Cuña descendente',1,'líneas convergentes a la baja (agotamiento) · rompe arriba',wedgeDn,null],
+    ['Canal alcista roto',-1,'canal paralelo al alza que pierde su base',chanUp,null],
+    ['Canal bajista roto',1,'canal paralelo a la baja que rompe su techo',chanDn,null],
+    ['Megáfono (broadening)',-1,'máximos ↑ y mínimos ↓: volatilidad expansiva · rompe abajo',mega,null],
+    ['Suelo redondeado',1,'valle suave (acumulación) · ruptura al alza',roundBot,null],
   ];
   const out=[];
   for(const [t,sig,d,fn,ffn] of figs){
@@ -2229,6 +2247,12 @@ const FIG_ART={
   'Ruptura de rango ↓':{d:'M10,55 L40,42 L70,68 L100,42 L130,68 L160,42 L190,68 L220,68 L245,110',neck:68,dir:-1,tgt:110,box:[28,42,210,26]},
   'Bandera alcista (bull flag)':{d:'M12,130 L70,48 L92,58 L114,50 L136,60 L158,52 L180,62 L245,14',neck:52,dir:1,tgt:14,box:[86,46,100,20]},
   'Bandera bajista (bear flag)':{d:'M12,20 L70,102 L92,92 L114,100 L136,90 L158,98 L180,88 L245,136',neck:98,dir:-1,tgt:136,box:[86,84,100,20]},
+  'Cuña ascendente':{d:'M10,110 L45,70 L75,86 L110,54 L140,66 L172,44 L196,80 L242,128',neck:80,dir:-1,tgt:128,key:[[45,70,''],[110,54,''],[172,44,'']],trend:'M14,120 L200,52'},
+  'Cuña descendente':{d:'M10,40 L45,80 L75,64 L110,96 L140,84 L172,106 L196,70 L242,22',neck:70,dir:1,tgt:22,key:[[45,80,''],[110,96,''],[172,106,'']],trend:'M14,30 L200,98'},
+  'Canal alcista roto':{d:'M10,120 L50,84 L80,100 L120,64 L150,80 L190,44 L212,74 L245,118',neck:74,dir:-1,tgt:118,trend:'M12,128 L205,40'},
+  'Canal bajista roto':{d:'M10,30 L50,66 L80,50 L120,86 L150,70 L190,106 L212,74 L245,20',neck:74,dir:1,tgt:20,trend:'M12,22 L205,110'},
+  'Megáfono (broadening)':{d:'M10,70 L45,50 L80,88 L120,34 L160,104 L200,22 L242,124',neck:88,dir:-1,tgt:124,key:[[45,50,''],[120,34,''],[200,22,'']]},
+  'Suelo redondeado':{d:'M10,40 L40,60 L70,88 L100,108 L135,114 L170,104 L205,80 L232,22',neck:60,dir:1,tgt:22,key:[[100,108,''],[135,114,'']]},
 };
 // Dibujo SVG de una figura idealizada (para el visor que se abre al tocarla).
 function PatternArt({t}){
@@ -2639,27 +2663,47 @@ function QuantView({gFunding}){
     // divergencias spot-futuros. El evento reciente inclina el cono en CONTRA del
     // movimiento manipulado (los barridos suelen revertirse). ──
     const manip=[];
-    if(q.ohlc&&q.ohlc.length>40){const oh=q.ohlc,n2=oh.length,sig20=qStd(rets.slice(-30))||0.02;
-      for(let i=Math.max(1,n2-21);i<n2;i++){const k=oh[i],rng=k.h-k.l,ago=n2-1-i;if(rng<=0)continue;
-        const upW=(k.h-Math.max(k.o,k.c))/rng, dnW=(Math.min(k.o,k.c)-k.l)/rng;
-        if(dnW>0.6&&rng/k.c>2.2*sig20)manip.push({ago,sig:1,t:'Barrido de stops abajo',d:'mecha inferior anómala ('+(dnW*100).toFixed(0)+'% de la vela): caza de stops y recompra'});
-        else if(upW>0.6&&rng/k.c>2.2*sig20)manip.push({ago,sig:-1,t:'Barrido de stops arriba',d:'mecha superior anómala: trampa alcista / distribución'});
-        if(i<n2-1){const r1=Math.log(oh[i].c/oh[i-1].c),r2=Math.log(oh[i+1].c/oh[i].c);
-          if(Math.abs(r1)>3.2*sig20&&Math.sign(r2)===-Math.sign(r1)&&Math.abs(r2)>Math.abs(r1)*0.5)
-            manip.push({ago:ago-1,sig:r1>0?-1:1,t:r1>0?'Pump & dump':'Flash-crash con reversión',d:'movimiento '+(r1>=0?'+':'')+(r1*100).toFixed(1)+'% revertido al día siguiente'});}
-      }
+    if(q.ohlc&&q.ohlc.length>80){const oh=q.ohlc,n2=oh.length;
+      const volAt=i=>{let s=0,c=0;for(let z=Math.max(1,i-30);z<i;z++){s+=Math.abs(Math.log(oh[z].c/oh[z-1].c));c++;}return c?s/c:0.02;};
+      // catálogo de manipulaciones: cada una es un detector f(i) sobre las velas.
+      // Se BACKTESTEA la reversión a H=7d sobre TODO el histórico → % de acierto real.
+      const MTYPES=[
+        {t:'Barrido de stops abajo',sig:1,d:'mecha inferior anómala: caza de stops y recompra',
+         f:i=>{const k=oh[i],rng=k.h-k.l;if(rng<=0)return false;const dnW=(Math.min(k.o,k.c)-k.l)/rng;return dnW>0.6&&rng/k.c>2.2*volAt(i);}},
+        {t:'Barrido de stops arriba',sig:-1,d:'mecha superior anómala: trampa alcista / distribución',
+         f:i=>{const k=oh[i],rng=k.h-k.l;if(rng<=0)return false;const upW=(k.h-Math.max(k.o,k.c))/rng;return upW>0.6&&rng/k.c>2.2*volAt(i);}},
+        {t:'Pump & dump',sig:-1,d:'subida vertical revertida al día siguiente',
+         f:i=>{if(i<1||i>=n2-1)return false;const r1=Math.log(oh[i].c/oh[i-1].c),r2=Math.log(oh[i+1].c/oh[i].c);return r1>3.2*volAt(i)&&r2<0&&Math.abs(r2)>r1*0.5;}},
+        {t:'Flash-crash con reversión',sig:1,d:'caída vertical recomprada al día siguiente',
+         f:i=>{if(i<1||i>=n2-1)return false;const r1=Math.log(oh[i].c/oh[i-1].c),r2=Math.log(oh[i+1].c/oh[i].c);return r1<-3.2*volAt(i)&&r2>0&&Math.abs(r2)>Math.abs(r1)*0.5;}},
+        {t:'Vela de gran volumen absorbida',sig:1,d:'volumen enorme sin continuación: manos fuertes acumulan',
+         f:i=>{if(i<21||!Number.isFinite(oh[i].v)||oh[i].v<=0)return false;let vs=0;for(let z=i-20;z<i;z++)vs+=oh[z].v||0;const va=vs/20;const k=oh[i];return va>0&&k.v>3*va&&Math.abs(k.c-k.o)/k.c<volAt(i)*0.7;}},
+        {t:'Doble mecha (barrido en V)',sig:1,d:'barrido de mínimos y recuperación en la misma sesión',
+         f:i=>{if(i<2)return false;const k=oh[i];const rng=k.h-k.l;if(rng<=0)return false;const dnW=(Math.min(k.o,k.c)-k.l)/rng;return dnW>0.5&&k.l<oh[i-1].l&&k.l<oh[i-2].l&&k.c>k.o;}},
+      ];
+      const btM=det=>{let k=0,win=0;for(let i=40;i<n2-7;i++){if(det.f(i)){k++;const fwd=(oh[i+7].c-oh[i].c)/oh[i].c;if(fwd*det.sig>0)win++;}}return {n:k,win:k?Math.round(win/k*100):null};};
+      const stCache={};
+      for(const det of MTYPES)stCache[det.t]=btM(det);
+      // eventos RECIENTES (últimos 21 días) con su estadística adjunta
+      for(let i=Math.max(40,n2-21);i<n2;i++){const ago=n2-1-i;
+        for(const det of MTYPES)if(det.f(i)){const st=stCache[det.t];
+          manip.push({ago,sig:det.sig,t:det.t,d:det.d,win:st.win,samples:st.n});}}
+      // eventos de FLUJO (sin backtest histórico: dependen de datos externos de hoy)
       const rLast=rets[rets.length-1]||0;
-      if(gf>0.012&&rLast<-0.03)manip.push({ago:0,sig:-1,t:'Long squeeze en curso',d:'funding alto y caída fuerte: cascada de liquidación de longs'});
-      if(gf<-0.012&&rLast>0.03)manip.push({ago:0,sig:1,t:'Short squeeze en curso',d:'funding negativo y subida fuerte: cortos recomprando a mercado'});
+      if(gf>0.012&&rLast<-0.03)manip.push({ago:0,sig:-1,t:'Long squeeze en curso',d:'funding alto y caída fuerte: cascada de liquidación de longs',win:null});
+      if(gf<-0.012&&rLast>0.03)manip.push({ago:0,sig:1,t:'Short squeeze en curso',d:'funding negativo y subida fuerte: cortos recomprando a mercado',win:null});
       if(flow&&Number.isFinite(flow.takerBuy)&&Number.isFinite(flow.priceChg)){
-        if(flow.priceChg>0.02&&flow.takerBuy<0.46)manip.push({ago:0,sig:-1,t:'Subida sin spot detrás',d:'sube '+(flow.priceChg*100).toFixed(1)+'% pero el spot VENDE ('+((1-flow.takerBuy)*100).toFixed(0)+'%): subida apalancada, frágil'});
-        if(flow.priceChg<-0.02&&flow.takerBuy>0.54)manip.push({ago:0,sig:1,t:'Bajada sin ventas spot',d:'cae '+(flow.priceChg*100).toFixed(1)+'% pero el spot COMPRA: presión de futuros, posible trampa bajista'});
+        if(flow.priceChg>0.02&&flow.takerBuy<0.46)manip.push({ago:0,sig:-1,t:'Subida sin spot detrás',d:'sube '+(flow.priceChg*100).toFixed(1)+'% pero el spot VENDE: subida apalancada, frágil',win:null});
+        if(flow.priceChg<-0.02&&flow.takerBuy>0.54)manip.push({ago:0,sig:1,t:'Bajada sin ventas spot',d:'cae '+(flow.priceChg*100).toFixed(1)+'% pero el spot COMPRA: presión de futuros, posible trampa bajista',win:null});
       }
     }
     manip.sort((a,b)=>a.ago-b.ago);
-    const manipList=manip.slice(0,5);
+    const manipList=manip.slice(0,6);
     const manipRecent=manipList.filter(m=>m.ago<=2)[0]||null;
-    const manipB=manipRecent?cl0(manipRecent.sig*0.0007,0.0009):null;
+    // el sesgo al cono usa el ACIERTO HISTÓRICO real: solo empuja si >52% y escala
+    // con la ventaja sobre el azar (los eventos de flujo llevan prior tibio 55%).
+    const manipEdge=manipRecent?((manipRecent.win!=null?manipRecent.win:55)-50)/50:0;
+    const manipB=(manipRecent&&manipEdge>0.04)?cl0(manipRecent.sig*0.0016*Math.min(1,manipEdge*2.2),0.0011):null;
     // ── RITUAL DE CICLO: qué hizo BTC este MISMO día del ciclo en halvings previos.
     // Alinea por días-desde-halving, promedia el camino 1..30d de ciclos anteriores y
     // lo aplica ENCOGIDO (30%) como deriva día a día. Se actualiza solo cada día. ──
@@ -2729,7 +2773,7 @@ function QuantView({gFunding}){
     if(goldB!=null&&goldB!==0)biases.push({k:'Oro (correlación)',v:goldB,why:'corr BTC–oro '+corrG.toFixed(2)+' · oro '+((q.gold[q.gold.length-1]/q.gold[q.gold.length-31]-1)>=0?'subiendo':'bajando')+' 30d'});
     if(flowB!=null&&flowB!==0)biases.push({k:'Flujo spot (taker)',v:flowB,why:(flow.takerBuy*100).toFixed(0)+'% compras agresivas 24h '+(flow.takerBuy>=0.5?'(compradores)':'(vendedores)')});
     if(lsB!=null)biases.push({k:'Long/Short (posicionamiento)',v:lsB,why:(plEff*100).toFixed(0)+'% long / '+((1-plEff)*100).toFixed(0)+'% short ('+(pctLongM!=null?'dinero top traders':'cuentas')+', OKX)'+(lsStrength?' · '+lsStrength:'')+' · contraria: multitud '+(plEff>=0.5?'larga':'corta')});
-    if(manipB!=null)biases.push({k:'Manipulación / barridos',v:manipB,why:manipRecent.t+(manipRecent.ago>0?' hace '+manipRecent.ago+'d':' hoy')+' · el cono juega la reversión'});
+    if(manipB!=null)biases.push({k:'Manipulación / barridos',v:manipB,why:manipRecent.t+(manipRecent.ago>0?' hace '+manipRecent.ago+'d':' hoy')+(manipRecent.win!=null?' · '+manipRecent.win+'% revierte histórico (n='+manipRecent.samples+')':'')+' · el cono juega la reversión'});
     if(pushB!=null)biases.push({k:'Quién empuja (spot/futuros)',v:cl0(pushB,0.0009),why:pushWhy});
     if(divB!=null&&Math.abs(pctLongM-pctLong)>0.05)biases.push({k:'Divergencia pros vs masa',v:divB,why:'top traders '+(pctLongM*100).toFixed(0)+'% long vs masa '+(pctLong*100).toFixed(0)+'% long → el cono sigue a los pros'});
     if(ritual)biases.push({k:'Ritual de ciclo (halvings)',v:qMean(ritDrift.slice(1,31)),why:'día '+ritual.day+' del ciclo · en '+ritual.n+' ciclo(s) previos BTC hizo '+(ritual.ret30>=0?'+':'')+(ritual.ret30*100).toFixed(1)+'% en 30d'});
@@ -3036,10 +3080,14 @@ function QuantView({gFunding}){
               <div style={{fontSize:12,fontWeight:700,color:'#F3BA2F'}}>{m.t} <span className="mono" style={{fontSize:8.5,color:'var(--faint)',fontWeight:400}}>{m.ago>0?'hace '+m.ago+'d':'hoy'}</span></div>
               <div style={{fontSize:9.5,color:'var(--faint)',lineHeight:1.45}}>{m.d}</div>
             </div>
-            <span className="mono" style={{fontSize:8.5,color:m.sig>0?'var(--upDim)':'var(--downDim)',flexShrink:0}}>{m.sig>0?'sesgo ↑':'sesgo ↓'}</span>
+            <div style={{textAlign:'right',flexShrink:0}}>
+              {m.win!=null?(
+                <div className="mono" style={{fontSize:12,fontWeight:800,color:m.win>=55?'var(--up)':m.win<=45?'var(--down)':'#F3BA2F'}}>{m.win}%<div style={{fontSize:7,fontWeight:600,color:'var(--faint)'}}>revierte · n={m.samples}</div></div>
+              ):<span className="mono" style={{fontSize:8.5,color:m.sig>0?'var(--upDim)':'var(--downDim)'}}>{m.sig>0?'sesgo ↑':'sesgo ↓'}</span>}
+            </div>
           </div>
         )):<div style={{fontSize:11,color:'var(--faint)',textAlign:'center',padding:'6px 0'}}>Sin barridos, squeezes ni divergencias anómalas en los últimos 21 días.</div>}
-        <p style={{fontSize:9,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Busca manipulación en todos los sentidos: <b>barridos de stops</b> (mechas anómalas vs la volatilidad), <b>pump&dump / flash-crash</b> (movimiento extremo revertido al día siguiente), <b>squeezes</b> (funding extremo contra el precio) y <b>divergencias spot-futuros</b> (el precio se mueve sin flujo spot detrás). La flecha indica hacia dónde apunta la REVERSIÓN esperada; el evento reciente inclina el cono en contra del movimiento manipulado.</p>
+        <p style={{fontSize:9,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Busca manipulación en todos los sentidos: <b>barridos de stops</b> (mechas anómalas), <b>pump&dump / flash-crash</b> (movimiento extremo revertido), <b>vela de gran volumen absorbida</b>, <b>barrido en V</b>, <b>squeezes</b> (funding extremo) y <b>divergencias spot-futuros</b>. El <b>%</b> es el <b>acierto histórico real</b> de que ese tipo revierta a 7 días (backtest sobre BTC, n = nº de casos); solo los de acierto alto inclinan el cono, y con más fuerza cuanto mayor la ventaja.</p>
       </div>
 
       {/* PATRONES CHARTISTAS (automático) */}
