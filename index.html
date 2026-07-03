@@ -4929,8 +4929,11 @@ function App(){
             const oiOf=c2=>{const bd=(data&&data[c2])||{};let oi=0;
               for(const ex in bd){const o=bd[ex];if(o&&o.ok&&Number.isFinite(o.oi)&&o.oi>0)oi+=o.oi;}return oi;};
             const fmtB=v=>v>=1?('$'+v.toFixed(1).replace('.',',')+'B'):v>0?('$'+Math.round(v*1000)+'M'):'';
+            // orden: las más grandes primero (por interés abierto; si falta, el orden del top)
+            const rank=c2=>{const i=FALLBACK_COINS.indexOf(c2);return i<0?99:i;};
+            const rows=lsTop.slice().sort((a,b)=>(oiOf(b.c)-oiOf(a.c))||(rank(a.c)-rank(b.c)));
             return(<React.Fragment>
-              {lsTop.map(r=>{const oi=oiOf(r.c);
+              {rows.map(r=>{const oi=oiOf(r.c);
                 return(
                 <div key={r.c} style={{...flx({gap:8}),padding:'4px 0'}}>
                   <div style={{minWidth:46}}>
