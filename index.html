@@ -4636,13 +4636,14 @@ function App(){
       if(lsr!=null){try{const j=await fetch('https://www.okx.com/api/v5/rubik/stat/contracts/long-short-position-ratio-contract-top-trader?instId=BTC-USDT-SWAP&period=1H').then(r=>r.json());
         const dd=j&&j.data&&j.data[0]; const v=parseFloat(Array.isArray(dd)?dd[1]:dd&&dd.ratio);
         if(Number.isFinite(v)&&v>0)lsrPos=v;}catch(_){}}
+      let posSrcs=null,posEx=null;
       if(lsr==null){try{ // RESPALDO por el relé (el navegador no puede con OKX)
         const j=await fetch(LS_RELAY).then(r=>r.json());
         const hs=(j&&j.btc&&j.btc.hist)||[];
         if(hs.length){lsr=hs[0];lsrZ=zOf(hs,lsr);}
-        if(j&&j.btc&&Number.isFinite(j.btc.pos)&&j.btc.pos>0)lsrPos=j.btc.pos;
+        if(j&&j.btc&&Number.isFinite(j.btc.pos)&&j.btc.pos>0){lsrPos=j.btc.pos;posSrcs=j.btc.posSrcs||1;posEx=j.btc.posEx||null;}
       }catch(_){}}
-      const f={takerBuy,priceChg,lsr,lsrPos,lsrZ,t:Date.now()};
+      const f={takerBuy,priceChg,lsr,lsrPos,lsrZ,posSrcs,posEx,t:Date.now()};
       if(alive)setFlow(f);
       try{localStorage.setItem('vwafr_flow',JSON.stringify(f));}catch(_){}
     }catch(_){}};
@@ -5020,10 +5021,10 @@ function App(){
             </div>);
             return(<div style={panel({marginBottom:16,padding:'12px 14px'})}>
               <div style={{...flx({justifyContent:'space-between'}),marginBottom:7}}>
-                <span style={{fontSize:9.5,color:'var(--faint)',fontWeight:600,letterSpacing:.5,textTransform:'uppercase'}}>¿Dónde está el dinero? · long vs short</span>
+                <span style={{fontSize:9.5,color:'var(--faint)',fontWeight:600,letterSpacing:.5,textTransform:'uppercase'}}>🐋 TOP TRADERS · dónde está el dinero</span>
                 {fuerza&&<span className="mono" style={{fontSize:9,fontWeight:800,color:fuerza.c}}>posicionamiento {fuerza.t}{z!=null?' · z '+z.toFixed(1):''}</span>}
               </div>
-              {plM!=null&&<Bar pl2={plM} lbl="💰 DINERO (posiciones top traders, OKX)"/>}
+              {plM!=null&&<Bar pl2={plM} lbl={'💰 TOP TRADERS · posiciones'+(flow.posEx&&flow.posEx.length?' ('+flow.posEx.join('+')+')':(flow.posSrcs?' ('+flow.posSrcs+' ex)':' (OKX)'))}/>}
               <Bar pl2={pl} lbl="👥 cuentas de todo el mercado (OKX)"/>
               {(()=>{const bd=(data&&data.BTC)||{};
                 let oiT=0;const exs=[];

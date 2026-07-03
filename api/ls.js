@@ -29,10 +29,26 @@ module.exports = async (req, res) => {
     if (rs.length) out.coins.push({ c, r: rs.reduce((a, x) => a + x, 0) / rs.length, srcs: rs.length });
     await new Promise(r2 => setTimeout(r2, 120));
   }
-  try { // ratio por POSICIONES de top traders (el "dinero")
-    const j = await fetch('https://www.okx.com/api/v5/rubik/stat/contracts/long-short-position-ratio-contract-top-trader?instId=BTC-USDT-SWAP&period=1H').then(r => r.json());
-    const v = parseFloat(j && j.data && j.data[0] && j.data[0][1]);
-    if (Number.isFinite(v) && v > 0) out.btc.pos = v;
-  } catch (e) {}
+  // ratio por POSICIONES de TOP TRADERS (el "dinero de los pros"): se juntan
+  // varios exchanges y se promedia; posSrcs = cuántos lo confirman.
+  {
+    const pr = [], names = [];
+    try {
+      const j = await fetch('https://www.okx.com/api/v5/rubik/stat/contracts/long-short-position-ratio-contract-top-trader?instId=BTC-USDT-SWAP&period=1H').then(r => r.json());
+      const v = parseFloat(j && j.data && j.data[0] && j.data[0][1]);
+      if (Number.isFinite(v) && v > 0) { pr.push(v); names.push('OKX'); }
+    } catch (e) {}
+    try {
+      const j = await fetch('https://fapi.binance.com/futures/data/topLongShortPositionRatio?symbol=BTCUSDT&period=1h&limit=1').then(r => r.json());
+      const v = parseFloat(Array.isArray(j) && j[0] && j[0].longShortRatio);
+      if (Number.isFinite(v) && v > 0) { pr.push(v); names.push('Binance'); }
+    } catch (e) {}
+    try {
+      const j = await fetch('https://api.bybit.com/v5/market/account-ratio?category=linear&symbol=BTCUSDT&period=1h&limit=1').then(r => r.json());
+      const l = j && j.result && j.result.list && j.result.list[0];
+      if (l) { const bl = parseFloat(l.buyRatio), s = parseFloat(l.sellRatio); if (bl > 0 && s > 0) { pr.push(bl / s); names.push('Bybit'); } }
+    } catch (e) {}
+    if (pr.length) { out.btc.pos = pr.reduce((a, x) => a + x, 0) / pr.length; out.btc.posSrcs = pr.length; out.btc.posEx = names; }
+  }
   res.status(200).json(out);
 };
