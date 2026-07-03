@@ -4906,7 +4906,8 @@ function App(){
         let out=[];
         try{ // fuente principal: el RELÉ (media OKX+Bybit+Binance con nº de fuentes)
           const j=await fetch(LS_RELAY).then(r=>r.json());
-          out=((j&&j.coins)||[]).filter(x=>Number.isFinite(x.r)&&x.r>0).map(x=>({c:x.c,pl:x.r/(1+x.r),srcs:x.srcs||1}));
+          out=((j&&j.coins)||[]).filter(x=>Number.isFinite(x.r)&&x.r>0).map(x=>({c:x.c,pl:x.r/(1+x.r),srcs:x.srcs||1,
+            plPro:(Number.isFinite(x.rp)&&x.rp>0)?x.rp/(1+x.rp):null})); // pros (top traders) por moneda
         }catch(_){}
         if(!out.length){ // respaldo: OKX directo (si algún día abre CORS)
           await Promise.all(FALLBACK_COINS.slice(0,10).map(async c2=>{try{
@@ -5176,7 +5177,7 @@ function App(){
             <span style={eyebrow}>Long vs Short · top {lsTop.length}</span>
             <span className="mono" style={{fontSize:9,color:'var(--faint)',display:'inline-flex',alignItems:'center',gap:5}}>
               <span style={{width:6,height:6,borderRadius:'50%',background:'var(--up)',boxShadow:'0 0 5px var(--up)'}}/>
-              {Math.max(...lsTop.map(r=>r.srcs||1))}/3 exchanges{lsAt?' · '+new Date(lsAt).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}):''}
+              barra=cuentas · <span style={{color:'#fff'}}>|</span>=pros{lsAt?' · '+new Date(lsAt).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}):''}
             </span>
           </div>
           {(()=>{
@@ -5195,12 +5196,22 @@ function App(){
                     <div style={{fontSize:10.5,fontWeight:700,lineHeight:1.1}}>{r.c}</div>
                     <div className="mono" style={{fontSize:7.5,color:'var(--faint)'}}>{oi>0?'OI '+fmtB(oi)+' · ':''}{r.srcs||1} ex</div>
                   </div>
-                  <div style={{flex:1,display:'flex',height:6,borderRadius:4,overflow:'hidden'}}>
+                  <div style={{flex:1,position:'relative',display:'flex',height:6,borderRadius:4,overflow:'hidden'}}>
                     <div style={{width:(r.pl*100)+'%',background:'var(--up)',opacity:.75,transition:'width 1s ease'}}/>
                     <div style={{flex:1,background:'var(--down)',opacity:.75}}/>
+                    {/* marcador 🐋 = dónde están los TOP TRADERS (pros) de esa moneda */}
+                    {Number.isFinite(r.plPro)&&<div title="top traders" style={{position:'absolute',left:`${Math.min(98,Math.max(2,r.plPro*100))}%`,top:'50%',transform:'translate(-50%,-50%)',width:2.5,height:11,background:'#fff',borderRadius:2,boxShadow:'0 0 4px rgba(0,0,0,.6)'}}/>}
                   </div>
                   <span className="mono" style={{fontSize:9.5,fontWeight:700,color:r.pl>=0.5?'var(--up)':'var(--down)',minWidth:88,textAlign:'right'}}>{(r.pl*100).toFixed(0)}% L / {((1-r.pl)*100).toFixed(0)}% S</span>
                 </div>);})}
+              {rows.some(r=>Number.isFinite(r.plPro))&&(()=>{
+                // agregado de TOP TRADERS de TODO el mercado (ponderado por OI)
+                let tL=0,tot=0;for(const r of rows){if(!Number.isFinite(r.plPro))continue;const oi=oiOf(r.c)||0.1;tL+=oi*r.plPro;tot+=oi;}
+                const pro=tot>0?tL/tot:null; if(pro==null)return null;
+                return(<div style={{...flx({justifyContent:'space-between'}),marginTop:6,paddingTop:6,borderTop:'1px solid var(--line2)'}}>
+                  <span style={{fontSize:9,color:'var(--faint)'}}>🐋 <b style={{color:'var(--txt)'}}>Top traders</b> (todas las monedas, pond. OI) · marca <span style={{color:'#fff'}}>|</span> en cada barra</span>
+                  <span className="mono" style={{fontSize:9.5,fontWeight:800,color:pro>=0.5?'var(--up)':'var(--down)'}}>{(pro*100).toFixed(0)}% L / {((1-pro)*100).toFixed(0)}% S</span>
+                </div>);})()}
               {(()=>{
                 let totL=0,totS=0,tot=0;
                 for(const r of lsTop){const oi=oiOf(r.c);if(oi>0){totL+=oi*r.pl;totS+=oi*(1-r.pl);tot+=oi;}}

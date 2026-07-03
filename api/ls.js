@@ -12,10 +12,11 @@ module.exports = async (req, res) => {
   // exchanges de cada moneda en paralelo. Bybit/Binance pueden estar geo-
   // bloqueados según la región del servidor: si fallan, queda la media del resto.
   for (const c of COINS) {
-    const [okx, bybit, binance] = await Promise.all([
+    const [okx, bybit, binance, okxPro] = await Promise.all([
       fetch('https://www.okx.com/api/v5/rubik/stat/contracts/long-short-account-ratio?ccy=' + c + '&period=1H').then(r => r.json()).catch(() => null),
       fetch('https://api.bybit.com/v5/market/account-ratio?category=linear&symbol=' + c + 'USDT&period=1h&limit=1').then(r => r.json()).catch(() => null),
-      fetch('https://fapi.binance.com/futures/data/globalLongShortAccountRatio?symbol=' + c + 'USDT&period=1h&limit=1').then(r => r.json()).catch(() => null)
+      fetch('https://fapi.binance.com/futures/data/globalLongShortAccountRatio?symbol=' + c + 'USDT&period=1h&limit=1').then(r => r.json()).catch(() => null),
+      fetch('https://www.okx.com/api/v5/rubik/stat/contracts/long-short-position-ratio-contract-top-trader?instId=' + c + '-USDT-SWAP&period=1H').then(r => r.json()).catch(() => null)
     ]);
     const rs = [];
     const arr = (okx && okx.data) || [];
@@ -26,7 +27,12 @@ module.exports = async (req, res) => {
     if (bl) { const b = parseFloat(bl.buyRatio), s = parseFloat(bl.sellRatio); if (b > 0 && s > 0) rs.push(b / s); }
     const bn = Array.isArray(binance) && binance[0];
     if (bn) { const v = parseFloat(bn.longShortRatio); if (v > 0) rs.push(v); }
-    if (rs.length) out.coins.push({ c, r: rs.reduce((a, x) => a + x, 0) / rs.length, srcs: rs.length });
+    // ratio de TOP TRADERS (pros) por moneda, de OKX (posiciones)
+    let rp = null;
+    const dp = okxPro && okxPro.data && okxPro.data[0];
+    const vp = parseFloat(dp && dp[1]);
+    if (Number.isFinite(vp) && vp > 0) rp = vp;
+    if (rs.length || rp != null) out.coins.push({ c, r: rs.length ? rs.reduce((a, x) => a + x, 0) / rs.length : null, srcs: rs.length, rp });
     await new Promise(r2 => setTimeout(r2, 120));
   }
   // ratio por POSICIONES de TOP TRADERS (el "dinero de los pros"): se juntan
