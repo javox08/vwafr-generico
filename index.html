@@ -2227,7 +2227,10 @@ function chartPatterns(cl){
       if(sig>0&&cl[n-1]<ref*0.99)fake=true;
       if(sig<0&&cl[n-1]>ref*1.01)fake=true;}
     const st=bt(fn,sig);
-    out.push({t,sig,d,target:trig.target,forming,fake,st,win:st?st.win:null,avg:st?st.avg:null});
+    // ¿la estadística CONTRADICE la teoría? patrón poco rentable: acierto histórico
+    // por debajo del azar (<48%) o retorno medio en CONTRA de su dirección teórica.
+    const dud=st&&(st.win<48||(Number.isFinite(st.avg)&&st.avg*sig<0));
+    out.push({t,sig,d,target:trig.target,forming,fake,dud,st,win:st?st.win:null,avg:st?st.avg:null});
   }
   return out;
 }
@@ -2789,7 +2792,7 @@ function QuantView({gFunding}){
     // Perfil de retorno día a día (path histórico 1..30d) de TODO lo que afecta al
     // precio: patrones técnicos, de velas y figuras gráficas. AHORA las figuras
     // también traen su perfil REAL backtesteado sobre BTC (1…60d), igual que el resto.
-    const actPath=patterns.filter(p=>p.st&&p.st.path).concat(chartPats.filter(p=>p.st&&p.st.path&&!p.forming&&!p.fake)); // ni EN FORMACIÓN ni CANCELADAS (fake) inclinan el cono
+    const actPath=patterns.filter(p=>p.st&&p.st.path).concat(chartPats.filter(p=>p.st&&p.st.path&&!p.forming&&!p.fake&&!p.dud)); // ni EN FORMACIÓN, ni CANCELADAS (fake), ni NO RENTABLES (dud) inclinan el cono
     let cumPath=null;
     if(actPath.length){cumPath=new Array(31).fill(0);let wsum=0;
       for(const p of actPath){const w=Math.min(p.st.n,40),pa=p.st.pathX||p.st.path;wsum+=w;for(let h=1;h<=30;h++)cumPath[h]+=pa[h]*w;}
@@ -2848,7 +2851,7 @@ function QuantView({gFunding}){
       const tlevel=Math.round(price*1.1/step)*step, N=mc.maxes.length;
       const tpc=N?Math.round(mc.maxes.filter(v=>v>=tlevel).length/N*100):null;
       // figura gráfica más relevante (confirmada antes que en formación, mayor |movimiento|)
-      const figs=(chartPats||[]).filter(f=>f.st&&Number.isFinite(f.target));
+      const figs=(chartPats||[]).filter(f=>f.st&&Number.isFinite(f.target)&&!f.dud); // no anunciar figuras no rentables
       const tf=figs.slice().sort((a,b)=>((a.forming?1:0)-(b.forming?1:0))||(Math.abs(b.avg||0)-Math.abs(a.avg||0)))[0];
       saveInsight({price:+price.toFixed(0),probUp:+probUp.toFixed(0),tomPct:+tomPct.toFixed(1),
         p50:+mc.bands[30].p50.toFixed(0),medPct:+((mc.bands[30].p50/price-1)*100).toFixed(1),
@@ -3144,20 +3147,22 @@ function QuantView({gFunding}){
             <span style={{fontSize:16,color:pt.sig>0?'var(--up)':pt.sig<0?'var(--down)':'var(--faint)'}}>{pt.sig>0?'▲':pt.sig<0?'▼':'◆'}</span>
             <div style={{flex:1,minWidth:0}}>
               <div style={{...flx({gap:6})}}>
-                <span style={{fontSize:12.5,fontWeight:700,color:pt.sig>0?'var(--up)':pt.sig<0?'var(--down)':'var(--txt)'}}>{pt.t}</span>
+                <span style={{fontSize:12.5,fontWeight:700,color:pt.dud?'var(--faint)':pt.sig>0?'var(--up)':pt.sig<0?'var(--down)':'var(--txt)'}}>{pt.t}</span>
                 <span className="mono" style={{fontSize:7.5,fontWeight:700,flexShrink:0,padding:'1px 5px',borderRadius:7,
-                  color:pt.fake?'var(--down)':pt.forming?'#F3BA2F':'var(--up)',background:'rgba(255,255,255,.04)'}}>{pt.fake?'✗ cancelada (fake)':pt.forming?'⏳ en formación':'✓ confirmada'}</span>
+                  color:pt.dud?'var(--down)':pt.fake?'var(--down)':pt.forming?'#F3BA2F':'var(--up)',background:'rgba(255,255,255,.04)'}}>{pt.dud?'⚠ no rentable':pt.fake?'✗ cancelada (fake)':pt.forming?'⏳ en formación':'✓ confirmada'}</span>
               </div>
               <div style={{fontSize:9.5,color:'var(--faint)'}}>{pt.d}</div>
-              <div className="mono" style={{fontSize:9.5,color:'var(--dim)',marginTop:2}}>objetivo {money(pt.target)}</div>
+              {pt.dud
+                ? <div className="mono" style={{fontSize:9,color:'var(--down)',marginTop:2}}>objetivo teórico {money(pt.target)} — <b>no fiable</b> (históricamente no cumple)</div>
+                : <div className="mono" style={{fontSize:9.5,color:'var(--dim)',marginTop:2}}>objetivo {money(pt.target)}</div>}
             </div>
             <div style={{textAlign:'right',flexShrink:0}}>
-              {pt.win!=null&&<div className="mono" style={{fontSize:13,fontWeight:800,color:pt.win>=65?'var(--up)':'#F3BA2F'}}>{pt.win}%{pt.ci!=null&&<span style={{fontSize:8,fontWeight:600,color:'var(--faint)'}}> ±{pt.ci}</span>}</div>}
-              {pt.avg!=null&&<div className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>{pt.avg>=0?'+':''}{pt.avg}% típico</div>}
+              {pt.win!=null&&<div className="mono" style={{fontSize:13,fontWeight:800,color:pt.dud?'var(--down)':pt.win>=65?'var(--up)':'#F3BA2F'}}>{pt.win}%{pt.ci!=null&&<span style={{fontSize:8,fontWeight:600,color:'var(--faint)'}}> ±{pt.ci}</span>}</div>}
+              {pt.avg!=null&&<div className="mono" style={{fontSize:8.5,color:pt.dud?'var(--downDim)':'var(--faint)'}}>{pt.avg>=0?'+':''}{pt.avg}% típico</div>}
             </div>
           </div>
         )):<div style={{fontSize:11,color:'var(--faint)',textAlign:'center',padding:'8px 0'}}>Sin figuras gráficas claras ahora mismo.</div>}
-        <p style={{fontSize:9,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Figuras detectadas por pivotes de swing (dobles/triples techos y suelos, hombro-cabeza-hombro, triángulos, rupturas de rango). <b style={{color:'var(--up)'}}>✓ confirmada</b> = ya rompió (alimenta el cono). <b style={{color:'#F3BA2F'}}>⏳ en formación</b> = la estructura está y el precio se acerca al disparo (aún no confirma, no inclina el cono). <b>Backtesteadas sobre BTC real</b> a 1…60 días · <b>objetivo</b> = proyección por amplitud · <b>%</b> = acierto histórico ±margen.</p>
+        <p style={{fontSize:9,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Figuras detectadas por pivotes de swing (dobles/triples techos y suelos, hombro-cabeza-hombro, triángulos, rupturas de rango). <b style={{color:'var(--up)'}}>✓ confirmada</b> = ya rompió (alimenta el cono). <b style={{color:'#F3BA2F'}}>⏳ en formación</b> = la estructura está y el precio se acerca al disparo (aún no confirma, no inclina el cono). <b>Backtesteadas sobre BTC real</b> a 1…60 días · <b>objetivo</b> = proyección por amplitud · <b>%</b> = acierto histórico ±margen. <b style={{color:'var(--down)'}}>⚠ no rentable</b> = la estadística contradice la teoría (acierto &lt;48% o retorno en contra): el objetivo teórico no es fiable y NO inclina el cono.</p>
       </div>
 
       {/* MONTE CARLO · cono de probabilidad (grado institucional) */}
