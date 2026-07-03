@@ -4865,55 +4865,6 @@ function App(){
               </div>
               <div style={{gridColumn:'1 / -1',fontSize:8,color:'var(--faint)',lineHeight:1.4}}>Reparto estimado del empuje: cuánto se desvía cada mercado de su equilibrio (50/50). Más % = ese mercado manda ahora.</div>
             </div>);})()}
-          {Number.isFinite(flow.lsr)&&flow.lsr>0&&(()=>{const pl=flow.lsr/(1+flow.lsr),ps=1-pl;
-            const plM=(Number.isFinite(flow.lsrPos)&&flow.lsrPos>0)?flow.lsrPos/(1+flow.lsrPos):null;
-            const z=Number.isFinite(flow.lsrZ)?flow.lsrZ:null;
-            const fuerza=z==null?null:(Math.abs(z)>=1.5?{t:'FUERTE',c:'var(--down)'}:Math.abs(z)>=0.7?{t:'moderado',c:'#F3BA2F'}:{t:'leve',c:'var(--dim)'});
-            const fPos=fNow>0.0005,fNeg=fNow<-0.0005;
-            const expl=fPos?('Funding POSITIVO porque dominan los LONGS ('+(pl*100).toFixed(0)+'% de cuentas): los longs pagan a los shorts'+(tb<0.48?', y encima el spot VENDE — subida apalancada, frágil':'.')):
-              fNeg?('Funding NEGATIVO porque dominan los SHORTS ('+(ps*100).toFixed(0)+'% de cuentas): los shorts pagan a los longs'+(tb>0.52?', y el spot COMPRA — gasolina para un short squeeze':'.')):
-              ('Funding casi neutro: posicionamiento repartido ('+(pl*100).toFixed(0)+'% long / '+(ps*100).toFixed(0)+'% short).');
-            const Bar=({pl2,lbl})=>(<div style={{marginBottom:7}}>
-              <div style={{...flx({justifyContent:'space-between'}),marginBottom:3}}>
-                <span className="mono" style={{fontSize:9.5,fontWeight:800,color:'var(--up)'}}>▲ LONG {(pl2*100).toFixed(0)}%</span>
-                <span style={{fontSize:8,color:'var(--faint)'}}>{lbl}</span>
-                <span className="mono" style={{fontSize:9.5,fontWeight:800,color:'var(--down)'}}>{((1-pl2)*100).toFixed(0)}% SHORT ▼</span>
-              </div>
-              <div style={{display:'flex',height:7,borderRadius:5,overflow:'hidden'}}>
-                <div style={{width:(pl2*100)+'%',background:'var(--up)',opacity:.75}}/>
-                <div style={{flex:1,background:'var(--down)',opacity:.75}}/>
-              </div>
-            </div>);
-            return(<div style={{marginTop:10,paddingTop:9,borderTop:'1px solid var(--line2)'}}>
-              <div style={{...flx({justifyContent:'space-between'}),marginBottom:7}}>
-                <span style={{fontSize:9.5,color:'var(--faint)',fontWeight:600,letterSpacing:.5,textTransform:'uppercase'}}>¿Dónde está el dinero? · long vs short</span>
-                {fuerza&&<span className="mono" style={{fontSize:9,fontWeight:800,color:fuerza.c}}>posicionamiento {fuerza.t}{z!=null?' · z '+z.toFixed(1):''}</span>}
-              </div>
-              {plM!=null&&<Bar pl2={plM} lbl="💰 DINERO (posiciones top traders, OKX)"/>}
-              <Bar pl2={pl} lbl="👥 cuentas de todo el mercado (OKX)"/>
-              {(()=>{const bd=(data&&data.BTC)||{};
-                let oiT=0;const exs=[];
-                for(const ex in bd){const o=bd[ex];if(o&&o.ok&&Number.isFinite(o.oi)&&o.oi>0){oiT+=o.oi;exs.push([ex,o.oi]);}}
-                if(!(oiT>0))return null;
-                const plUse=plM!=null?plM:pl, L=oiT*plUse, S=oiT*(1-plUse);
-                const fmtB=v=>v>=1?('$'+v.toFixed(1).replace('.',',')+'B'):('$'+Math.round(v*1000)+'M');
-                exs.sort((a,b)=>b[1]-a[1]);
-                return(<div style={{marginTop:8,marginBottom:7,padding:'9px 11px',borderRadius:9,background:'#0A0D14',border:'1px solid var(--line2)'}}>
-                  <div style={{...flx({justifyContent:'space-around'}),marginBottom:5}}>
-                    <div style={{textAlign:'center'}}>
-                      <div className="mono" style={{fontSize:14.5,fontWeight:800,color:'var(--up)'}}>{fmtB(L)}</div>
-                      <div style={{fontSize:8,color:'var(--dim)'}}>en LONG</div></div>
-                    <div style={{textAlign:'center'}}>
-                      <div className="mono" style={{fontSize:12.5,fontWeight:800,color:L>=S?'var(--up)':'var(--down)'}}>{L>=S?'▲ más LONG':'▼ más SHORT'}</div>
-                      <div style={{fontSize:8,color:'var(--dim)'}}>{plM!=null?'según TOP TRADERS':'según cuentas'} · BTC</div></div>
-                    <div style={{textAlign:'center'}}>
-                      <div className="mono" style={{fontSize:14.5,fontWeight:800,color:'var(--down)'}}>{fmtB(S)}</div>
-                      <div style={{fontSize:8,color:'var(--dim)'}}>en SHORT</div></div>
-                  </div>
-                  <div style={{fontSize:8,color:'var(--faint)',lineHeight:1.5}}>Interés abierto de BTC {fmtB(oiT)} repartido con el ratio {plM!=null?'del DINERO de los TOP TRADERS (OKX)':'de cuentas (OKX)'} · exchanges: {exs.map(e=>e[0]).join(', ')}. Puede DISCREPAR del panel "top 10" de abajo (ese usa las CUENTAS de todo el mercado): si la masa está larga y los grandes cortos, cada bloque lo dice desde su lado — y esa divergencia es en sí una señal.</div>
-                </div>);})()}
-              <div style={{fontSize:8.5,color:'var(--dim)',marginTop:2,lineHeight:1.5}}>{expl}{plM!=null&&Math.abs(plM-pl)>0.07?(' Ojo: el DINERO grande está '+(plM>pl?'más largo':'menos largo')+' que la masa — los top traders suelen tener razón.'):''} La <b>fuerza</b> es estadística: cuánto se desvía el ratio de su media reciente (z-score). Esta lectura <b>afecta a la ruta 30d del cono</b> como señal contraria: multitud muy cargada = riesgo de squeeze al lado contrario.</div>
-            </div>);})()}
           <div style={{fontSize:8.5,color:'var(--faint)',marginTop:8,lineHeight:1.5}}>Ahora mandan: <b style={{color:'var(--txt)'}}>{who}</b>. "Spot % compras" = órdenes agresivas de compra sobre el volumen total (taker). Esta lectura y el % long/short también <b>alimentan el cono</b> de la ruta del Cuantitativo.</div>
         </div>);
       })()}
@@ -4968,7 +4919,7 @@ function App(){
                       <div className="mono" style={{fontSize:13.5,fontWeight:800,color:'var(--down)'}}>{fmtB(totS)}</div>
                       <div style={{fontSize:7.5,color:'var(--dim)'}}>en SHORT</div></div>
                   </div>
-                  <div style={{fontSize:8,color:'var(--faint)',lineHeight:1.5}}>Interés abierto total {fmtB(tot)} del top {lsTop.length}, repartido con el ratio de CUENTAS de cada moneda (media simple: {(avg*100).toFixed(0)}% long); las monedas con más OI pesan más. OJO: el bloque de BTC de "¿Por qué se mueve?" usa el DINERO de los top traders — si aquí sale "más long" y allí "más short" es que la MASA está larga y los GRANDES cortos (los top traders suelen tener razón).</div>
+                  <div style={{fontSize:8,color:'var(--faint)',lineHeight:1.5}}>Interés abierto total {fmtB(tot)} del top {lsTop.length}, repartido con el ratio de CUENTAS de cada moneda (media simple: {(avg*100).toFixed(0)}% long); las monedas con más OI pesan más. OJO: el panel de ABAJO ("¿Dónde está el dinero?", BTC) usa el DINERO de los top traders — si aquí sale "más long" y allí "más short" es que la MASA está larga y los GRANDES cortos (los top traders suelen tener razón).</div>
                 </div>);
                 return <div style={{fontSize:9,color:'var(--dim)',marginTop:6,lineHeight:1.5}}>Media del mercado: <b style={{color:avg>=0.5?'var(--up)':'var(--down)'}}>{(avg*100).toFixed(0)}% long</b> — {avg>=0.5?'hay MÁS cuentas en LONG':'hay MÁS cuentas en SHORT'} en el top {lsTop.length}.</div>;
               })()}
@@ -4987,6 +4938,59 @@ function App(){
             </div>);})()}
         </div>
       )}
+
+      {/* ── ¿DÓNDE ESTÁ EL DINERO? · BTC (pros: top traders) ── */}
+      {flow&&Number.isFinite(flow.lsr)&&flow.lsr>0&&(()=>{
+        const tb=flow.takerBuy, fNow=g.vwafr;
+        const pl=flow.lsr/(1+flow.lsr),ps=1-pl;
+            const plM=(Number.isFinite(flow.lsrPos)&&flow.lsrPos>0)?flow.lsrPos/(1+flow.lsrPos):null;
+            const z=Number.isFinite(flow.lsrZ)?flow.lsrZ:null;
+            const fuerza=z==null?null:(Math.abs(z)>=1.5?{t:'FUERTE',c:'var(--down)'}:Math.abs(z)>=0.7?{t:'moderado',c:'#F3BA2F'}:{t:'leve',c:'var(--dim)'});
+            const fPos=fNow>0.0005,fNeg=fNow<-0.0005;
+            const expl=fPos?('Funding POSITIVO porque dominan los LONGS ('+(pl*100).toFixed(0)+'% de cuentas): los longs pagan a los shorts'+(tb<0.48?', y encima el spot VENDE — subida apalancada, frágil':'.')):
+              fNeg?('Funding NEGATIVO porque dominan los SHORTS ('+(ps*100).toFixed(0)+'% de cuentas): los shorts pagan a los longs'+(tb>0.52?', y el spot COMPRA — gasolina para un short squeeze':'.')):
+              ('Funding casi neutro: posicionamiento repartido ('+(pl*100).toFixed(0)+'% long / '+(ps*100).toFixed(0)+'% short).');
+            const Bar=({pl2,lbl})=>(<div style={{marginBottom:7}}>
+              <div style={{...flx({justifyContent:'space-between'}),marginBottom:3}}>
+                <span className="mono" style={{fontSize:9.5,fontWeight:800,color:'var(--up)'}}>▲ LONG {(pl2*100).toFixed(0)}%</span>
+                <span style={{fontSize:8,color:'var(--faint)'}}>{lbl}</span>
+                <span className="mono" style={{fontSize:9.5,fontWeight:800,color:'var(--down)'}}>{((1-pl2)*100).toFixed(0)}% SHORT ▼</span>
+              </div>
+              <div style={{display:'flex',height:7,borderRadius:5,overflow:'hidden'}}>
+                <div style={{width:(pl2*100)+'%',background:'var(--up)',opacity:.75}}/>
+                <div style={{flex:1,background:'var(--down)',opacity:.75}}/>
+              </div>
+            </div>);
+            return(<div style={panel({marginBottom:16,padding:'12px 14px'})}>
+              <div style={{...flx({justifyContent:'space-between'}),marginBottom:7}}>
+                <span style={{fontSize:9.5,color:'var(--faint)',fontWeight:600,letterSpacing:.5,textTransform:'uppercase'}}>¿Dónde está el dinero? · long vs short</span>
+                {fuerza&&<span className="mono" style={{fontSize:9,fontWeight:800,color:fuerza.c}}>posicionamiento {fuerza.t}{z!=null?' · z '+z.toFixed(1):''}</span>}
+              </div>
+              {plM!=null&&<Bar pl2={plM} lbl="💰 DINERO (posiciones top traders, OKX)"/>}
+              <Bar pl2={pl} lbl="👥 cuentas de todo el mercado (OKX)"/>
+              {(()=>{const bd=(data&&data.BTC)||{};
+                let oiT=0;const exs=[];
+                for(const ex in bd){const o=bd[ex];if(o&&o.ok&&Number.isFinite(o.oi)&&o.oi>0){oiT+=o.oi;exs.push([ex,o.oi]);}}
+                if(!(oiT>0))return null;
+                const plUse=plM!=null?plM:pl, L=oiT*plUse, S=oiT*(1-plUse);
+                const fmtB=v=>v>=1?('$'+v.toFixed(1).replace('.',',')+'B'):('$'+Math.round(v*1000)+'M');
+                exs.sort((a,b)=>b[1]-a[1]);
+                return(<div style={{marginTop:8,marginBottom:7,padding:'9px 11px',borderRadius:9,background:'#0A0D14',border:'1px solid var(--line2)'}}>
+                  <div style={{...flx({justifyContent:'space-around'}),marginBottom:5}}>
+                    <div style={{textAlign:'center'}}>
+                      <div className="mono" style={{fontSize:14.5,fontWeight:800,color:'var(--up)'}}>{fmtB(L)}</div>
+                      <div style={{fontSize:8,color:'var(--dim)'}}>en LONG</div></div>
+                    <div style={{textAlign:'center'}}>
+                      <div className="mono" style={{fontSize:12.5,fontWeight:800,color:L>=S?'var(--up)':'var(--down)'}}>{L>=S?'▲ más LONG':'▼ más SHORT'}</div>
+                      <div style={{fontSize:8,color:'var(--dim)'}}>{plM!=null?'según TOP TRADERS':'según cuentas'} · BTC</div></div>
+                    <div style={{textAlign:'center'}}>
+                      <div className="mono" style={{fontSize:14.5,fontWeight:800,color:'var(--down)'}}>{fmtB(S)}</div>
+                      <div style={{fontSize:8,color:'var(--dim)'}}>en SHORT</div></div>
+                  </div>
+                  <div style={{fontSize:8,color:'var(--faint)',lineHeight:1.5}}>Interés abierto de BTC {fmtB(oiT)} repartido con el ratio {plM!=null?'del DINERO de los TOP TRADERS (OKX)':'de cuentas (OKX)'} · exchanges: {exs.map(e=>e[0]).join(', ')}. Puede DISCREPAR del panel "top 10" de arriba (ese usa las CUENTAS de todo el mercado): si la masa está larga y los grandes cortos, cada bloque lo dice desde su lado — y esa divergencia es en sí una señal.</div>
+          </div>);})()}
+              <div style={{fontSize:8.5,color:'var(--dim)',marginTop:2,lineHeight:1.5}}>{expl}{plM!=null&&Math.abs(plM-pl)>0.07?(' Ojo: el DINERO grande está '+(plM>pl?'más largo':'menos largo')+' que la masa — los top traders suelen tener razón.'):''} La <b>fuerza</b> es estadística: cuánto se desvía el ratio de su media reciente (z-score). Esta lectura <b>afecta a la ruta 30d del cono</b> como señal contraria: multitud muy cargada = riesgo de squeeze al lado contrario.</div>
+      </div>);})()}
 
       {/* ── Referido Bitunix (central) ── */}
       <div style={{marginBottom:16}}>
