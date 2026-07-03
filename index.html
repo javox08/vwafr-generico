@@ -4875,11 +4875,15 @@ function App(){
         const dd=j&&j.data&&j.data[0]; const v=parseFloat(Array.isArray(dd)?dd[1]:dd&&dd.ratio);
         if(Number.isFinite(v)&&v>0)lsrPos=v;}catch(_){}}
       let posSrcs=null,posEx=null,posW=false;
-      if(lsr==null){try{ // RESPALDO por el relé (el navegador no puede con OKX)
+      if(lsr==null||lsrPos==null){try{ // RESPALDO por el relé (el navegador no puede con OKX)
         const j=await fetch(LS_RELAY).then(r=>r.json());
+        // ratio de la MASA: 1º del histórico, 2º del array coins (más fiable)
         const hs=(j&&j.btc&&j.btc.hist)||[];
-        if(hs.length){lsr=hs[0];lsrZ=zOf(hs,lsr);}
-        if(j&&j.btc&&Number.isFinite(j.btc.pos)&&j.btc.pos>0){lsrPos=j.btc.pos;posSrcs=j.btc.posSrcs||1;posEx=j.btc.posEx||null;posW=!!(j.btc&&j.btc.posW);}
+        if(lsr==null&&hs.length){lsr=hs[0];lsrZ=zOf(hs,lsr);}
+        if(lsr==null){const bc=((j&&j.coins)||[]).find(x=>x.c==='BTC');
+          if(bc&&Number.isFinite(bc.r)&&bc.r>0)lsr=bc.r;}
+        // DINERO de los pros (posiciones top traders): dato clave del panel
+        if(lsrPos==null&&j&&j.btc&&Number.isFinite(j.btc.pos)&&j.btc.pos>0){lsrPos=j.btc.pos;posSrcs=j.btc.posSrcs||1;posEx=j.btc.posEx||null;posW=!!(j.btc&&j.btc.posW);}
       }catch(_){}}
       const f={takerBuy,priceChg,lsr,lsrPos,lsrZ,posSrcs,posEx,posW,t:Date.now()};
       if(alive)setFlow(f);
