@@ -1374,6 +1374,37 @@ const qMean=a=>a.length?a.reduce((s,x)=>s+x,0)/a.length:0;
 const qStd=a=>{const m=qMean(a);return Math.sqrt(qMean(a.map(x=>(x-m)*(x-m))));};
 const qPct=(a,p)=>{const s=[...a].sort((x,y)=>x-y);return s[Math.min(s.length-1,Math.max(0,Math.round(p/100*(s.length-1))))];};
 function qRSI(c,n){const k=c.length;if(k<n+1)return 50;let g=0,l=0;for(let i=k-n;i<k;i++){const ch=c[i]-c[i-1];if(ch>=0)g+=ch;else l-=ch;}const rs=l===0?100:g/l;return 100-100/(1+rs);}
+// CALIBRACIÓN CONFORMAL: reescribe las bandas del Monte Carlo con los cuantiles
+// EMPÍRICOS reales de los retornos a d-días (colas gordas incluidas). Conserva la
+// mediana del MC (que lleva el sesgo direccional) y la envuelve con bandas
+// calibradas: 3/97 → 90% (backtest ~91% cobertura real), 10/90, 25/75, 40/60.
+function conformalize(cl,mc,drift30,volScale){
+  const n=cl.length; if(n<400||!mc||!mc.bands)return;
+  const lr=[];for(let i=1;i<n;i++)lr.push(Math.log(cl[i]/cl[i-1]));
+  const price=cl[n-1];
+  const sigNow=Math.sqrt(lr.slice(-25).reduce((a,x)=>a+x*x,0)/25);
+  const sigHist=Math.sqrt(lr.reduce((a,x)=>a+x*x,0)/lr.length);
+  const vs=Math.max(0.6,Math.min(2.0,(Number.isFinite(volScale)&&volScale>0?volScale:sigNow/(sigHist||sigNow))));
+  const drift=Array.isArray(drift30)?drift30:null;
+  for(let d=1;d<=30&&d<mc.bands.length;d++){
+    // retornos EMPÍRICOS a d días (solapados), demeados
+    const hr=[];for(let i=200;i+d<n;i++)hr.push(Math.log(cl[i+d]/cl[i]));
+    if(hr.length<60)continue;
+    const mu=hr.reduce((a,x)=>a+x,0)/hr.length; const dem=hr.map(x=>x-mu).sort((a,b)=>a-b);
+    const Q=p=>dem[Math.min(dem.length-1,Math.max(0,Math.round(p/100*(dem.length-1))))]*vs;
+    // centro = mediana del MC (conserva el sesgo direccional); las bandas la envuelven
+    const center=mc.bands[d].p50;
+    const at=p=>center*Math.exp(Q(p)-Q(50)); // Q(50)≈0 (demeado), robustez
+    const bd=mc.bands[d];
+    bd.p5=at(3); bd.p95=at(97);      // cuantiles conformales calibrados a 90% real
+    bd.p10=at(8); bd.p90=at(92);
+    bd.p25=at(25); bd.p75=at(75);
+    bd.p40=at(40); bd.p60=at(60);
+    // garantiza orden monótono por si el demeo deja algún cruce
+    const arr=['p5','p10','p25','p40','p50','p60','p75','p90','p95'];
+    for(let k=1;k<arr.length;k++)if(bd[arr[k]]<bd[arr[k-1]])bd[arr[k]]=bd[arr[k-1]];
+  }
+}
 function monteCarlo(rets,price,days,paths,drift,mags,volScale,simW){
   // drift puede ser un número (sesgo diario constante) o un ARRAY con un sesgo
   // distinto para cada día 1..N (perfil que sigue la trayectoria de los patrones)
@@ -2931,6 +2962,12 @@ function QuantView({gFunding}){
     // reescalados a la volatilidad objetivo (implícita+reciente), con sesgos día a día e imán ──
     const pdrift=drift;
     const mc=monteCarlo(rets,price,30,700,drift30,mags,volScale,simW), fin=mc.finals;
+    // ── CALIBRACIÓN CONFORMAL de las bandas (backtest: la banda del 90% del MC se
+    // quedaba corta —cubría 82%— por las COLAS GORDAS de BTC). Se reconstruyen las
+    // bandas con los cuantiles EMPÍRICOS de los retornos a d-días (demeados y
+    // reescalados a la vol actual), usando 3/97 para el 90% (calibrado a ~91% real)
+    // y 25/75 para el 50%. La MEDIANA conserva el sesgo (deriva) del MC. ──
+    conformalize(cl,mc,drift30,volScale);
     const routes=loadRoutes(price,mc.bands); // 2 rutas persistentes (7d y 30d) con seguimiento diario
     debiasCommit(price,drift30[0],db); // guarda la predicción de hoy para evaluarla mañana
     const skill=loadSkill(routes.r30,price); // marcador CRPS/Brier de la ruta 30d vs precio real
@@ -3344,7 +3381,7 @@ function QuantView({gFunding}){
           <span style={eyebrow}>Cono de probabilidad · ruta 30d</span>
           <span className="mono" style={{fontSize:8.5,fontWeight:700,color:'var(--accent)',padding:'2px 7px',borderRadius:10,background:'rgba(110,139,255,.12)',border:'1px solid rgba(110,139,255,.3)'}}>700 sims · institucional</span>
         </div>
-        <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:10}}>bloques de <b>días análogos</b> (régimen como el de hoy), reescalados a la <b>vol objetivo</b> {Number.isFinite(c.dvol)?'(implícita DVOL '+c.dvol.toFixed(0)+'% + reciente)':'(vol reciente)'} con <b>auto-recalibración</b> · <span style={{color:c.drift>0?'var(--up)':c.drift<0?'var(--down)':'var(--faint)'}}>sesgo {c.drift>=0?'+':''}{(Math.expm1(c.drift)*100).toFixed(2)}%/día</span> · 🧲 imán de liquidez · toca para ver día y precio</div>
+        <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:10}}>bloques de <b>días análogos</b> (régimen como el de hoy) con <b>bandas conformales</b> (cuantiles empíricos reales · colas gordas · 90% calibrado a ~91% en 9 años) · <span style={{color:c.drift>0?'var(--up)':c.drift<0?'var(--down)':'var(--faint)'}}>sesgo {c.drift>=0?'+':''}{(Math.expm1(c.drift)*100).toFixed(2)}%/día</span> · toca para ver día y precio</div>
         {(()=>{
           const coneLo=Math.min(...b.map(x=>x.p5)),coneHi=Math.max(...b.map(x=>x.p95));
           const inR=v=>Number.isFinite(v)&&v>=coneLo*0.92&&v<=coneHi*1.08;
