@@ -4900,13 +4900,13 @@ function App(){
                       <div className="mono" style={{fontSize:14.5,fontWeight:800,color:'var(--up)'}}>{fmtB(L)}</div>
                       <div style={{fontSize:8,color:'var(--dim)'}}>en LONG</div></div>
                     <div style={{textAlign:'center'}}>
-                      <div className="mono" style={{fontSize:12.5,fontWeight:800,color:L>=S?'var(--up)':'var(--down)'}}>{L>=S?'▲ hay más LONG':'▼ hay más SHORT'}</div>
-                      <div style={{fontSize:8,color:'var(--dim)'}}>diferencia {(Math.abs(L-S)/oiT*100).toFixed(0)}%</div></div>
+                      <div className="mono" style={{fontSize:12.5,fontWeight:800,color:L>=S?'var(--up)':'var(--down)'}}>{L>=S?'▲ más LONG':'▼ más SHORT'}</div>
+                      <div style={{fontSize:8,color:'var(--dim)'}}>{plM!=null?'según TOP TRADERS':'según cuentas'} · BTC</div></div>
                     <div style={{textAlign:'center'}}>
                       <div className="mono" style={{fontSize:14.5,fontWeight:800,color:'var(--down)'}}>{fmtB(S)}</div>
                       <div style={{fontSize:8,color:'var(--dim)'}}>en SHORT</div></div>
                   </div>
-                  <div style={{fontSize:8,color:'var(--faint)',lineHeight:1.5}}>Interés abierto de BTC {fmtB(oiT)} repartido con el ratio {plM!=null?'de POSICIONES (top traders OKX)':'de cuentas (OKX)'} · exchanges: {exs.map(e=>e[0]).join(', ')}. Estimación: en futuros cada long tiene un short enfrente; el reparto muestra hacia dónde está cargado el posicionamiento.</div>
+                  <div style={{fontSize:8,color:'var(--faint)',lineHeight:1.5}}>Interés abierto de BTC {fmtB(oiT)} repartido con el ratio {plM!=null?'del DINERO de los TOP TRADERS (OKX)':'de cuentas (OKX)'} · exchanges: {exs.map(e=>e[0]).join(', ')}. Puede DISCREPAR del panel "top 10" de abajo (ese usa las CUENTAS de todo el mercado): si la masa está larga y los grandes cortos, cada bloque lo dice desde su lado — y esa divergencia es en sí una señal.</div>
                 </div>);})()}
               <div style={{fontSize:8.5,color:'var(--dim)',marginTop:2,lineHeight:1.5}}>{expl}{plM!=null&&Math.abs(plM-pl)>0.07?(' Ojo: el DINERO grande está '+(plM>pl?'más largo':'menos largo')+' que la masa — los top traders suelen tener razón.'):''} La <b>fuerza</b> es estadística: cuánto se desvía el ratio de su media reciente (z-score). Esta lectura <b>afecta a la ruta 30d del cono</b> como señal contraria: multitud muy cargada = riesgo de squeeze al lado contrario.</div>
             </div>);})()}
@@ -4956,12 +4956,12 @@ function App(){
                       <div style={{fontSize:7.5,color:'var(--dim)'}}>en LONG</div></div>
                     <div style={{textAlign:'center'}}>
                       <div className="mono" style={{fontSize:11.5,fontWeight:800,color:totL>=totS?'var(--up)':'var(--down)'}}>{totL>=totS?'▲ más LONG':'▼ más SHORT'}</div>
-                      <div style={{fontSize:7.5,color:'var(--dim)'}}>ponderado por OI · {(wAvg*100).toFixed(0)}% long</div></div>
+                      <div style={{fontSize:7.5,color:'var(--dim)'}}>según CUENTAS · pond. OI · {(wAvg*100).toFixed(0)}% long</div></div>
                     <div style={{textAlign:'center'}}>
                       <div className="mono" style={{fontSize:13.5,fontWeight:800,color:'var(--down)'}}>{fmtB(totS)}</div>
                       <div style={{fontSize:7.5,color:'var(--dim)'}}>en SHORT</div></div>
                   </div>
-                  <div style={{fontSize:8,color:'var(--faint)',lineHeight:1.5}}>Interés abierto total {fmtB(tot)} del top {lsTop.length}, repartido con el ratio long/short de CADA moneda (media simple sin ponderar: {(avg*100).toFixed(0)}% long). Las monedas con más OI pesan más: es el reparto del DINERO, no de las cuentas.</div>
+                  <div style={{fontSize:8,color:'var(--faint)',lineHeight:1.5}}>Interés abierto total {fmtB(tot)} del top {lsTop.length}, repartido con el ratio de CUENTAS de cada moneda (media simple: {(avg*100).toFixed(0)}% long); las monedas con más OI pesan más. OJO: el bloque de BTC de "¿Por qué se mueve?" usa el DINERO de los top traders — si aquí sale "más long" y allí "más short" es que la MASA está larga y los GRANDES cortos (los top traders suelen tener razón).</div>
                 </div>);
                 return <div style={{fontSize:9,color:'var(--dim)',marginTop:6,lineHeight:1.5}}>Media del mercado: <b style={{color:avg>=0.5?'var(--up)':'var(--down)'}}>{(avg*100).toFixed(0)}% long</b> — {avg>=0.5?'hay MÁS cuentas en LONG':'hay MÁS cuentas en SHORT'} en el top {lsTop.length}.</div>;
               })()}
