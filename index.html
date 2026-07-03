@@ -723,7 +723,17 @@ function CycleBTC(){
       try{
         const [m,n]=await Promise.all([j('https://bitcoin-data.com/v1/mvrv/last'),j('https://bitcoin-data.com/v1/nupl/last')]);
         const mv=parseFloat(m&&m.mvrv), nu=parseFloat(n&&n.nupl);
-        if(alive&&Number.isFinite(mv)&&Number.isFinite(nu)){setOc({mvrv:mv,nupl:nu}); return;}
+        if(alive&&Number.isFinite(mv)&&Number.isFinite(nu)){
+          const out={mvrv:mv,nupl:nu};
+          // métricas EXTRA para el termómetro de fondo (opcionales; si fallan no pasa nada)
+          await Promise.all([
+            j('https://bitcoin-data.com/v1/puell-multiple/last').then(x=>{const v=parseFloat(x&&(x.puellMultiple??x.puell));if(Number.isFinite(v))out.puell=v;}).catch(()=>{}),
+            j('https://bitcoin-data.com/v1/sopr/last').then(x=>{const v=parseFloat(x&&x.sopr);if(Number.isFinite(v))out.sopr=v;}).catch(()=>{}),
+            j('https://bitcoin-data.com/v1/mvrv-zscore/last').then(x=>{const v=parseFloat(x&&(x.mvrvZscore??x.mvrvzscore));if(Number.isFinite(v))out.zscore=v;}).catch(()=>{}),
+            j('https://bitcoin-data.com/v1/fear-greed/last').then(x=>{const v=parseFloat(x&&(x.fng??x.value));if(Number.isFinite(v))out.fng=v;}).catch(()=>{}),
+          ]);
+          if(alive)setOc(out); return;
+        }
         throw 0;
       }catch(_){ if(alive) setOc(o=>o||{mvrv:1.2,nupl:0.15,est:true}); } // respaldo: nunca se queda cargando
     };
@@ -1279,6 +1289,70 @@ function CycleBTC(){
             hlines={[{v:7,c:'var(--down)',label:'techo'},{v:0,c:'var(--up)',label:'suelo'}]}
             fmt={v=>v.toFixed(1)} label={i=>''}/>
           <p style={{fontSize:9,color:'var(--faint)',marginTop:7,lineHeight:1.5}}>Z-Score = cuántas desviaciones típicas está el valor de mercado sobre el realizado. Fuente: bitcoin-data.com.</p>
+        </div>);
+      })()}
+
+      {/* ── TERMÓMETRO DE FONDO DE MERCADO: probabilidad combinada + indicadores ── */}
+      {(()=>{
+        const H=hist&&Array.isArray(hist.cl)&&hist.cl.length>300?hist.cl:null;
+        const price=(d&&Number.isFinite(d.price))?d.price:(H?H[H.length-1]:null);
+        if(!price)return null;
+        const nn=H?H.length:0;
+        const maN=w=>{if(!H||nn<w)return null;let s=0;for(let i=nn-w;i<nn;i++)s+=H[i];return s/w;};
+        const ma200=maN(200), ma200w=maN(Math.min(nn,1400));
+        const mayer=ma200?price/ma200:null;
+        let athAll=0; if(H)for(const v of H)if(v>athAll)athAll=v; if(d&&d.ath)athAll=Math.max(athAll,d.ath);
+        const dd=athAll>0?price/athAll-1:null; // caída desde ATH (negativa)
+        const rsiW=(()=>{if(!H||nn<105)return null;const w=[];for(let i=nn-98;i<nn;i+=7)w.push(H[i]);w.push(H[nn-1]);
+          let g=0,l=0;for(let i=1;i<w.length;i++){const c=w[i]-w[i-1];if(c>=0)g+=c;else l-=c;}const rs=l===0?100:g/l;return 100-100/(1+rs);})();
+        const zs=oc&&Number.isFinite(oc.zscore)?oc.zscore:(zsH&&zsH.length?zsH[zsH.length-1]:null);
+        const cl01=x=>Math.max(0,Math.min(1,x));
+        // cada indicador: score 0..1 de "cuán FONDO estamos" (1 = fondo claro)
+        const ind=[];
+        if(oc&&Number.isFinite(oc.mvrv))ind.push({t:'MVRV',v:oc.mvrv.toFixed(2),s:cl01((1.4-oc.mvrv)/1.2),lo:'< 1 fondo',hi:'> 3,5 techo'});
+        if(oc&&Number.isFinite(oc.nupl))ind.push({t:'NUPL',v:oc.nupl.toFixed(2),s:cl01((0.25-oc.nupl)/0.6),lo:'< 0 capitulación',hi:'> 0,75 euforia'});
+        if(Number.isFinite(zs))ind.push({t:'MVRV Z-Score',v:zs.toFixed(1),s:cl01((1.2-zs)/2.2),lo:'≤ 0 suelo',hi:'≥ 7 techo'});
+        if(oc&&Number.isFinite(oc.puell))ind.push({t:'Puell Multiple',v:oc.puell.toFixed(2),s:cl01((0.6-oc.puell)/0.5),lo:'< 0,5 fondo minero',hi:'> 4 techo'});
+        if(oc&&Number.isFinite(oc.sopr))ind.push({t:'SOPR',v:oc.sopr.toFixed(3),s:cl01((1.0-oc.sopr)/0.06),lo:'< 1 se vende en pérdidas',hi:'> 1,05 beneficios'});
+        if(mayer)ind.push({t:'Múltiplo de Mayer',v:mayer.toFixed(2),s:cl01((0.85-mayer)/0.45),lo:'< 0,8 barato',hi:'> 2,4 caro'});
+        if(dd!=null)ind.push({t:'Caída desde ATH',v:(dd*100).toFixed(0)+'%',s:cl01((-dd-0.45)/0.35),lo:'-75% suelo típico',hi:'0% en máximos'});
+        if(ma200w)ind.push({t:'Precio vs MA 200 sem',v:(price/ma200w).toFixed(2)+'×',s:cl01((1.05-price/ma200w)/0.5),lo:'< 1 zona de suelo',hi:'> 3 zona de techo'});
+        if(ma200)ind.push({t:'Precio vs MA 200 d',v:(price/ma200).toFixed(2)+'×',s:cl01((0.9-price/ma200)/0.4),lo:'< 0,8 sobreventa',hi:'> 2 sobrecompra'});
+        if(rsiW!=null)ind.push({t:'RSI semanal',v:rsiW.toFixed(0),s:cl01((40-rsiW)/25),lo:'< 30 sobreventa',hi:'> 75 sobrecompra'});
+        if(oc&&Number.isFinite(oc.fng))ind.push({t:'Miedo y codicia',v:oc.fng.toFixed(0),s:cl01((35-oc.fng)/30),lo:'< 20 miedo extremo',hi:'> 80 codicia'});
+        if(ind.length<3)return null;
+        const prob=Math.round(ind.reduce((a,x)=>a+x.s,0)/ind.length*100);
+        const verd=prob>=70?{t:'FONDO MUY PROBABLE',c:'#1FE0A0',e:'🟢'}:prob>=55?{t:'Cerca del fondo',c:'#26C99E',e:'🟢'}:
+          prob>=40?{t:'Zona media',c:'#F3BA2F',e:'🟡'}:prob>=25?{t:'Lejos del fondo',c:'#FF9F45',e:'🟠'}:{t:'ZONA DE TECHO',c:'var(--down)',e:'🔴'};
+        const nBottom=ind.filter(x=>x.s>=0.6).length;
+        return(
+        <div style={panel({marginBottom:14,padding:16,background:`radial-gradient(130% 80% at 50% 0%, ${verd.c}12 0%, var(--panel) 60%)`,borderColor:`${verd.c}33`})}>
+          <div style={{...flx({justifyContent:'space-between'}),marginBottom:10}}>
+            <span style={eyebrow}>🌡️ Termómetro de fondo de mercado</span>
+            <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>{ind.length} indicadores</span>
+          </div>
+          <div style={{textAlign:'center',padding:'10px 0 6px'}}>
+            <div className="mono" style={{fontSize:40,fontWeight:800,color:verd.c,lineHeight:1,textShadow:`0 0 34px ${verd.c}44`}}>{prob}%</div>
+            <div style={{fontSize:13,fontWeight:800,color:verd.c,marginTop:6}}>{verd.e} {verd.t}</div>
+            <div style={{fontSize:9.5,color:'var(--dim)',marginTop:3}}>probabilidad de estar en FONDO de mercado según {ind.length} indicadores · {nBottom} en zona de suelo</div>
+          </div>
+          {/* barra global */}
+          <div style={{height:8,borderRadius:5,background:'linear-gradient(90deg,var(--down),#F3BA2F 50%,#1FE0A0)',position:'relative',margin:'10px 0 14px'}}>
+            <div style={{position:'absolute',left:`${Math.min(98,Math.max(2,prob))}%`,top:'50%',transform:'translate(-50%,-50%)',width:13,height:13,borderRadius:'50%',background:verd.c,border:'2px solid var(--bg)',boxShadow:`0 0 8px ${verd.c}`}}/>
+          </div>
+          {ind.map((x,i)=>{const col=x.s>=0.6?'#1FE0A0':x.s>=0.4?'#F3BA2F':x.s>=0.2?'#FF9F45':'var(--down)';
+            return(
+            <div key={i} style={{padding:'7px 0',borderTop:i?'1px solid #12151F':'none'}}>
+              <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
+                <span style={{fontSize:11.5,fontWeight:700}}>{x.t} <span className="mono" style={{fontSize:10,color:'var(--dim)',fontWeight:400}}>{x.v}</span></span>
+                <span className="mono" style={{fontSize:10,fontWeight:800,color:col}}>{x.s>=0.6?'🟢 fondo':x.s>=0.4?'🟡 medio':x.s>=0.2?'🟠 alto':'🔴 techo'}</span>
+              </div>
+              <div style={{position:'relative',height:5,borderRadius:4,background:'#0A0D14'}}>
+                <div style={{position:'absolute',left:0,top:0,bottom:0,width:`${Math.round(x.s*100)}%`,background:col,borderRadius:4,opacity:.8}}/>
+              </div>
+              <div style={{...flx({justifyContent:'space-between'}),marginTop:2,fontSize:7.5,color:'var(--faint)'}} className="mono"><span>{x.lo}</span><span>{x.hi}</span></div>
+            </div>);})}
+          <p style={{fontSize:9,color:'var(--faint)',lineHeight:1.5,marginTop:10}}>Cada indicador puntúa 0-100% cuán cerca del FONDO histórico está su valor actual; la probabilidad global es la media. On-chain de bitcoin-data.com + métricas de precio (Mayer, caída desde ATH, medias de 200 días y 200 semanas, RSI semanal). Se actualiza solo. Orientativo, no es consejo financiero.</p>
         </div>);
       })()}
     </div>
