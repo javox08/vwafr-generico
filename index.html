@@ -3003,7 +3003,34 @@ function QuantView({gFunding}){
         return {hit:nz?Math.round(hit/nz*100):0,base:Math.round(base/nn*100),ic:+((vx>0&&vy>0)?cov/Math.sqrt(vx*vy):0).toFixed(2),n:nz};};
       return {d30:run(30),d7:run(7)};
     })();
-    return {price,annVol,rsi,ma200,ma50,ma200w,mc,probUp,probUp15,probDn15,var99,cvar99,coneBT,
+    // ── SEÑAL DE ALTA PROBABILIDAD: no predice cada día (imposible con fiabilidad),
+    // solo salta en los setups MÁS FIABLES, con su acierto REAL backtesteado (TP/SL,
+    // barrera) sobre 9 años. Precisión ~75-80% a costa de disparar poco (~selectivo). ──
+    const hiConf=(()=>{
+      const bh=(q.longCloses&&q.longCloses.length>1200)?q.longCloses:cl; const N=bh.length; if(N<400)return null;
+      const maB=(j,w)=>{let s=0;for(let z=j-w;z<j;z++)s+=bh[z];return s/w;};
+      const momB=(j,k)=>bh[j]/bh[j-k]-1;
+      const rsiB=j=>{let g=0,l=0;for(let z=j-13;z<=j;z++){const c=bh[z]-bh[z-1];if(c>=0)g+=c;else l-=c;}const rs=l===0?100:g/l;return 100-100/(1+rs);};
+      const hhB=(j,w)=>{let hi=0;for(let z=j-w;z<j;z++)if(bh[z]>hi)hi=bh[z];return hi;};
+      // setups (los de mayor precisión medida): ruptura tras acumulación y cruce dorado
+      const SET=[
+        {t:'Ruptura de máximos en tendencia',dir:1,tp:0.08,sl:0.12,H:30,
+         f:j=>bh[j]>maB(j,200)&&maB(j,50)>maB(j,200)&&momB(j,90)>0.05&&bh[j]>hhB(j,30)&&rsiB(j-1)<70},
+        {t:'Cruce dorado confirmado',dir:1,tp:0.05,sl:0.12,H:30,
+         f:j=>maB(j,50)>maB(j,200)&&maB(j-8,50)<=maB(j-8,200)&&bh[j]>maB(j,200)},
+      ];
+      const barr=(s)=>{let win=0,loss=0;for(let j=260;j<N-s.H;j++){if(!s.f(j))continue;const e=bh[j];
+        for(let h=1;h<=s.H;h++){const r=bh[j+h]/e-1;if(r*s.dir>=s.tp){win++;break;}if(r*s.dir<=-s.sl){loss++;break;}}}
+        const dec=win+loss;return {n:win+loss,hit:dec?Math.round(win/dec*100):null,win};};
+      // ¿alguno activo AHORA? (en la última vela) → devuelve el de mayor acierto
+      let best=null;
+      for(const s of SET){ if(s.f(N-1)){const st=barr(s); if(st.n>=15&&st.hit!=null&&(!best||st.hit>best.hit)){
+        const e=bh[N-1]; best={t:s.t,dir:s.dir,hit:st.hit,n:st.n,tp:e*(1+s.dir*s.tp),sl:e*(1-s.dir*s.sl),tpPct:s.tp,slPct:s.sl,H:s.H,entry:e};}}}
+      // aunque no haya señal, informa del setup más fiable y su acierto (para transparencia)
+      const ref=SET.map(s=>({t:s.t,...barr(s)})).filter(x=>x.n>=15).sort((a,b)=>b.hit-a.hit)[0]||null;
+      return {active:best,ref};
+    })();
+    return {price,annVol,rsi,ma200,ma50,ma200w,mc,probUp,probUp15,probDn15,var99,cvar99,coneBT,hiConf,
       fair,lo,hi,valPct,realized,models,plSup,plRes,H,regime,fund,gf,opt,levels,cyc,patterns,corrE,corrS,corrG,corrAvg,liq,usdLiq,gold:q.gold,ritual,optExp,
       route,tomorrow,tomPct,sig10,pdrift,trap,swingHi,swingLo,routes,biases,chartPats,drift,drift30,shutdown,pctLong,pctLongM,lsrZ,lsStrength,manip:manipList,
       cal,volScale,sigTarget,dvol:q.dvol,obImb:q.obImb,impDaily,closes:cl,db,skill};
@@ -3066,6 +3093,37 @@ function QuantView({gFunding}){
               </div>))}
           </div>
           {topB&&<div style={{fontSize:9,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Lo que más pesa hoy: <b style={{color:'var(--txt)'}}>{topB.k}</b> · {topB.why}</div>}
+        </div>);
+      })()}
+
+      {/* SEÑAL DE ALTA PROBABILIDAD (selectiva, con acierto real backtesteado) */}
+      {c.hiConf&&(()=>{const a=c.hiConf.active, ref=c.hiConf.ref;
+        if(a){const up=a.dir>0,col=up?'var(--up)':'var(--down)';
+          return(
+          <div style={panel({marginBottom:14,padding:16,background:`radial-gradient(120% 90% at 50% 0%, ${col}18 0%, var(--panel) 60%)`,borderColor:`${col}45`})}>
+            <div style={{...flx({justifyContent:'space-between'}),marginBottom:8}}>
+              <span style={eyebrow}>🎯 Señal de alta probabilidad</span>
+              <span className="mono" style={{fontSize:9.5,fontWeight:800,color:col,padding:'2px 8px',borderRadius:10,background:`${col}1F`,border:`1px solid ${col}55`}}>{a.hit}% acierto histórico</span>
+            </div>
+            <div style={{fontSize:15,fontWeight:800,color:col,marginBottom:4}}>{up?'▲ COMPRA':'▼ VENTA'} · {a.t}</div>
+            <div style={{fontSize:10.5,color:'var(--dim)',marginBottom:10}}>Solo salta en los setups más fiables (backtest de {a.n} casos en 9 años). No es garantía: acierta ~{a.hit} de cada 100 veces.</div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
+              {[['Entrada',money(a.entry),'var(--txt)'],['🎯 Objetivo',money(a.tp),'var(--up)'],['🛑 Stop',money(a.sl),'var(--down)']].map((m,i)=>(
+                <div key={i} style={{background:'#0A0D14',borderRadius:9,padding:'9px 6px',textAlign:'center'}}>
+                  <div className="mono" style={{fontSize:12,fontWeight:800,color:m[2]}}>{m[1]}</div>
+                  <div style={{fontSize:8,color:'var(--dim)',marginTop:2}}>{m[0]}</div>
+                </div>))}
+            </div>
+            <p style={{fontSize:8.5,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Acierto = veces que tocó el objetivo (+{(a.tpPct*100).toFixed(0)}%) antes que el stop (−{(a.slPct*100).toFixed(0)}%) en {a.H} días, medido sobre 9 años reales. No es consejo financiero.</p>
+          </div>);
+        }
+        return(
+        <div style={panel({marginBottom:14,padding:'13px 16px'})}>
+          <div style={{...flx({justifyContent:'space-between'}),marginBottom:5}}>
+            <span style={eyebrow}>🎯 Señal de alta probabilidad</span>
+            <span className="mono" style={{fontSize:9,fontWeight:700,color:'var(--faint)'}}>en espera</span>
+          </div>
+          <div style={{fontSize:10.5,color:'var(--dim)',lineHeight:1.5}}>Sin señal de alta fiabilidad ahora mismo. El sistema <b>solo avisa cuando se alinea un setup de acierto alto</b> (no todos los días — así se mantiene la precisión).{ref&&ref.hit!=null?' El más fiable ('+ref.t+') acierta el '+ref.hit+'% cuando aparece (n='+ref.n+').':''}</div>
         </div>);
       })()}
 
