@@ -2376,6 +2376,15 @@ function candlePatterns(oh){
     [bear(i)&&op[i]>=hi[i]*0.999&&body(i)>aBody(i)*1.2,-1,'Belt hold bajista','abre en máximo y cae con fuerza',j=>bear(j)&&op[j]>=hi[j]*0.999&&body(j)>aBody(j)*1.2],
     [rng(i)>0&&body(i)<0.1*rng(i)&&dnW(i)>3*body(i)&&upW(i)<body(i),1,'Doji libélula','rechazo de mínimos (giro alcista)',j=>rng(j)>0&&body(j)<0.1*rng(j)&&dnW(j)>3*body(j)&&upW(j)<body(j)],
     [rng(i)>0&&body(i)<0.1*rng(i)&&upW(i)>3*body(i)&&dnW(i)<body(i),-1,'Doji lápida','rechazo de máximos (giro bajista)',j=>rng(j)>0&&body(j)<0.1*rng(j)&&upW(j)>3*body(j)&&dnW(j)<body(j)],
+    [bull(i)&&bull(i-1)&&op[i]>cl[i-1]&&body(i)>aBody(i)*1.2,1,'Hueco alcista + confirmación','gap al alza sostenido con vela verde fuerte',j=>bull(j)&&bull(j-1)&&op[j]>cl[j-1]&&body(j)>aBody(j)*1.2],
+    [bear(i)&&bear(i-1)&&op[i]<cl[i-1]&&body(i)>aBody(i)*1.2,-1,'Hueco bajista + confirmación','gap a la baja sostenido con vela roja fuerte',j=>bear(j)&&bear(j-1)&&op[j]<cl[j-1]&&body(j)>aBody(j)*1.2],
+    [bull(i)&&bull(i-1)&&bull(i-2)&&op[i]>op[i-1]&&op[i-1]>op[i-2]&&body(i)<body(i-1)&&body(i-1)<body(i-2),-1,'Escalera al alza agotándose','3 velas verdes con cuerpo decreciente (impulso que se apaga)',j=>bull(j)&&bull(j-1)&&bull(j-2)&&op[j]>op[j-1]&&op[j-1]>op[j-2]&&body(j)<body(j-1)&&body(j-1)<body(j-2)],
+    [bear(i)&&bear(i-1)&&bear(i-2)&&body(i)<body(i-1)&&body(i-1)<body(i-2),1,'Caída perdiendo fuerza','3 velas rojas con cuerpo decreciente (venta que se agota)',j=>bear(j)&&bear(j-1)&&bear(j-2)&&body(j)<body(j-1)&&body(j-1)<body(j-2)],
+    [bull(i)&&bear(i-1)&&Math.abs(op[i]-cl[i-1])<0.001*cl[i]&&body(i)>aBody(i),1,'Contraataque alcista','cierra donde cerró la roja previa y rebota',j=>bull(j)&&bear(j-1)&&Math.abs(op[j]-cl[j-1])<0.001*cl[j]&&body(j)>aBody(j)],
+    [bear(i)&&bull(i-1)&&Math.abs(op[i]-cl[i-1])<0.001*cl[i]&&body(i)>aBody(i),-1,'Contraataque bajista','abre en el cierre verde previo y se gira abajo',j=>bear(j)&&bull(j-1)&&Math.abs(op[j]-cl[j-1])<0.001*cl[j]&&body(j)>aBody(j)],
+    [rng(i)>0&&body(i)<0.25*rng(i)&&upW(i)>2*body(i)&&dnW(i)>2*body(i)&&rng(i)>aBody(i)*2.5,0,'Vela de alta indecisión','rango grande con cuerpo minúsculo: batalla comprador-vendedor',j=>rng(j)>0&&body(j)<0.25*rng(j)&&upW(j)>2*body(j)&&dnW(j)>2*body(j)&&rng(j)>aBody(j)*2.5],
+    [bull(i)&&cl[i]>hi[i-1]&&cl[i]>hi[i-2]&&cl[i]>hi[i-3],1,'Ruptura de 3 máximos','cierra por encima de los 3 máximos previos (fuerza)',j=>bull(j)&&cl[j]>hi[j-1]&&cl[j]>hi[j-2]&&cl[j]>hi[j-3]],
+    [bear(i)&&cl[i]<lo[i-1]&&cl[i]<lo[i-2]&&cl[i]<lo[i-3],-1,'Ruptura de 3 mínimos','cierra por debajo de los 3 mínimos previos (debilidad)',j=>bear(j)&&cl[j]<lo[j-1]&&cl[j]<lo[j-2]&&cl[j]<lo[j-3]],
   ];
   // ── VELAS CON VOLUMEN: caída/subida fuerte acompañada de volumen alto ──
   if(oh[n-1].v!=null){
