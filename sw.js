@@ -3,7 +3,7 @@
 // (cache-first, son inmutables); el documento es network-first con fallback a
 // caché (para que las actualizaciones lleguen online y la app funcione offline);
 // las APIs de datos en vivo NUNCA se cachean (siempre red, datos frescos).
-const CACHE = 'vwafr-v2';
+const CACHE = 'vwafr-v3';
 const SHELL = [
   '/', '/index.html', '/manifest.webmanifest',
   '/icon-192.png', '/icon-512.png',
