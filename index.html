@@ -1396,7 +1396,10 @@ function conformalize(cl,mc,drift30,volScale){
     const center=mc.bands[d].p50;
     const at=p=>center*Math.exp(Q(p)-Q(50)); // Q(50)≈0 (demeado), robustez
     const bd=mc.bands[d];
-    bd.p5=at(3); bd.p95=at(97);      // cuantiles conformales calibrados a 90% real
+    // cuantiles POR HORIZONTE (backtest): los cortos sobre-cubrían → se estrechan a
+    // 4/96 (90% exacto), los largos usan 3/97. Calibrado walk-forward: 7d y 30d ~90%.
+    const ql=d<=10?4:3, qh=d<=10?96:97;
+    bd.p5=at(ql); bd.p95=at(qh);     // cuantiles conformales calibrados a 90% real
     bd.p10=at(8); bd.p90=at(92);
     bd.p25=at(25); bd.p75=at(75);
     bd.p40=at(40); bd.p60=at(60);
