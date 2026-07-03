@@ -2619,6 +2619,9 @@ function QuantView({gFunding}){
     const plEff=pctLongM!=null?pctLongM:pctLong; // prioriza el DINERO sobre las cuentas
     const strengthMul=lsrZ==null?1:Math.min(1.6,0.6+0.5*Math.abs(lsrZ));
     const lsB=plEff!=null?cl0((0.5-plEff)*2*0.0018*strengthMul,0.0012):null;
+    // DIVERGENCIA PROS vs MASA: si los top traders (dinero) van al revés que la
+    // multitud (cuentas), el cono se inclina hacia el lado de los pros.
+    const divB=(pctLong!=null&&pctLongM!=null)?cl0((pctLongM-pctLong)*0.006,0.0010):null;
     // ── QUIÉN EMPUJA el precio: SPOT (orgánico, suele continuar) vs FUTUROS
     // (apalancado, suele revertir). Combina taker spot, funding y dirección 24h. ──
     let pushB=null,pushWhy=null;
@@ -2692,13 +2695,13 @@ function QuantView({gFunding}){
     const SIGW={'Patrones (técnicos/velas/figuras)':0.85,'Régimen / tendencia':icTrend.w,'RSI':icRsi.w,
       'Ciclo (halving)':0.6,'Funding':0.55,'On-chain (MVRV)':0.6,'Sentimiento':0.5,
       'Cierre de gobierno EE.UU.':0.45,'Libro de órdenes':0.55,'Opciones (calls/puts)':0.55,'Ciclo económico EE.UU.':0.5,
-      'Long/Short (posicionamiento)':0.55,'Manipulación / barridos':0.5,'Quién empuja (spot/futuros)':0.6};
+      'Long/Short (posicionamiento)':0.55,'Manipulación / barridos':0.5,'Quién empuja (spot/futuros)':0.6,'Divergencia pros vs masa':0.6};
     // Buckets ~ortogonales: dentro de cada uno se combinan por MEDIA ponderada por
     // confianza (no suma) para no doble-contar señales correlacionadas (p.ej. funding,
     // libro, opciones y sentimiento miden lo mismo); luego se suman entre buckets.
     const BUCKET={'Régimen / tendencia':'tendencia','Ciclo (halving)':'tendencia','RSI':'reversión',
       'Funding':'posicion','Libro de órdenes':'posicion','Opciones (calls/puts)':'posicion','Sentimiento':'posicion',
-      'Long/Short (posicionamiento)':'posicion','Manipulación / barridos':'posicion','Quién empuja (spot/futuros)':'posicion',
+      'Long/Short (posicionamiento)':'posicion','Manipulación / barridos':'posicion','Quién empuja (spot/futuros)':'posicion','Divergencia pros vs masa':'posicion',
       'On-chain (MVRV)':'onchain','Ciclo económico EE.UU.':'macro','Cierre de gobierno EE.UU.':'macro'};
     const biases=[
       {k:'Patrones (técnicos/velas/figuras)',v:cl0(Math.log(1+sig10/100)/10,0.003),why:actSt.length+' técnicos/velas + '+chartPats.filter(p=>p.st).length+' figuras (todos backtesteados)'},
@@ -2728,6 +2731,7 @@ function QuantView({gFunding}){
     if(lsB!=null)biases.push({k:'Long/Short (posicionamiento)',v:lsB,why:(plEff*100).toFixed(0)+'% long / '+((1-plEff)*100).toFixed(0)+'% short ('+(pctLongM!=null?'dinero top traders':'cuentas')+', OKX)'+(lsStrength?' · '+lsStrength:'')+' · contraria: multitud '+(plEff>=0.5?'larga':'corta')});
     if(manipB!=null)biases.push({k:'Manipulación / barridos',v:manipB,why:manipRecent.t+(manipRecent.ago>0?' hace '+manipRecent.ago+'d':' hoy')+' · el cono juega la reversión'});
     if(pushB!=null)biases.push({k:'Quién empuja (spot/futuros)',v:cl0(pushB,0.0009),why:pushWhy});
+    if(divB!=null&&Math.abs(pctLongM-pctLong)>0.05)biases.push({k:'Divergencia pros vs masa',v:divB,why:'top traders '+(pctLongM*100).toFixed(0)+'% long vs masa '+(pctLong*100).toFixed(0)+'% long → el cono sigue a los pros'});
     if(ritual)biases.push({k:'Ritual de ciclo (halvings)',v:qMean(ritDrift.slice(1,31)),why:'día '+ritual.day+' del ciclo · en '+ritual.n+' ciclo(s) previos BTC hizo '+(ritual.ret30>=0?'+':'')+(ritual.ret30*100).toFixed(1)+'% en 30d'});
     // Perfil de retorno día a día (path histórico 1..30d) de TODO lo que afecta al
     // precio: patrones técnicos, de velas y figuras gráficas. AHORA las figuras
