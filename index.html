@@ -254,6 +254,7 @@ const META=[
   {id:'Bitget',     c:'#00E0D3'},
   {id:'KuCoin',  c:'#26C99E'},
   {id:'BingX',   c:'#3B7BFF'},
+  {id:'Gate',    c:'#3758FF'},
 ];
 // Colores/símbolo por moneda (para el menú y cabeceras)
 const COIN_UI={
@@ -4683,6 +4684,14 @@ function App(){
         binanceFallback(coins,data).catch(()=>{}),
         bitgetFallback(coins,data).catch(()=>{}),
       ]);
+      // exchanges EXTRA por el relé (Gate, MEXC: sus APIs no dan CORS al navegador)
+      try{const fr=await fetch(LS_RELAY.replace('/ls','/fr')).then(r=>r.json());
+        for(const ex in ((fr&&fr.ex)||{}))for(const c of coins){
+          const v=fr.ex[ex]&&fr.ex[ex][c];
+          if(v&&Number.isFinite(v.f)&&data[c]&&(!data[c][ex]||!data[c][ex].ok))
+            data[c][ex]={funding:v.f,oi:v.oi||0,vol:0,ok:true};
+        }
+      }catch(_){}
       setPayload({coins,data});
       setSource('server');
       setUpdated(new Date());
@@ -4907,7 +4916,7 @@ function App(){
         <div style={panel({marginBottom:16,padding:'12px 14px'})}>
           <div style={{...flx({justifyContent:'space-between'}),marginBottom:8}}>
             <span style={eyebrow}>Long vs Short · top {lsTop.length}</span>
-            <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>cuentas en futuros (OKX) · 1h</span>
+            <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>cuentas en futuros · media OKX+Bybit+Binance · 1h</span>
           </div>
           {(()=>{
             // interés abierto por moneda (suma de los exchanges del panel, $B)
