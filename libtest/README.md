@@ -43,5 +43,30 @@ El cono ya estaba **muy bien calibrado**. Reoptimizar los 9 cuantiles a la vez
 
 Confirmado en 3 cortes temporales (68/60/75%): 4/96 mejora el 30d entre +1.05% y
 +3.11% de pinball y acerca la cobertura a 90% exacto. Aplicado en `conformalize()`
-(`const ql=4, qh=96`). Más allá de esto, seguir tocando parámetros = sobreajuste
-(mejor en el histórico, peor en vivo).
+(`const ql=4, qh=96`).
+
+## Segunda mejora: modelo de volatilidad (EWMA λ=0.97)
+`vol_model.cjs` comparó ventana rolling {15,25,40,60} y EWMA {0.90,0.94,0.97} para la
+vol reciente que alimenta `vs`. La ventana simple de 25d (la que había) es ruidosa y
+da bandazos. **EWMA λ=0.97 y rolling-60 ganan de forma robusta** en ambos horizontes y
+los 3 cortes: pinball total OOS −0,5% a −1,2%. Aplicado en el cálculo de `recentVol`
+(index.html). Se eligió EWMA por ser estándar (RiskMetrics) y adaptativo a picos.
+
+## Lo que se probó y NO mejora (se mantiene el diseño actual)
+Barridos rigurosos (1 grado de libertad, robustez exigida en los 3 cortes):
+- **`per_pair_calibration.cjs`** — recalibrar cada par de banda (p10/p90, p25/p75,
+  p40/p60): ningún par mejora en los 3 cortes → el mapeo ya es óptimo, tocarlo = overfit.
+- **`recent_window.cjs`** — usar solo los últimos K días para los cuantiles: el 30d
+  EMPEORA (se pierden las colas de crashes raros) y el 7d solo gana +0,1% (ruido).
+  Usar todo el histórico es lo correcto.
+- **`clamp_gamma.cjs`** — límites del clamp de `vs` y exponente `vs^γ`: el clamp
+  [0.6,2.0] y γ=1 actuales son óptimos; γ=1.15 daba +0,1-0,3% en 2 de 3 cortes pero
+  plano en el tercero → no robusto.
+
+## Conclusión honesta
+Tras probar 5 palancas distintas, el cono está **en su techo de calibración**. Se han
+aplicado las 2 mejoras reales y transferibles (banda 30d + vol EWMA). Seguir tuneando
+los mismos parámetros produce mejoras que NO sobreviven fuera de muestra = sobreajuste
+(mejor en el histórico, peor en vivo). La mejora que quedaría es de otra naturaleza:
+la SKILL DIRECCIONAL (el centro/deriva del cono), limitada por el IC (~0.10-0.17), que
+ya se explota con las señales en vivo (tendencia, momentum, funding, patrones).
