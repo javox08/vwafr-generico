@@ -4781,7 +4781,7 @@ function BotsView({gFunding}){
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:7,marginTop:10}}>
               {[['CAGR',(a.s.cagr>=0?'+':'')+a.s.cagr.toFixed(0)+'%','var(--up)'],
                 ['Sharpe',a.s.sharpe.toFixed(2),'var(--up)'],
-                ['DSR',(a.dsr*100).toFixed(0)+'%','var(--up)'],
+                ['Caída máx · 1,5×','~50%','var(--down)'],
                 ['OOS',(a.oos.cagr>=0?'+':'')+a.oos.cagr.toFixed(0)+'%','var(--up)']].map((m,i)=>(
                 <div key={i} style={{background:'#0A0D14',borderRadius:8,padding:'8px 4px',textAlign:'center'}}>
                   <div className="mono" style={{fontSize:12,fontWeight:800,color:m[2]}}>{m[1]}</div>
@@ -4799,7 +4799,8 @@ function BotsView({gFunding}){
                 <span style={{fontSize:9,fontWeight:800,color:'#F3BA2F',textTransform:'uppercase',letterSpacing:.6}}>💱 APY histórico del bot</span>
                 <span className="mono" style={{fontSize:16,fontWeight:800,color:'var(--up)'}}>{(a.s.cagr>=0?'+':'')+a.s.cagr.toFixed(0)}%<span style={{fontSize:9,color:'var(--dim)'}}> /año</span></span>
               </div>
-              <div style={{fontSize:8.5,color:'var(--faint)',lineHeight:1.5,marginBottom:9}}>backtest {yr} años con comisiones · fuera de muestra {(a.oos.cagr>=0?'+':'')+a.oos.cagr.toFixed(0)}%/año (expectativa realista) · no garantizado</div>
+              <div style={{fontSize:8.5,color:'var(--faint)',lineHeight:1.5,marginBottom:7}}>backtest {yr} años con comisiones · fuera de muestra {(a.oos.cagr>=0?'+':'')+a.oos.cagr.toFixed(0)}%/año (expectativa realista) · no garantizado</div>
+              <div style={{fontSize:8.5,color:'var(--dim)',lineHeight:1.5,marginBottom:9,padding:'7px 9px',borderRadius:8,background:'#0A0D14',border:'1px solid var(--line2)'}}>⚙️ <b style={{color:'var(--txt)'}}>Apalancamiento del bot automático: 1,5× fijo</b> (variable <b>BITUNIX_LEV</b>) → caída máxima histórica <b style={{color:'var(--down)'}}>~50%</b>. Ajustable: 1,1×≈38% · 1,5×≈50% · 2×≈60% · 3×≈77%. Menos que aguantar BTC al contado (~77%). El <b>stop-loss por operación</b> (máx 12%) acota cada trade y evita la liquidación. El apalancamiento que ves arriba en el "trade recomendado" es <b>automático por volatilidad</b> (solo pantalla); el que OPERA de verdad es este 1,5×.</div>
               <a href={BITUNIX} target="_blank" rel="noopener nofollow" style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,padding:'10px',borderRadius:9,textDecoration:'none',
                 background:'linear-gradient(100deg,#F3BA2F,#1FE0A0)',color:'#07090E',fontWeight:800,fontSize:12}}>
                 ⚡ Tradealo en Bitunix · código ffcczq →
