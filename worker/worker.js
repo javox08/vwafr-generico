@@ -59,18 +59,18 @@ async function run(env, force) {
   const kv = env.VWAFR_KV;
   let last = null;
   if (kv) { try { last = JSON.parse(await kv.get('op') || 'null'); } catch (_) {} }
-  const changed = d.side && (!last || last.side !== d.side ||
-    (d.tp && last.tp && Math.abs(d.tp / last.tp - 1) > 0.005) ||
-    (d.sl && last.sl && Math.abs(d.sl / last.sl - 1) > 0.005));
+  // GESTIÓN DE POSICIÓN en CADA ejecución del cron: abre largo con señal, CIERRA cuando la
+  // señal se apaga, mantiene si sigue. Sin SL/TP: sale por señal (= lo backtesteado).
+  const tradeRes = await bxManage(env, d).catch(() => 'error'); console.log('bxManage:', tradeRes);
+  const changed = (!last || last.side !== (d.side || null)); // cambió el estado de la señal
   let sent = 0;
-  if (changed) {
-    // Telegram recibe el aviso técnico; X/LinkedIn una versión con GANCHO (marketing)
+  if (changed && d.side) {
+    // señal NUEVA de largo → aviso técnico (Telegram) + versión con gancho (X/LinkedIn)
     sent = await broadcast(env, updateText(env, d), socialText(env, d, true));
-    await bitunixTrade(env, d).catch(() => {});         // ejecuta en Bitunix (si está activo)
   } else if (force || Math.random() < 0.34) {
     sent = await broadcast(env, normalText(env, d), socialText(env, d, false));
   }
-  if (kv && d.side) { try { await kv.put('op', JSON.stringify({ side: d.side, tp: d.tp, sl: d.sl, ts: Date.now() })); } catch (_) {} }
+  if (kv) { try { await kv.put('op', JSON.stringify({ side: d.side || null, ts: Date.now() })); } catch (_) {} }
   return sent;
 }
 
@@ -284,12 +284,12 @@ async function bitunixTrade(env, d, qtyOverride) {
     } else qty = '0.001'; // si el saldo no se puede leer, tamaño mínimo (seguro)
   }
   const path = '/api/v1/futures/trade/place_order';
+  // SIN stop-loss ni take-profit: la estrategia Élite es de momentum y sale SOLA cuando
+  // la señal se apaga (bxManage cierra la posición). Así lo que se opera = lo backtesteado.
   const bodyObj = {
     symbol: env.BITUNIX_SYMBOL || 'BTCUSDT',
     side: d.side === 'LONG' ? 'BUY' : 'SELL', tradeSide: 'OPEN', orderType: 'MARKET',
-    qty: '' + qty,
-    tpPrice: '' + Math.round(d.tp), tpStopType: 'LAST_PRICE', tpOrderType: 'MARKET',
-    slPrice: '' + Math.round(d.sl), slStopType: 'LAST_PRICE', slOrderType: 'MARKET'
+    qty: '' + qty
   };
   const bodyStr = JSON.stringify(bodyObj);
   const headers = await bxHeaders(env, '', bodyStr);
@@ -300,6 +300,46 @@ async function bitunixTrade(env, d, qtyOverride) {
     console.log('bitunix order:', out); // visible en Logs
     return out;
   } catch (e) { console.log('bitunix error:', e.message); return 'error: ' + e.message; }
+}
+// Cantidad de la posición ABIERTA en el símbolo (>0 largo, <0 corto, 0 sin posición).
+async function bxPositionQty(env, symbol) {
+  try {
+    const headers = await bxHeaders(env, 'symbol' + symbol, '');
+    const r = await bxFetch(env, '/api/v1/futures/position/get_pending_positions?symbol=' + symbol, 'GET', headers, '');
+    const j = await r.json().catch(() => null);
+    const arr = j && j.data ? (Array.isArray(j.data) ? j.data : [j.data]) : [];
+    let q = 0;
+    for (const p of arr) {
+      const sd = ('' + (p.side || p.holdSide || p.positionSide || '')).toUpperCase();
+      const amt = Math.abs(parseFloat(p.qty ?? p.positionAmt ?? p.amount ?? p.total ?? 0));
+      if (Number.isFinite(amt) && amt > 0) q += (sd.includes('SELL') || sd.includes('SHORT')) ? -amt : amt;
+    }
+    return q;
+  } catch (e) { return 0; }
+}
+// Cierra a mercado la posición larga (reduceOnly). qty = cantidad a cerrar.
+async function bxClose(env, symbol, qty) {
+  const bodyObj = { symbol, side: 'SELL', tradeSide: 'CLOSE', orderType: 'MARKET', qty: '' + Math.abs(qty), reduceOnly: true };
+  const bodyStr = JSON.stringify(bodyObj);
+  const headers = await bxHeaders(env, '', bodyStr);
+  try {
+    const r = await bxFetch(env, '/api/v1/futures/trade/place_order', 'POST', headers, bodyStr);
+    const out = r.status + ' ' + (await r.text()).slice(0, 200);
+    console.log('bitunix close:', out);
+    return out;
+  } catch (e) { return 'error: ' + e.message; }
+}
+// GESTIÓN por SEÑAL (se llama en CADA ejecución del cron): abre largo cuando hay señal y
+// no hay posición; CIERRA cuando la señal se apaga; mantiene si sigue activa. Sin SL/TP.
+async function bxManage(env, d) {
+  if (!env.BITUNIX_API_KEY || !env.BITUNIX_API_SECRET) return 'sin claves';
+  if ((env.BITUNIX_TRADE || '').toLowerCase() !== 'live') return 'dry-run (no opera)';
+  const symbol = env.BITUNIX_SYMBOL || 'BTCUSDT';
+  const pos = await bxPositionQty(env, symbol);
+  const wantLong = d.side === 'LONG';
+  if (wantLong && pos <= 0) { await bxSetup(env).catch(() => {}); return 'ABRIR largo · ' + await bitunixTrade(env, d); }
+  if (!wantLong && pos > 0) return 'CERRAR (señal apagada) · ' + await bxClose(env, symbol, pos);
+  return wantLong ? 'mantiene largo (señal activa)' : 'fuera de mercado (sin señal)';
 }
 
 // Publica un tweet con OAuth 1.0a (firma HMAC-SHA1 con Web Crypto del Worker).
