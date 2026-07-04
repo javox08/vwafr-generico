@@ -2897,7 +2897,17 @@ function QuantView({gFunding}){
     const m90s=(()=>{const m=cl[jn]/cl[jn-90]-1;return m>0.05?1:m<-0.05?-1:0;})();
     const m30s=(()=>{const m=cl[jn]/cl[jn-30]-1;return m>0.03?1:m<-0.03?-1:0;})();
     const regS=price>ma200?1:-1;
-    const tmScore=Math.max(-1,Math.min(1,(0.30*donch+0.22*trendC+0.18*m120+0.15*m90s+0.15*m30s+0.10*regS)*1.2));
+    const tmSign=Math.max(-1,Math.min(1,(0.30*donch+0.22*trendC+0.18*m120+0.15*m90s+0.15*m30s+0.10*regS)*1.2));
+    // MEJORA (backtest walk-forward 15a, libtest/tmscore.cjs): los momentum de SIGNO
+    // descartan magnitud y contexto de vol. El momentum CONTINUO escalado por volatilidad
+    // (mom30/σ·√30, el estándar de time-series momentum) tiene más IC fuera de muestra.
+    // Se mezcla 50/50 con la señal de signos (ancla probada): mejora robusta a 7d
+    // (ΔIC +0,005 medio en 3 cortes) y neutra a 30d (no daña). Los términos donch/tendencia
+    // /régimen quedan igual; solo el bloque de momentum pasa a continuo en la variante.
+    const vol30=(()=>{let m=0;for(let i=jn-29;i<=jn;i++)m+=Math.log(cl[i]/cl[i-1]);m/=30;let s=0;for(let i=jn-29;i<=jn;i++){const x=Math.log(cl[i]/cl[i-1])-m;s+=x*x;}return Math.sqrt(s/30);})();
+    const mvCont=Math.max(-1,Math.min(1,(Math.log(cl[jn]/cl[jn-30])/((vol30*Math.sqrt(30))||1))*1.3));
+    const tmVM=Math.max(-1,Math.min(1,(0.30*donch+0.22*trendC+0.48*mvCont+0.10*regS)*1.2));
+    const tmScore=Math.max(-1,Math.min(1,0.5*tmSign+0.5*tmVM));
     const biases=[
       {k:'Patrones (técnicos/velas/figuras)',v:cl0(Math.log(1+sig10/100)/10,0.003),why:actSt.length+' técnicos/velas + '+chartPats.filter(p=>p.st).length+' figuras (todos backtesteados)'},
       {k:'Tendencia + momentum',v:cl0(tmScore*0.0016,0.0018),why:'Donchian '+(donch>0?'↑':'↓')+' · MA50/200 '+(trendC>0?'↑':trendC<0?'↓':'—')+' · mom '+(m120>0?'↑':'↓')+' · IC +0.17 (9a)'},
