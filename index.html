@@ -1318,20 +1318,26 @@ function CycleBTC(){
         // score 0..1 de "cuán FONDO": lineal entre el extremo de SUELO (→1) y el de
         // TECHO (→0). lin(v,bottom,top) = 1 en el suelo histórico, 0 en el techo.
         const lin=(v,bt,tp)=>cl01((tp-v)/(tp-bt));
+        // PESOS DE FIABILIDAD (w): on-chain = indicadores de fondo probados (peso 1).
+        // Los de PRECIO se ponderan según un backtest de 15 años (libtest/cycle*.cjs) del
+        // IC con el retorno futuro: precio/MA200sem es el más predictivo y robusto (w=1,4);
+        // Mayer y precio/MA200d son ruidosos (cambian de signo entre cortes → w=0,6); el
+        // RSI semanal se ELIMINA porque su IC es robustamente NEGATIVO (−0,14 a −0,25): la
+        // "sobreventa semanal" es un cuchillo cayendo, no el suelo del ciclo.
         const ind=[];
-        if(oc&&Number.isFinite(oc.mvrv))ind.push({t:'MVRV',v:oc.mvrv.toFixed(2),s:lin(oc.mvrv,0.8,3.5),lo:'< 1 fondo',hi:'> 3,5 techo'});
-        if(oc&&Number.isFinite(oc.nupl))ind.push({t:'NUPL',v:oc.nupl.toFixed(2),s:lin(oc.nupl,-0.25,0.75),lo:'< 0 capitulación',hi:'> 0,75 euforia'});
-        if(Number.isFinite(zs))ind.push({t:'MVRV Z-Score',v:zs.toFixed(1),s:lin(zs,-0.5,7),lo:'≤ 0 suelo',hi:'≥ 7 techo'});
-        if(oc&&Number.isFinite(oc.puell))ind.push({t:'Puell Multiple',v:oc.puell.toFixed(2),s:lin(oc.puell,0.4,4),lo:'< 0,5 fondo minero',hi:'> 4 techo'});
-        if(oc&&Number.isFinite(oc.sopr))ind.push({t:'SOPR',v:oc.sopr.toFixed(3),s:lin(oc.sopr,0.93,1.06),lo:'< 1 se vende en pérdidas',hi:'> 1,05 beneficios'});
-        if(mayer)ind.push({t:'Múltiplo de Mayer',v:mayer.toFixed(2),s:lin(mayer,0.7,2.4),lo:'< 0,8 barato',hi:'> 2,4 caro'});
-        if(dd!=null)ind.push({t:'Caída desde ATH',v:(dd*100).toFixed(0)+'%',s:lin(-dd,0,0.75),lo:'-75% suelo típico',hi:'0% en máximos'});
-        if(ma200w)ind.push({t:'Precio vs MA 200 sem',v:(price/ma200w).toFixed(2)+'×',s:lin(price/ma200w,0.8,3),lo:'< 1 zona de suelo',hi:'> 3 zona de techo'});
-        if(ma200)ind.push({t:'Precio vs MA 200 d',v:(price/ma200).toFixed(2)+'×',s:lin(price/ma200,0.75,2),lo:'< 0,8 sobreventa',hi:'> 2 sobrecompra'});
-        if(rsiW!=null)ind.push({t:'RSI semanal',v:rsiW.toFixed(0),s:lin(rsiW,30,80),lo:'< 30 sobreventa',hi:'> 75 sobrecompra'});
-        if(oc&&Number.isFinite(oc.fng))ind.push({t:'Miedo y codicia',v:oc.fng.toFixed(0),s:lin(oc.fng,15,85),lo:'< 20 miedo extremo',hi:'> 80 codicia'});
+        if(oc&&Number.isFinite(oc.mvrv))ind.push({t:'MVRV',v:oc.mvrv.toFixed(2),s:lin(oc.mvrv,0.8,3.5),w:1,lo:'< 1 fondo',hi:'> 3,5 techo'});
+        if(oc&&Number.isFinite(oc.nupl))ind.push({t:'NUPL',v:oc.nupl.toFixed(2),s:lin(oc.nupl,-0.25,0.75),w:1,lo:'< 0 capitulación',hi:'> 0,75 euforia'});
+        if(Number.isFinite(zs))ind.push({t:'MVRV Z-Score',v:zs.toFixed(1),s:lin(zs,-0.5,7),w:1,lo:'≤ 0 suelo',hi:'≥ 7 techo'});
+        if(oc&&Number.isFinite(oc.puell))ind.push({t:'Puell Multiple',v:oc.puell.toFixed(2),s:lin(oc.puell,0.4,4),w:1,lo:'< 0,5 fondo minero',hi:'> 4 techo'});
+        if(oc&&Number.isFinite(oc.sopr))ind.push({t:'SOPR',v:oc.sopr.toFixed(3),s:lin(oc.sopr,0.93,1.06),w:0.7,lo:'< 1 se vende en pérdidas',hi:'> 1,05 beneficios'});
+        if(mayer)ind.push({t:'Múltiplo de Mayer',v:mayer.toFixed(2),s:lin(mayer,0.7,2.4),w:0.6,lo:'< 0,8 barato',hi:'> 2,4 caro'});
+        if(dd!=null)ind.push({t:'Caída desde ATH',v:(dd*100).toFixed(0)+'%',s:lin(-dd,0,0.75),w:1,lo:'-75% suelo típico',hi:'0% en máximos'});
+        if(ma200w)ind.push({t:'Precio vs MA 200 sem',v:(price/ma200w).toFixed(2)+'×',s:lin(price/ma200w,0.8,3),w:1.4,lo:'< 1 zona de suelo',hi:'> 3 zona de techo'});
+        if(ma200)ind.push({t:'Precio vs MA 200 d',v:(price/ma200).toFixed(2)+'×',s:lin(price/ma200,0.75,2),w:0.6,lo:'< 0,8 sobreventa',hi:'> 2 sobrecompra'});
+        if(oc&&Number.isFinite(oc.fng))ind.push({t:'Miedo y codicia',v:oc.fng.toFixed(0),s:lin(oc.fng,15,85),w:0.8,lo:'< 20 miedo extremo',hi:'> 80 codicia'});
         if(ind.length<3)return null;
-        const prob=Math.round(ind.reduce((a,x)=>a+x.s,0)/ind.length*100);
+        const wsum=ind.reduce((a,x)=>a+(x.w||1),0);
+        const prob=Math.round(ind.reduce((a,x)=>a+x.s*(x.w||1),0)/wsum*100);
         const verd=prob>=70?{t:'FONDO MUY PROBABLE',c:'#1FE0A0',e:'🟢'}:prob>=55?{t:'Cerca del fondo',c:'#26C99E',e:'🟢'}:
           prob>=40?{t:'Zona media',c:'#F3BA2F',e:'🟡'}:prob>=25?{t:'Lejos del fondo',c:'#FF9F45',e:'🟠'}:{t:'ZONA DE TECHO',c:'var(--down)',e:'🔴'};
         const nBottom=ind.filter(x=>x.s>=0.6).length;
@@ -1362,7 +1368,7 @@ function CycleBTC(){
               </div>
               <div style={{...flx({justifyContent:'space-between'}),marginTop:2,fontSize:7.5,color:'var(--faint)'}} className="mono"><span>{x.lo}</span><span>{x.hi}</span></div>
             </div>);})}
-          <p style={{fontSize:9,color:'var(--faint)',lineHeight:1.5,marginTop:10}}>Cada indicador puntúa 0-100% cuán cerca del FONDO histórico está su valor actual; la probabilidad global es la media. On-chain de bitcoin-data.com + métricas de precio (Mayer, caída desde ATH, medias de 200 días y 200 semanas, RSI semanal). Se actualiza solo. Orientativo, no es consejo financiero.</p>
+          <p style={{fontSize:9,color:'var(--faint)',lineHeight:1.5,marginTop:10}}>Cada indicador puntúa 0-100% cuán cerca del FONDO histórico está su valor actual; la probabilidad global es la <b>media ponderada por fiabilidad</b> (backtest de 15 años: precio/MA200sem pesa más por ser el más predictivo; el RSI semanal se quitó por tener correlación invertida con los fondos reales). On-chain de bitcoin-data.com + métricas de precio (Mayer, caída desde ATH, medias de 200 días y 200 semanas). Se actualiza solo. Orientativo, no es consejo financiero.</p>
         </div>);
       })()}
     </div>
