@@ -68,5 +68,22 @@ module.exports = async (req, res) => {
       const bc = out.coins.find(x => x.c === 'BTC'); if (bc) bc.rp = out.btc.pos;
     }
   }
+  // VOLUMEN 24h FUTUROS vs SPOT (mismo exchange = comparable): Binance BTC+ETH.
+  // Futuros = derivados apalancados; spot = compra/venta real. Ratio del mercado.
+  {
+    let fut = 0, spot = 0;
+    for (const s of ['BTCUSDT', 'ETHUSDT']) {
+      try {
+        const [f, sp] = await Promise.all([
+          fetch('https://fapi.binance.com/fapi/v1/ticker/24hr?symbol=' + s).then(r => r.json()).catch(() => null),
+          fetch('https://api.binance.com/api/v3/ticker/24hr?symbol=' + s).then(r => r.json()).catch(() => null)
+        ]);
+        const fv = parseFloat(f && f.quoteVolume), sv = parseFloat(sp && sp.quoteVolume);
+        if (Number.isFinite(fv)) fut += fv;
+        if (Number.isFinite(sv)) spot += sv;
+      } catch (e) {}
+    }
+    if (fut > 0 && spot > 0) out.mkt = { futVol: +(fut / 1e9).toFixed(2), spotVol: +(spot / 1e9).toFixed(2) };
+  }
   res.status(200).json(out);
 };

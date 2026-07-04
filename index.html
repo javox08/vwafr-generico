@@ -4898,6 +4898,7 @@ function App(){
   // OKX directo no funciona desde el navegador (sin CORS) → se usa el RELÉ. ──
   const [lsTop,setLsTop]=useState(null);
   const [lsAt,setLsAt]=useState(0);
+  const [lsMkt,setLsMkt]=useState(null); // volumen futuros vs spot + pros/masa agregados
   const [cot,setCot]=useState(null);
   useEffect(()=>{
     let alive=true;
@@ -4906,8 +4907,9 @@ function App(){
         let out=[];
         try{ // fuente principal: el RELÉ (media OKX+Bybit+Binance con nº de fuentes)
           const j=await fetch(LS_RELAY).then(r=>r.json());
-          out=((j&&j.coins)||[]).filter(x=>Number.isFinite(x.r)&&x.r>0).map(x=>({c:x.c,pl:x.r/(1+x.r),srcs:x.srcs||1,
+          out=((j&&j.coins)||[]).filter(x=>Number.isFinite(x.r)&&x.r>0).map(x=>({c:x.c,pl:x.r/(1+x.r),srcs:x.srcs||1,rp:x.rp,
             plPro:(Number.isFinite(x.rp)&&x.rp>0)?x.rp/(1+x.rp):null})); // pros (top traders) por moneda
+          if(alive&&j&&j.mkt)setLsMkt(j.mkt);
         }catch(_){}
         if(!out.length){ // respaldo: OKX directo (si algún día abre CORS)
           await Promise.all(FALLBACK_COINS.slice(0,10).map(async c2=>{try{
@@ -5170,85 +5172,53 @@ function App(){
         </div>);
       })()}
 
-      {/* ── LONG vs SHORT · top 10 monedas + CME institucional ── */}
+      {/* ── MERCADO · dinero real (futuros/spot · masa · pros) + CME institucional ── */}
       {lsTop&&lsTop.length>0&&(
         <div style={panel({marginBottom:16,padding:'12px 14px'})}>
           <div style={{...flx({justifyContent:'space-between'}),marginBottom:8}}>
-            <span style={eyebrow}>Long vs Short · top {lsTop.length}</span>
-            <span className="mono" style={{fontSize:9,color:'var(--faint)',display:'inline-flex',alignItems:'center',gap:5}}>
-              <span style={{width:6,height:6,borderRadius:'50%',background:'var(--up)',boxShadow:'0 0 5px var(--up)'}}/>
-              <span style={{color:'var(--up)'}}>masa</span> · <span style={{color:'#8AA0FF'}}>pros</span>{lsAt?' · '+new Date(lsAt).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}):''}
-            </span>
+            <span style={eyebrow}>Mercado · dinero real</span>
+            <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>top {lsTop.length} · pond. OI{lsAt?' · '+new Date(lsAt).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}):''}</span>
           </div>
           {(()=>{
             // interés abierto por moneda (suma de los exchanges del panel, $B)
             const oiOf=c2=>{const bd=(data&&data[c2])||{};let oi=0;
               for(const ex in bd){const o=bd[ex];if(o&&o.ok&&Number.isFinite(o.oi)&&o.oi>0)oi+=o.oi;}return oi;};
             const fmtB=fmtUsd;
-            // orden: las más grandes primero (por interés abierto; si falta, el orden del top)
-            const rank=c2=>{const i=FALLBACK_COINS.indexOf(c2);return i<0?99:i;};
-            const rows=lsTop.slice().sort((a,b)=>(oiOf(b.c)-oiOf(a.c))||(rank(a.c)-rank(b.c)));
-            return(<React.Fragment>
-              {rows.map(r=>{const oi=oiOf(r.c);
-                return(
-                <div key={r.c} style={{...flx({gap:8}),padding:'4px 0'}}>
-                  <div style={{minWidth:46}}>
-                    <div style={{fontSize:10.5,fontWeight:700,lineHeight:1.1}}>{r.c}</div>
-                    <div className="mono" style={{fontSize:7.5,color:'var(--faint)'}}>{oi>0?'OI '+fmtB(oi)+' · ':''}{r.srcs||1} ex</div>
-                  </div>
-                  <div style={{flex:1}}>
-                    {/* barra 1: CUENTAS (la masa) */}
-                    <div style={{position:'relative',display:'flex',height:6,borderRadius:4,overflow:'hidden'}}>
-                      <div style={{width:(r.pl*100)+'%',background:'var(--up)',opacity:.75,transition:'width 1s ease'}}/>
-                      <div style={{flex:1,background:'var(--down)',opacity:.75}}/>
-                    </div>
-                    {/* barra 2: PROS (top traders) — más fina, debajo */}
-                    {Number.isFinite(r.plPro)&&<div style={{position:'relative',display:'flex',height:4,borderRadius:3,overflow:'hidden',marginTop:2,opacity:.9}}>
-                      <div style={{width:(r.plPro*100)+'%',background:'#8AA0FF',transition:'width 1s ease'}}/>
-                      <div style={{flex:1,background:'#5A2740'}}/>
-                    </div>}
-                  </div>
-                  <div style={{minWidth:74,textAlign:'right'}}>
-                    <div className="mono" style={{fontSize:9.5,fontWeight:700,color:r.pl>=0.5?'var(--up)':'var(--down)'}}>{(r.pl*100).toFixed(0)}%L <span style={{fontSize:7,color:'var(--faint)',fontWeight:400}}>masa</span></div>
-                    {Number.isFinite(r.plPro)&&<div className="mono" style={{fontSize:8.5,fontWeight:700,color:'#8AA0FF'}}>{(r.plPro*100).toFixed(0)}%L <span style={{fontSize:7,color:'var(--faint)',fontWeight:400}}>pros</span></div>}
-                  </div>
-                </div>);})}
-              {rows.some(r=>Number.isFinite(r.plPro))&&(()=>{
-                // agregado de TOP TRADERS de TODO el mercado (ponderado por OI)
-                let tL=0,tot=0;for(const r of rows){if(!Number.isFinite(r.plPro))continue;const oi=oiOf(r.c)||0.1;tL+=oi*r.plPro;tot+=oi;}
-                const pro=tot>0?tL/tot:null; if(pro==null)return null;
-                let mL=0,mtot=0;for(const r of rows){const oi=oiOf(r.c)||0.1;mL+=oi*r.pl;mtot+=oi;}const masa=mtot>0?mL/mtot:0.5;
-                return(<div style={{marginTop:8,paddingTop:8,borderTop:'1px solid var(--line2)'}}>
-                  <div style={{...flx({justifyContent:'space-between'}),marginBottom:3}}>
-                    <span className="mono" style={{fontSize:9.5,fontWeight:800,color:masa>=0.5?'var(--up)':'var(--down)'}}>👥 masa {(masa*100).toFixed(0)}% long</span>
-                    <span style={{fontSize:8,color:'var(--faint)'}}>todo el mercado · pond. OI</span>
-                    <span className="mono" style={{fontSize:9.5,fontWeight:800,color:'#8AA0FF'}}>🐋 pros {(pro*100).toFixed(0)}% long</span>
-                  </div>
-                  <div style={{fontSize:8.5,color:'var(--faint)',lineHeight:1.5}}>{Math.abs(masa-pro)>0.08?('Divergencia: la MASA está '+(masa>pro?'MÁS larga':'MÁS corta')+' que los TOP TRADERS ('+((masa-pro)*100).toFixed(0)+' puntos). Los pros suelen tener razón — señal de precaución al lado de la multitud.'):'Masa y pros alineados: sin divergencia relevante.'}</div>
-                </div>);})()}
-              {(()=>{
-                let totL=0,totS=0,tot=0;
-                for(const r of lsTop){const oi=oiOf(r.c);if(oi>0){totL+=oi*r.pl;totS+=oi*(1-r.pl);tot+=oi;}}
-                const avg=lsTop.reduce((s2,r)=>s2+r.pl,0)/lsTop.length;
-                const wAvg=tot>0?totL/tot:null;
-                if(tot>0)return(
-                <div style={{marginTop:8,padding:'9px 11px',borderRadius:9,background:'#0A0D14',border:'1px solid var(--line2)'}}>
-                  <div style={{...flx({justifyContent:'space-around'}),marginBottom:4}}>
-                    <div style={{textAlign:'center'}}>
-                      <div className="mono" style={{fontSize:13.5,fontWeight:800,color:'var(--up)'}}>{fmtB(totL)}</div>
-                      <div style={{fontSize:7.5,color:'var(--dim)'}}>en LONG</div></div>
-                    <div style={{textAlign:'center'}}>
-                      <div className="mono" style={{fontSize:11.5,fontWeight:800,color:totL>=totS?'var(--up)':'var(--down)'}}>{totL>=totS?'▲ más LONG':'▼ más SHORT'}</div>
-                      <div style={{fontSize:7.5,color:'var(--dim)'}}>según CUENTAS · pond. OI · {(wAvg*100).toFixed(0)}% long</div></div>
-                    <div style={{textAlign:'center'}}>
-                      <div className="mono" style={{fontSize:13.5,fontWeight:800,color:'var(--down)'}}>{fmtB(totS)}</div>
-                      <div style={{fontSize:7.5,color:'var(--dim)'}}>en SHORT</div></div>
-                  </div>
-                  <div style={{fontSize:8,color:'var(--faint)',lineHeight:1.5}}>Interés abierto total {fmtB(tot)} del top {lsTop.length}, repartido con el ratio de CUENTAS de cada moneda (media simple: {(avg*100).toFixed(0)}% long); las monedas con más OI pesan más. OJO: el panel de ABAJO ("¿Dónde está el dinero?", BTC) usa el DINERO de los top traders — si aquí sale "más long" y allí "más short" es que la MASA está larga y los GRANDES cortos (los top traders suelen tener razón).</div>
-                </div>);
-                return <div style={{fontSize:9,color:'var(--dim)',marginTop:6,lineHeight:1.5}}>Media del mercado: <b style={{color:avg>=0.5?'var(--up)':'var(--down)'}}>{(avg*100).toFixed(0)}% long</b> — {avg>=0.5?'hay MÁS cuentas en LONG':'hay MÁS cuentas en SHORT'} en el top {lsTop.length}.</div>;
-              })()}
-            </React.Fragment>);})()}
+            // OI total del top y ratios ponderados por OI (masa = cuentas, pros = top traders)
+            let tot=0,mL=0,mtot=0,pL=0,ptot=0;
+            for(const r of lsTop){const oi=oiOf(r.c);if(oi>0){tot+=oi;mL+=oi*r.pl;mtot+=oi;}
+              if(Number.isFinite(r.plPro)){const w=oi||0.1;pL+=w*r.plPro;ptot+=w;}}
+            const masa=mtot>0?mL/mtot:null, pro=ptot>0?pL/ptot:null;
+            // reparto del dinero (OI total × ratio long/short de cada colectivo)
+            const mLong=masa!=null?tot*masa:null, mShort=masa!=null?tot*(1-masa):null;
+            const pLong=pro!=null?tot*pro:null, pShort=pro!=null?tot*(1-pro):null;
+            // volumen 24h: futuros (apalancado) vs spot (real), del relé (Binance BTC+ETH)
+            let futPct=null,spotPct=null;
+            if(lsMkt&&lsMkt.futVol>0&&lsMkt.spotVol>0){const t=lsMkt.futVol+lsMkt.spotVol;
+              futPct=lsMkt.futVol/t*100;spotPct=lsMkt.spotVol/t*100;}
+            const Tile=({v,sub,c,vc})=>(<div style={{background:'#0A0D14',borderRadius:9,padding:'9px 8px',textAlign:'center',border:'1px solid var(--line2)'}}>
+              <div className="mono" style={{fontSize:14,fontWeight:800,color:vc||c}}>{v}</div>
+              <div style={{fontSize:7.5,color:'var(--dim)',marginTop:2,lineHeight:1.35}}>{sub}</div></div>);
+            return(<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:7}}>
+              {/* FILA 1 · dónde se mueve el volumen: futuros (apalancado) vs spot (real) */}
+              {futPct!=null?<React.Fragment>
+                <Tile v={futPct.toFixed(0)+'%'} vc={futPct>=50?'#F3BA2F':'var(--dim)'} sub={'FUTUROS (apalancado) · '+fmtB(lsMkt.futVol)+' 24h'}/>
+                <Tile v={spotPct.toFixed(0)+'%'} vc={spotPct>=40?'var(--up)':'var(--dim)'} sub={'SPOT (dinero real) · '+fmtB(lsMkt.spotVol)+' 24h'}/>
+              </React.Fragment>:<div style={{gridColumn:'1 / -1',fontSize:8,color:'var(--faint)',textAlign:'center',padding:'6px 0'}}>Volumen futuros/spot: no disponible ahora.</div>}
+              {/* FILA 2 · la MASA (cuentas): cuánto dinero hay en long vs short */}
+              {masa!=null&&<React.Fragment>
+                <Tile v={fmtB(mLong)} c={'var(--up)'} sub={'👥 MASA en LONG · '+(masa*100).toFixed(0)+'%'}/>
+                <Tile v={fmtB(mShort)} c={'var(--down)'} sub={'👥 MASA en SHORT · '+((1-masa)*100).toFixed(0)+'%'}/>
+              </React.Fragment>}
+              {/* FILA 3 · los PROS (top traders): cuánto dinero hay en long vs short */}
+              {pro!=null&&<React.Fragment>
+                <Tile v={fmtB(pLong)} c={'#8AA0FF'} sub={'🐋 PROS en LONG · '+(pro*100).toFixed(0)+'%'}/>
+                <Tile v={fmtB(pShort)} c={'#B06A86'} sub={'🐋 PROS en SHORT · '+((1-pro)*100).toFixed(0)+'%'}/>
+              </React.Fragment>}
+              {/* lectura: divergencia masa vs pros */}
+              {masa!=null&&pro!=null&&<div style={{gridColumn:'1 / -1',fontSize:8.5,color:'var(--faint)',lineHeight:1.5,marginTop:1}}>
+                OI total del top {lsTop.length}: <b style={{color:'var(--txt)'}}>{fmtB(tot)}</b>. {Math.abs(masa-pro)>0.08?('⚠️ Divergencia: la masa está '+(masa>pro?'MÁS larga':'MÁS corta')+' que los pros ('+Math.abs((masa-pro)*100).toFixed(0)+' pts). Los top traders suelen tener razón — precaución al lado de la multitud.'):'Masa y pros alineados: sin divergencia relevante.'} Este reparto <b>alimenta el cono</b> del Cuantitativo.</div>}
+            </div>);})()}
           {cot&&(cot.levL+cot.levS)>0&&(()=>{const pl=cot.levL/(cot.levL+cot.levS), am=(cot.amL+cot.amS)>0?cot.amL/(cot.amL+cot.amS):null;
             return(<div style={{marginTop:10,paddingTop:9,borderTop:'1px solid var(--line2)'}}>
               <div style={{...flx({justifyContent:'space-between'}),marginBottom:5}}>
