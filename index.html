@@ -3057,12 +3057,19 @@ function QuantView({gFunding}){
     const coneBT=(()=>{
       const bh=(q.longCloses&&q.longCloses.length>1200)?q.longCloses:cl; // histórico LARGO si lo hay
       const N=bh.length; if(N<400)return null;
+      // MISMA señal que usa el drift del cono (tmScore): mezcla 50/50 de la señal de
+      // signos con el momentum continuo vol-escalado. Así el backtest MOSTRADO mide de
+      // verdad la señal desplegada (coherencia entre lo que se enseña y lo que se usa).
       const sigAt=j=>{let hi=-1e18,lo=1e18;for(let z=j-100;z<j;z++){if(bh[z]>hi)hi=bh[z];if(bh[z]<lo)lo=bh[z];}
         const dc=bh[j]>(hi+lo)/2?1:-1;
         let s50=0;for(let z=j-50;z<j;z++)s50+=bh[z];s50/=50; let s200=0;for(let z=j-200;z<j;z++)s200+=bh[z];s200/=200;
         const tr=(bh[j]>s50&&s50>s200)?1:(bh[j]<s50&&s50<s200)?-1:0;
         const mm=(bh[j]/bh[j-120]-1)>0?1:-1, m9=(bh[j]/bh[j-90]-1), m3=(bh[j]/bh[j-30]-1), rg=bh[j]>s200?1:-1;
-        return Math.max(-1,Math.min(1,(0.30*dc+0.22*tr+0.18*mm+0.15*(m9>0.05?1:m9<-0.05?-1:0)+0.15*(m3>0.03?1:m3<-0.03?-1:0)+0.10*rg)*1.2));};
+        const tmSign=Math.max(-1,Math.min(1,(0.30*dc+0.22*tr+0.18*mm+0.15*(m9>0.05?1:m9<-0.05?-1:0)+0.15*(m3>0.03?1:m3<-0.03?-1:0)+0.10*rg)*1.2));
+        let mu=0;for(let z=j-29;z<=j;z++)mu+=Math.log(bh[z]/bh[z-1]);mu/=30;let sv=0;for(let z=j-29;z<=j;z++){const x=Math.log(bh[z]/bh[z-1])-mu;sv+=x*x;}const v30=Math.sqrt(sv/30);
+        const mvC=Math.max(-1,Math.min(1,(Math.log(bh[j]/bh[j-30])/((v30*Math.sqrt(30))||1))*1.3));
+        const tmVM=Math.max(-1,Math.min(1,(0.30*dc+0.22*tr+0.48*mvC+0.10*rg)*1.2));
+        return Math.max(-1,Math.min(1,0.5*tmSign+0.5*tmVM));};
       const run=Hh=>{let nz=0,hit=0,base=0,nn=0,sx=0,sy=0,sxy=0,sxx=0,syy=0;
         for(let j=260;j<N-Hh;j+=2){const s=sigAt(j),fw=bh[j+Hh]/bh[j]-1;nn++;if(fw>0)base++;
           if(s!==0){nz++;if(Math.sign(s)===Math.sign(fw))hit++;}sx+=s;sy+=fw;sxy+=s*fw;sxx+=s*s;syy+=fw*fw;}
