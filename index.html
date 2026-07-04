@@ -332,10 +332,22 @@ async function bitgetFallback(coins,data){
 
 // ── VWAFR helpers ──
 function vwafrOf(coinData){
-  let num=0,den=0;
+  const pts=[];
   for(const ex of Object.values(coinData||{})){
-    if(ex&&Number.isFinite(ex.funding)&&Number.isFinite(ex.oi)&&ex.oi>0){num+=ex.funding*ex.oi;den+=ex.oi;}
+    if(ex&&Number.isFinite(ex.funding)&&Number.isFinite(ex.oi)&&ex.oi>0)pts.push({f:ex.funding,oi:ex.oi});
   }
+  if(!pts.length)return{vwafr:0,oi:0};
+  // RECHAZO DE OUTLIERS: un exchange con el funding claramente glitcheado (mal escalado
+  // o "stale") no debe corromper la media ponderada por OI. Se descarta el que se desvíe
+  // de la MEDIANA más de 0,05% Y más de 6×MAD. La divergencia LEGÍTIMA (todos altos a la
+  // vez, o Hyperliquid algo distinto) no se toca: si el consenso es amplio la MAD crece y
+  // el umbral de 0,05% es lo bastante laxo para conservarla. Solo se filtra con ≥3 fuentes.
+  const fs=pts.map(p=>p.f).sort((a,b)=>a-b);
+  const med=fs[Math.floor(fs.length/2)];
+  const dev=fs.map(f=>Math.abs(f-med)).sort((a,b)=>a-b);
+  const thr=Math.max(0.05,6*dev[Math.floor(dev.length/2)]);
+  let num=0,den=0;
+  for(const p of pts){ if(pts.length>=3&&Math.abs(p.f-med)>thr)continue; num+=p.f*p.oi; den+=p.oi; }
   return{vwafr:den?num/den:0,oi:den};
 }
 function coinVol(cd){let v=0;for(const ex of Object.values(cd||{}))if(ex&&Number.isFinite(ex.vol)&&ex.vol>0)v+=ex.vol;return v;}
