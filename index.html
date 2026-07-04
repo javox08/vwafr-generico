@@ -2617,6 +2617,7 @@ function QuantView({gFunding}){
   const [velaSel,setVelaSel]=useState(null); // visor de patrón de velas (modal)
   const [infoSel,setInfoSel]=useState(null); // visor genérico (técnicos y manipulaciones)
   const longRef=React.useRef(null); // caché del histórico largo (no se re-pagina en cada refresco)
+  const ohlcLongRef=React.useRef(null); // caché del OHLC largo (para backtests de velas fiables)
   const macroRef=React.useRef(null); // caché del ciclo económico (dato anual)
   useEffect(()=>{
     let alive=true, timer=null;
@@ -2661,6 +2662,19 @@ function QuantView({gFunding}){
       // preferimos el histórico largo de Binance para closes; CoinGecko queda de respaldo
       if(out.ohlc&&out.ohlc.length>=60){out.closes=out.ohlc.map(k=>k.c);}
       if(!out.closes){try{const k=await jget('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=1000');out.closes=k.map(x=>parseFloat(x[4]));}catch(_){}}
+      // OHLC LARGO (paginado ~3000 velas de Binance) para que los backtests de VELAS y de
+      // patrones/canales tengan MUESTRA suficiente: con solo 1000 velas, un patrón que sale
+      // ~1 vez/año queda con n minúsculo y el % sale ruidoso (por eso a veces la web mostraba
+      // stats raras). Cacheado: solo se pagina una vez.
+      if(ohlcLongRef.current){out.ohlc=ohlcLongRef.current;out.closes=out.ohlc.map(k=>k.c);}
+      else if(out.ohlc&&out.ohlc.length>=900){try{
+        let all=[],e=Date.now();
+        for(let pg=0;pg<3;pg++){const k=await jget('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=1000&endTime='+e,9000);
+          if(!Array.isArray(k)||!k.length)break;
+          all=k.map(x=>({o:+x[1],h:+x[2],l:+x[3],c:+x[4],v:+x[5],tb:+x[9]})).concat(all);
+          e=k[0][0]-864e5; if(k.length<1000)break;}
+        if(all.length>1200){out.ohlc=all;ohlcLongRef.current=all;out.closes=all.map(k=>k.c);}
+      }catch(_){}}
       // histórico LARGO (paginado, ~hasta 8 años) para el backtest del bot.
       // Se cachea: no se vuelve a paginar en cada refresco automático.
       if(longRef.current){out.longCloses=longRef.current;}
