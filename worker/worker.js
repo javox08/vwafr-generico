@@ -236,12 +236,15 @@ async function bxFetch(env, path, method, headers, bodyStr) {
   return fetch('https://fapi.bitunix.com' + path, { method, headers, body: method === 'POST' ? (bodyStr || undefined) : undefined });
 }
 // Fija en Bitunix el modo CRUZADO y el apalancamiento del símbolo. Bitunix solo
-// acepta apalancamientos ENTEROS, así que se manda el entero superior (1.1 → 2);
-// el riesgo real (1.1x la cuenta) lo pone el tamaño "auto" de la orden, no este
+// acepta apalancamientos ENTEROS, así que se manda el entero superior (1.5 → 2);
+// el riesgo real (1.5x la cuenta) lo pone el tamaño "auto" de la orden, no este
 // número. Si hay posiciones abiertas el cambio de modo falla y se ignora.
+// POR DEFECTO 1.5x: en el backtest de la estrategia Élite, 1.5x fijo da una CAÍDA
+// MÁXIMA de ~50% (2020+) — el nivel de riesgo que pediste. Se ajusta con BITUNIX_LEV
+// (1.1≈38% caída · 1.5≈50% · 2≈60%). Menos que aguantar BTC spot (~77%).
 async function bxSetup(env) {
   const symbol = env.BITUNIX_SYMBOL || 'BTCUSDT';
-  const lev = Math.max(1, Math.ceil(parseFloat(env.BITUNIX_LEV || '1.1')));
+  const lev = Math.max(1, Math.ceil(parseFloat(env.BITUNIX_LEV || '1.5')));
   const post = async (path, obj) => {
     const bodyStr = JSON.stringify(obj);
     const headers = await bxHeaders(env, '', bodyStr);
@@ -274,7 +277,7 @@ async function bitunixTrade(env, d, qtyOverride) {
   let qty = qtyOverride || env.BITUNIX_QTY || '0.001';
   if (('' + qty).toLowerCase() === 'auto') {
     const bal = await bxBalance(env);
-    const lev = parseFloat(env.BITUNIX_LEV || '1.1');
+    const lev = parseFloat(env.BITUNIX_LEV || '1.5'); // ~50% de caída máxima en la Élite (backtest)
     if (bal != null && d.entry > 0) {
       const q = Math.floor((bal * 0.95 * lev / d.entry) * 1000) / 1000; // redondeo ↓ a 0.001
       qty = '' + Math.max(0.001, q);
