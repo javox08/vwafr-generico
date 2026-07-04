@@ -750,7 +750,7 @@ function CycleBTC(){
             j('https://bitcoin-data.com/v1/puell-multiple/last').then(x=>{const v=parseFloat(x&&(x.puellMultiple??x.puell));if(Number.isFinite(v))out.puell=v;}).catch(()=>{}),
             j('https://bitcoin-data.com/v1/sopr/last').then(x=>{const v=parseFloat(x&&x.sopr);if(Number.isFinite(v))out.sopr=v;}).catch(()=>{}),
             j('https://bitcoin-data.com/v1/mvrv-zscore/last').then(x=>{const v=parseFloat(x&&(x.mvrvZscore??x.mvrvzscore));if(Number.isFinite(v))out.zscore=v;}).catch(()=>{}),
-            j('https://bitcoin-data.com/v1/fear-greed/last').then(x=>{const v=parseFloat(x&&(x.fng??x.value));if(Number.isFinite(v))out.fng=v;}).catch(()=>{}),
+            j('https://bitcoin-data.com/v1/fear-greed/last').then(x=>{const v=parseFloat(x&&(x.fearGreed??x.fng??x.value));if(Number.isFinite(v))out.fng=v;}).catch(()=>{}),
           ]);
           if(alive)setOc(out); return;
         }
