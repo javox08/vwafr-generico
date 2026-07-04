@@ -4412,7 +4412,10 @@ function BotsView({gFunding}){
     const ev=evRef.current.ev; if(!ev)return null;
     // el trade en vivo lo manda el bot FIJADO (si existe) o, por defecto, el líder
     const driver=(pinId&&ev.rows.find(r=>r.id===pinId))||ev.rows[0];
-    const top=ev.rows[0], live=botLiveTrade(cl,driver,ohlcRef.current), trade=loadTrade(live,price);
+    // CLAVE POR BOT: cada bot fijado guarda su PROPIO trade y track record (antes usaban
+    // una clave compartida, así que al fijar otro bot heredaba el registro del anterior).
+    const dId=driver.id||'def';
+    const top=ev.rows[0], live=botLiveTrade(cl,driver,ohlcRef.current), trade=loadTrade(live,price,'vwafr_trade_'+dId,'vwafr_trades_log_'+dId);
     // ── OPERACIÓN DEFINITIVA: net direccional de TODOS los bots RENTABLES (los que
     // aguantan fuera de muestra), ponderado por inverso de vol. Un único trade con
     // TP/SL que avanza con el precio (clave de almacenamiento propia).
@@ -4701,21 +4704,22 @@ function BotsView({gFunding}){
         </>)}
       </div>
 
-      {/* TRACK RECORD REAL (trades cerrados) */}
-      {(()=>{let log=[];try{log=JSON.parse(localStorage.getItem('vwafr_trades_log')||'[]');}catch(_){}
+      {/* TRACK RECORD REAL (trades cerrados) · POR BOT (clave propia del bot fijado) */}
+      {(()=>{const dId=(c.driver&&c.driver.id)||'def';
+        let log=[];try{log=JSON.parse(localStorage.getItem('vwafr_trades_log_'+dId)||'[]');}catch(_){}
         if(!log.length)return(
           <div style={panel({marginBottom:14,padding:'12px 16px'})}>
             <div style={{...flx({justifyContent:'space-between'})}}>
-              <span style={eyebrow}>Track record en vivo</span><span className="mono" style={{fontSize:9,color:'var(--faint)'}}>0 trades</span>
+              <span style={eyebrow}>Track record · {c.driver?c.driver.name:'bot'}</span><span className="mono" style={{fontSize:9,color:'var(--faint)'}}>0 trades</span>
             </div>
-            <div style={{fontSize:9.5,color:'var(--faint)',marginTop:6,lineHeight:1.5}}>Aquí se registra el resultado REAL de cada trade recomendado según se cierran (acierto/fallo y P&L). Vuelve dentro de un tiempo.</div>
+            <div style={{fontSize:9.5,color:'var(--faint)',marginTop:6,lineHeight:1.5}}>Registro REAL de cada trade de <b>este bot</b> según se cierran (acierto/fallo y P&L). Cada bot fijado lleva su propio track record. Vuelve dentro de un tiempo.</div>
           </div>);
         const wins=log.filter(x=>x.result==='TP').length, wr=log.length?wins/log.length*100:0;
         const avg=qMean(log.map(x=>x.pnl)), cum=log.reduce((a,x)=>a*(1+x.pnl/100),1), last=log.slice(-12);
         return(
         <div style={panel({marginBottom:14,padding:16})}>
           <div style={{...flx({justifyContent:'space-between'}),marginBottom:10}}>
-            <span style={eyebrow}>Track record en vivo</span><span className="mono" style={{fontSize:9,color:'var(--faint)'}}>{log.length} trades cerrados</span>
+            <span style={eyebrow}>Track record · {c.driver?c.driver.name:'bot'}</span><span className="mono" style={{fontSize:9,color:'var(--faint)'}}>{log.length} trades cerrados</span>
           </div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:10}}>
             {[['Aciertos',wr.toFixed(0)+'%',wr>=50?'var(--up)':'var(--down)'],['P&L medio',(avg>=0?'+':'')+avg.toFixed(1)+'%',avg>=0?'var(--up)':'var(--down)'],['Acumulado',((cum-1)*100>=0?'+':'')+((cum-1)*100).toFixed(0)+'%',cum>=1?'var(--up)':'var(--down)']].map((m,i)=>(
