@@ -1404,9 +1404,11 @@ function conformalize(cl,mc,drift30,volScale){
     const bd=mc.bands[d];
     // cuantiles del par 90% (backtest walk-forward, 15 años de BTC 2011-2026, validación
     // fuera de muestra): 4/96 minimiza la pérdida pinball en AMBOS horizontes. El 30d usaba
-    // 3/97 y sobre-cubría (~93%); a 4/96 baja a ~90% (nominal exacto) y mejora el pinball
-    // OOS un +1% a +3% según el corte. Confirmado en 3 splits temporales distintos.
-    const ql=4, qh=96;
+    // 3/97 y sobre-cubría (~93%); a 4/96 baja a ~90% (nominal exacto). Confirmado en 3 cortes.
+    // ASIMETRÍA: a 30d la cola de ABAJO perfora 6-8% (vs 5% ideal) — la cola izquierda de
+    // cripto es más gorda. Se ensancha SOLO la banda inferior a 3,5 (elección conservadora
+    // de riesgo: mejor no subestimar el crash; a 7d la cola está simétrica y se deja en 4).
+    const ql=d<=10?4:3.5, qh=96;
     bd.p5=at(ql); bd.p95=at(qh);     // cuantiles conformales calibrados a 90% real
     bd.p10=at(8); bd.p90=at(92);
     bd.p25=at(25); bd.p75=at(75);
