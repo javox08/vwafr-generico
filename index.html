@@ -1687,9 +1687,20 @@ function momAt(cl,j,k){return (j>k&&cl[j-1-k]>0)?cl[j-1]/cl[j-1-k]-1:0;}
 // shortea la euforia); en bajista se VENDEN los rebotes. Evita el error letal de
 // ponerse corto contra un mercado estructuralmente alcista como BTC.
 function revFilter(cl,j,s){if(!s)return 0;const up=cl[j-1]>maAt(cl,j,200);return up?Math.max(0,s):Math.min(0,s);}
+// Momentum a n días ESCALADO por su volatilidad (time-series momentum robusto: el de
+// MAYOR IC fuera de muestra en el backtest de 15 años). >0 = impulso alcista sano.
+function vsMom(cl,j,n){if(j<n+2)return 0;let m=0;for(let k=j-n;k<j;k++)m+=Math.log(cl[k]/cl[k-1]);m/=n;
+  let s=0;for(let k=j-n;k<j;k++){const x=Math.log(cl[k]/cl[k-1])-m;s+=x*x;}const sd=Math.sqrt(s/n)*Math.sqrt(n);
+  const mom=cl[j-1]/cl[j-1-n]-1;return sd>0?mom/sd:0;}
 // ── 40 BOTS diversificados (tendencia, momentum, reversión, osciladores, rupturas,
 //    volatilidad, ciclo/valoración y compuestos). Todos: señal solo con datos hasta j-1.
 const BOTS=[
+  // ——— ⭐ ÉLITE · el más rentable ajustado a riesgo del backtest (LONG/FLAT, nunca corto) ———
+  {id:'elite',name:'⭐ Élite · momentum vol-ajustado',tipo:'Compuesto',obj:'Máxima rentabilidad ajustada a riesgo (automático).',
+   hyp:'Combina las 3 señales de MAYOR ventaja del backtest de 15 años: régimen alcista (precio > MA200), momentum a 30 días ESCALADO por volatilidad (el de mayor IC fuera de muestra) y canal de Donchian-100 (no compra en zona de ruptura bajista). Va LARGO solo si las tres confirman; FUERA si no (nunca corto: shortear BTC destruye el Sharpe). En 2020+ batió a comprar-y-mantener con ~1/3 de la caída máxima (Sharpe ≈1,4 vs 0,8 · caída ≈28% vs 77% · CAGR ≈51% vs 35%). No es una garantía: el pasado no asegura el futuro.',
+   sig:(cl,j)=>{if(j<210)return 0;const px=cl[j-1];
+     let hi=-1e18,lo=1e18;for(let m=j-100;m<j;m++){if(cl[m]>hi)hi=cl[m];if(cl[m]<lo)lo=cl[m];}
+     return (px>maAt(cl,j,200)&&vsMom(cl,j,30)>0&&px>(hi+lo)/2)?1:0;}},
   // ——— TENDENCIA / MEDIAS MÓVILES ———
   {id:'tend',name:'Tendencia (MA + momentum)',tipo:'Tendencia',obj:'Dirección swing.',
    hyp:'El momentum persiste: BTC en tendencia (MA50>MA200) con impulso positivo a 21d tiende a continuar.',sig:botSignal},

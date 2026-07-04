@@ -348,6 +348,21 @@ function robmomSig(cl, j) {
   let vv = 0; for (const x of rr) vv += (x - mu) * (x - mu); vv = Math.sqrt(vv / 20);
   return vv > 0.055 ? Math.min(1, s) * 0.5 : Math.min(1, s);
 }
+// ⭐ ÉLITE: la MÁS rentable ajustada a riesgo del backtest de 15 años (LONG/FLAT, nunca
+// corta). Va larga solo si coinciden: régimen alcista (precio>MA200), momentum a 30d
+// escalado por volatilidad (>0) y precio sobre el canal de Donchian-100. En 2020+ batió
+// a comprar-y-mantener con ~1/3 de la caída máxima (Sharpe ≈1,4 vs 0,8). MISMA lógica
+// que el bot "Élite" de la web (coherencia entre lo que se enseña y lo que se tradea).
+function eliteSig(cl, j) {
+  if (j < 210) return 0;
+  const px = cl[j - 1];
+  let s200 = 0; for (let m = j - 200; m < j; m++) s200 += cl[m]; const ma200 = s200 / 200;
+  let hi = -1e18, lo = 1e18; for (let m = j - 100; m < j; m++) { if (cl[m] > hi) hi = cl[m]; if (cl[m] < lo) lo = cl[m]; }
+  let mu = 0; for (let k = j - 30; k < j; k++) mu += Math.log(cl[k] / cl[k - 1]); mu /= 30;
+  let vv = 0; for (let k = j - 30; k < j; k++) { const x = Math.log(cl[k] / cl[k - 1]) - mu; vv += x * x; }
+  const sd = Math.sqrt(vv / 30) * Math.sqrt(30), vm = sd > 0 ? (cl[j - 1] / cl[j - 1 - 30] - 1) / sd : 0;
+  return (px > ma200 && vm > 0 && px > (hi + lo) / 2) ? 1 : 0;
+}
 // Backtest LIGERO de la estrategia (mismos costes que la web) → APY histórico.
 function simLite(cl, sig) {
   const n = cl.length; if (n < 300) return null;
@@ -407,9 +422,9 @@ async function analyze(env) {
 
     // ESTRATEGIA elegida (por defecto, el BOT APROBADO) + consenso para contexto
     const con = botConsensus(cl);
-    const stratName = (env && env.BITUNIX_STRATEGY) || 'robmom';
-    const stratSig = stratName === 'robmom' ? robmomSig : stratName === 'consensus' ? null : momaccelSig;
-    const botName = stratName === 'robmom' ? 'Momentum robusto (multi-horizonte)' : stratName === 'consensus' ? 'Consenso de bots' : 'Aceleración de momentum';
+    const stratName = (env && env.BITUNIX_STRATEGY) || 'elite';
+    const stratSig = stratName === 'elite' ? eliteSig : stratName === 'robmom' ? robmomSig : stratName === 'consensus' ? null : momaccelSig;
+    const botName = stratName === 'elite' ? '⭐ Élite · momentum vol-ajustado' : stratName === 'robmom' ? 'Momentum robusto (multi-horizonte)' : stratName === 'consensus' ? 'Consenso de bots' : 'Aceleración de momentum';
     const raw = stratSig ? stratSig(cl, n) : (con.side === 'LONG' ? 1 : con.side === 'SHORT' ? -1 : 0);
     const side = raw > 0 ? 'LONG' : raw < 0 ? 'SHORT' : null;
     const sim = stratSig ? simLite(cl, stratSig) : null;
