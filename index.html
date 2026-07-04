@@ -2602,6 +2602,7 @@ function QuantView({gFunding}){
   const [tgt,setTgt]=useState(''); // calculadora de probabilidad de tocar un precio
   const [figSel,setFigSel]=useState(null); // visor de figura gráfica (modal)
   const [velaSel,setVelaSel]=useState(null); // visor de patrón de velas (modal)
+  const [infoSel,setInfoSel]=useState(null); // visor genérico (técnicos y manipulaciones)
   const longRef=React.useRef(null); // caché del histórico largo (no se re-pagina en cada refresco)
   const macroRef=React.useRef(null); // caché del ciclo económico (dato anual)
   useEffect(()=>{
@@ -3342,10 +3343,10 @@ function QuantView({gFunding}){
       <div style={panel({marginBottom:14,padding:16})}>
         <div style={{...flx({justifyContent:'space-between'}),marginBottom:10}}>
           <span style={eyebrow}>🕵️ Detector de manipulación</span>
-          <span className="mono" style={{fontSize:9,fontWeight:700,color:(c.manip&&c.manip.length)?'#F3BA2F':'var(--up)'}}>{(c.manip&&c.manip.length)?c.manip.length+' evento(s) · 21d':'✓ limpio ahora'}</span>
+          <span className="mono" style={{fontSize:9,fontWeight:700,color:(c.manip&&c.manip.length)?'#F3BA2F':'var(--up)'}}>{(c.manip&&c.manip.length)?c.manip.length+' evento(s) · toca':'✓ limpio ahora'}</span>
         </div>
         {(c.manip&&c.manip.length)?c.manip.map((m,i)=>(
-          <div key={i} style={{...flx({gap:9}),padding:'8px 0',borderTop:i?'1px solid #12151F':'none'}}>
+          <div key={i} onClick={()=>setInfoSel({...m,kind:'manip'})} style={{...flx({gap:9}),padding:'8px 0',borderTop:i?'1px solid #12151F':'none',cursor:'pointer'}}>
             <span style={{fontSize:14,color:m.sig>0?'var(--up)':'var(--down)'}}>{m.sig>0?'▲':'▼'}</span>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:12,fontWeight:700,color:'#F3BA2F'}}>{m.t} <span className="mono" style={{fontSize:8.5,color:'var(--faint)',fontWeight:400}}>{m.ago>0?'hace '+m.ago+'d':'hoy'}</span></div>
@@ -3365,7 +3366,7 @@ function QuantView({gFunding}){
       <div style={panel({marginBottom:14,padding:16})}>
         <div style={{...flx({justifyContent:'space-between'}),marginBottom:12}}>
           <span style={eyebrow}>Patrones detectados · auto</span>
-          <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>indicadores · velas</span>
+          <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>indicadores · velas · toca</span>
         </div>
         {c.trap&&(
           <div style={{...flx({gap:8}),marginBottom:10,padding:'9px 11px',borderRadius:9,
@@ -3378,7 +3379,7 @@ function QuantView({gFunding}){
           </div>
         )}
         {c.patterns.length?c.patterns.map((pt,i)=>(
-          <div key={i} onClick={()=>{if(pt.vela&&CANDLE_ART[pt.t])setVelaSel(pt);}} style={{...flx({gap:9}),padding:'9px 0',borderTop:i?'1px solid #12151F':'none',cursor:(pt.vela&&CANDLE_ART[pt.t])?'pointer':'default'}}>
+          <div key={i} onClick={()=>{if(pt.vela&&CANDLE_ART[pt.t])setVelaSel(pt);else setInfoSel({...pt,kind:'tecnico'});}} style={{...flx({gap:9}),padding:'9px 0',borderTop:i?'1px solid #12151F':'none',cursor:'pointer'}}>
             <span style={{fontSize:15,color:pt.sig>0?'var(--up)':pt.sig<0?'var(--down)':'var(--faint)'}}>{pt.sig>0?'▲':pt.sig<0?'▼':'◆'}{pt.vela?'🕯️':''}</span>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:12.5,fontWeight:700,color:pt.sig>0?'var(--up)':pt.sig<0?'var(--down)':'var(--txt)'}}>{pt.t}</div>
@@ -3893,6 +3894,55 @@ function QuantView({gFunding}){
                 </div>))}
             </div>
             <p style={{fontSize:8.5,color:'var(--faint)',marginTop:10,lineHeight:1.5}}>Dibujo idealizado del patrón. La estadística es el backtest REAL sobre BTC (retorno a 10 días cada vez que apareció). Está activo AHORA en el gráfico diario. Toca fuera para cerrar.</p>
+          </div>
+        </div>);
+      })()}
+
+      {/* VISOR GENÉRICO: patrones TÉCNICOS y eventos de MANIPULACIÓN (gráfico de BTC + estadística) */}
+      {infoSel&&(()=>{const pt=infoSel, manip=pt.kind==='manip';
+        const up=pt.sig>0, col=up?'var(--up)':pt.sig<0?'var(--down)':'var(--dim)', st=pt.st||null;
+        const rc=(c.closes||[]).slice(-70), nn=Math.max(2,rc.length), W=270,H=110,P=8;
+        let lo=Math.min(...rc),hi=Math.max(...rc);const pad=((hi-lo)||1)*0.08;lo-=pad;hi+=pad;
+        const X=i=>P+i/(nn-1)*(W-2*P), Y=v=>H-P-((v-lo)/((hi-lo)||1))*(H-2*P);
+        const dpath=rc.length?'M '+rc.map((v,i)=>X(i).toFixed(1)+' '+Y(v).toFixed(1)).join(' L '):'';
+        const stats=manip
+          ? [['Revierte',pt.win!=null?pt.win+'%':'—',pt.win!=null&&pt.win>=55?'var(--up)':'#F3BA2F'],
+             ['Cuándo',pt.ago>0?'hace '+pt.ago+'d':'hoy','var(--txt)'],
+             ['Casos',pt.samples!=null?'n='+pt.samples:'—','var(--txt)']]
+          : [['Acierto 10d',st?st.win+'%'+(st.ci!=null?' ±'+st.ci:''):'—',st&&st.win>=55?'var(--up)':'#F3BA2F'],
+             ['Retorno típico',st?(st.avg>=0?'+':'')+st.avg+'%':'—',st&&st.avg>=0?'var(--up)':'var(--down)'],
+             ['Casos',st?'n='+st.n:'pocos','var(--txt)']];
+        const expl=manip
+          ? 'Detección de manipulación sobre BTC real. El % es el acierto histórico de que ESTE tipo de evento revierta a 7 días (n = nº de casos). Solo los de acierto alto inclinan el cono, con más fuerza cuanta más ventaja. Toca fuera para cerrar.'
+          : 'Patrón/indicador técnico detectado en el gráfico diario AHORA. La estadística es el backtest REAL sobre BTC (retorno a 10 días cada vez que apareció en el último año). Toca fuera para cerrar.';
+        return(
+        <div onClick={()=>setInfoSel(null)} style={{position:'fixed',inset:0,zIndex:300,background:'rgba(3,5,9,.88)',
+          backdropFilter:'blur(5px)',WebkitBackdropFilter:'blur(5px)',display:'flex',alignItems:'center',justifyContent:'center',padding:14}}>
+          <div onClick={e=>e.stopPropagation()} style={{...panel({padding:16}),width:'100%',maxWidth:400,maxHeight:'92vh',overflowY:'auto'}}>
+            <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
+              <span style={{fontSize:15,fontWeight:800,color:manip?'#F3BA2F':col}}>{manip?'🕵️':(up?'▲':pt.sig<0?'▼':'◆')} {pt.t}</span>
+              <span onClick={()=>setInfoSel(null)} style={{fontSize:20,color:'var(--faint)',cursor:'pointer',lineHeight:1,padding:'0 4px'}}>✕</span>
+            </div>
+            <div style={{...flx({gap:6}),marginBottom:10}}>
+              <span className="mono" style={{fontSize:8,fontWeight:700,padding:'1px 6px',borderRadius:7,color:col,background:'rgba(255,255,255,.05)'}}>{up?'sesgo alcista':pt.sig<0?'sesgo bajista':'neutro'}</span>
+              {manip&&<span style={{fontSize:9,color:'var(--faint)'}}>{pt.ago>0?'hace '+pt.ago+' días':'hoy'}</span>}
+            </div>
+            <div style={{fontSize:10,color:'var(--dim)',lineHeight:1.5,marginBottom:12}}>{pt.d}</div>
+            <div style={{fontSize:8.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.7,fontWeight:700,marginBottom:5}}>BTC ahora · últimos 70 días</div>
+            <div style={{background:'#0A0D14',borderRadius:10,padding:'10px 8px'}}>
+              <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{display:'block'}}>
+                <path d={dpath} fill="none" stroke="#F7931A" strokeWidth="1.8" strokeLinejoin="round"/>
+                {rc.length>0&&<circle cx={X(rc.length-1).toFixed(1)} cy={Y(rc[rc.length-1]).toFixed(1)} r="3.2" fill="#F7931A" stroke="var(--bg)" strokeWidth="2"/>}
+              </svg>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:12}}>
+              {stats.map((m,i)=>(
+                <div key={i} style={{background:'#0A0D14',borderRadius:8,padding:'8px 4px',textAlign:'center'}}>
+                  <div className="mono" style={{fontSize:11,fontWeight:800,color:m[2]}}>{m[1]}</div>
+                  <div style={{fontSize:7.5,color:'var(--dim)',marginTop:2}}>{m[0]}</div>
+                </div>))}
+            </div>
+            <p style={{fontSize:8.5,color:'var(--faint)',marginTop:10,lineHeight:1.5}}>{expl}</p>
           </div>
         </div>);
       })()}
