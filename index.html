@@ -5349,13 +5349,9 @@ function App(){
             for(const r of lsTop){const oi=oiOf(r.c);if(oi>0){tot+=oi;mL+=oi*r.pl;mtot+=oi;}
               if(Number.isFinite(r.plPro)){const w=oi||0.1;pL+=w*r.plPro;ptot+=w;}}
             const masa=mtot>0?mL/mtot:null, pro=ptot>0?pL/ptot:null;
-            // MASA: reparto del OI según el sesgo de las CUENTAS. OJO: en futuros el
-            // notional largo=corto=OI siempre (cada long tiene un short enfrente); estos
-            // importes reflejan el SESGO de posicionamiento, no dinero neto distinto.
-            // Los PROS se muestran como % (su sesgo), NO como $: son OTRA LENTE sobre el
-            // MISMO OI, no un subconjunto con dinero propio que podamos aislar (si se
-            // multiplicara el OI por su ratio saldría el absurdo de "pros short > masa short").
-            const mLong=masa!=null?tot*masa:null, mShort=masa!=null?tot*(1-masa):null;
+            // MASA (cuentas) y PROS (top traders) se muestran como % de SESGO, no como $:
+            // en futuros el notional largo = corto = OI siempre, así que no existe "más
+            // dinero en un lado". El único importe real es el OI total (se muestra una vez).
             // volumen 24h: futuros (apalancado) vs spot (real), del relé (Binance BTC+ETH)
             let futPct=null,spotPct=null;
             if(lsMkt&&lsMkt.futVol>0&&lsMkt.spotVol>0){const t=lsMkt.futVol+lsMkt.spotVol;
@@ -5381,19 +5377,20 @@ function App(){
               {/* quién mueve el FUNDING: siempre los futuros; el spot confirma o contradice */}
               {fundTxt&&<div style={{gridColumn:'1 / -1',fontSize:8.5,lineHeight:1.5,color:'var(--faint)',background:'#0A0D14',border:'1px solid var(--line2)',borderRadius:8,padding:'7px 9px'}}>
                 <b style={{color:fundColor}}>Funding {fmt(fNow,3)}</b> · lo mueven los <b style={{color:'var(--txt)'}}>FUTUROS</b> (el spot no tiene funding): {fundTxt}</div>}
-              {/* FILA 2 · la MASA (cuentas): cuánto dinero hay en long vs short */}
+              {/* FILA 2 · MASA (cuentas retail): SESGO de posicionamiento en % (no es dinero:
+                  en futuros el $ largo = $ corto = OI; esto es cuántas cuentas hay en cada lado) */}
               {masa!=null&&<React.Fragment>
-                <Tile v={fmtB(mLong)} c={'var(--up)'} sub={'👥 MASA en LONG · '+(masa*100).toFixed(0)+'%'}/>
-                <Tile v={fmtB(mShort)} c={'var(--down)'} sub={'👥 MASA en SHORT · '+((1-masa)*100).toFixed(0)+'%'}/>
+                <Tile v={(masa*100).toFixed(0)+'% LONG'} c={'var(--up)'} sub={'👥 MASA · cuentas retail (OKX+Bybit+Binance)'}/>
+                <Tile v={((1-masa)*100).toFixed(0)+'% SHORT'} c={'var(--down)'} sub={'👥 MASA · cuentas retail'}/>
               </React.Fragment>}
-              {/* FILA 3 · los PROS (top traders): SESGO en %, no dinero aparte (otra lente del mismo OI) */}
+              {/* FILA 3 · PROS (top traders): SESGO de sus posiciones en % */}
               {pro!=null&&<React.Fragment>
-                <Tile v={(pro*100).toFixed(0)+'%'} vc={'#8AA0FF'} sub={'🐋 PROS · sesgo LONG (top traders)'}/>
-                <Tile v={((1-pro)*100).toFixed(0)+'%'} vc={'#B06A86'} sub={'🐋 PROS · sesgo SHORT (top traders)'}/>
+                <Tile v={(pro*100).toFixed(0)+'% LONG'} vc={'#8AA0FF'} sub={'🐋 PROS · top traders (OKX+Binance)'}/>
+                <Tile v={((1-pro)*100).toFixed(0)+'% SHORT'} vc={'#B06A86'} sub={'🐋 PROS · top traders'}/>
               </React.Fragment>}
-              {/* lectura: divergencia masa vs pros */}
+              {/* dinero REAL (OI, mostrado una vez) + lectura de divergencia */}
               {masa!=null&&pro!=null&&<div style={{gridColumn:'1 / -1',fontSize:8.5,color:'var(--faint)',lineHeight:1.5,marginTop:1}}>
-                OI total del top {lsTop.length}: <b style={{color:'var(--txt)'}}>{fmtB(tot)}</b>. En futuros el dinero largo=corto=OI siempre; los <b>$ de la MASA</b> son el sesgo de las cuentas y los <b>% de los PROS</b> su posicionamiento (misma tarta, dos lentes — no dinero que se sume). {Math.abs(masa-pro)>0.08?('⚠️ Divergencia: la masa está '+(masa>pro?'MÁS larga':'MÁS corta')+' que los pros ('+Math.abs((masa-pro)*100).toFixed(0)+' pts). Los top traders suelen tener razón — precaución al lado de la multitud.'):'Masa y pros alineados: sin divergencia relevante.'} Este sesgo <b>alimenta el cono</b> del Cuantitativo.</div>}
+                💰 <b style={{color:'var(--txt)'}}>Dinero real en juego (OI top {lsTop.length}): {fmtB(tot)}</b>. En futuros el $ largo = $ corto = OI siempre; los <b>%</b> de arriba son el <b>SESGO</b> de cada grupo (qué parte está en cada lado), no importes distintos. {Math.abs(masa-pro)>0.08?('⚠️ Divergencia: la masa (retail) está '+(masa>pro?'MÁS larga':'MÁS corta')+' que los pros ('+Math.abs((masa-pro)*100).toFixed(0)+' pts). Los top traders suelen tener razón — precaución al lado de la multitud.'):'Masa y pros alineados: sin divergencia relevante.'} Este sesgo <b>alimenta el cono</b> del Cuantitativo.</div>}
             </div>);})()}
           {cot&&(cot.levL+cot.levS)>0&&(()=>{const pl=cot.levL/(cot.levL+cot.levS), am=(cot.amL+cot.amS)>0?cot.amL/(cot.amL+cot.amS):null;
             return(<div style={{marginTop:10,paddingTop:9,borderTop:'1px solid var(--line2)'}}>
