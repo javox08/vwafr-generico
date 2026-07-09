@@ -2729,6 +2729,7 @@ function QuantView({gFunding}){
         const pos=j&&j.btc&&j.btc.pos;
         if(Number.isFinite(pos)&&pos>0)out.pros=pos/(1+pos);
         if(j&&j.btc&&Array.isArray(j.btc.oiHist)&&j.btc.oiHist.length>24)out.oiHist=j.btc.oiHist; // OI 1h × ~480 ($B)
+        if(j&&j.btc&&j.btc.taker&&Number.isFinite(j.btc.taker.pl))out.taker=j.btc.taker.pl; // % long abierto 24h (Coinglass)
       }catch(_){}
       if(alive)setFlowPro(out);
     };
@@ -3425,7 +3426,64 @@ function QuantView({gFunding}){
                 border:`1px solid ${r.move.backed?'rgba(31,224,160,.22)':'rgba(243,186,47,.28)'}`}}>
                 {r.move.backed?'💪':'🕳️'} {r.move.expl}</div>}
             </div>);})}
-          <p style={{fontSize:8,color:'var(--faint)',marginTop:8,lineHeight:1.5}}>Naranja = precio · azul = CVD (delta acumulado de compras−ventas agresivas, Binance spot) · OI = interés abierto REAL de Binance Futures (histórico horario). Tendencias por regresión lineal (la "línea de tendencia" objetiva). Cada subida o bajada rápida y grande del tramo se explica automáticamente con el CVD y el volumen. Solo velas cerradas. Se actualiza solo cada 2 min. No es consejo financiero.</p>
+          {/* 🧩 LECTURA COMBINADA: TODOS los indicadores de derivados afectan a la vez
+              (OI + funding + taker Coinglass + CVD + Coinbase premium + masa/pros),
+              incluidos los combos clásicos: OI↑+funding<0 = setup de short squeeze, etc. */}
+          {(()=>{
+            const oiH=flowPro&&flowPro.oiHist; if(!oiH||oiH.length<24)return null;
+            const chg=(h)=>{const seg=oiH.slice(-Math.min(h,oiH.length));return (seg[seg.length-1]/seg[0]-1)*100;};
+            const oi24=chg(24), oi5d=chg(120);
+            const p1=c.veloTF.find(r=>r.tf==='1D'), pc=c.veloTF.find(r=>r.tf==='1h')||c.veloTF[0];
+            const pd=(pc&&pc.dir)||0, cd=(pc&&pc.mdir)||0;
+            const fnd=Number.isFinite(gFunding)?gFunding:null;             // % por 8h
+            const tk=flowPro&&Number.isFinite(flowPro.taker)?flowPro.taker:null;
+            const cb=flowPro&&Number.isFinite(flowPro.cbPrem)?flowPro.cbPrem:null;
+            const masa2=flowPro&&Number.isFinite(flowPro.masa)?flowPro.masa:null, pros2=flowPro&&Number.isFinite(flowPro.pros)?flowPro.pros:null;
+            const fx=[]; let sc=0; const F=(s,txt)=>{sc+=s;fx.push([s,txt]);};
+            // OI + precio (el combo manda)
+            if(oi24>0.5&&pd>0)F(1,'OI 24h +'+oi24.toFixed(1)+'% con precio subiendo → dinero NUEVO entrando');
+            else if(oi24>0.5&&pd<0)F(-1,'OI 24h +'+oi24.toFixed(1)+'% con precio cayendo → entran CORTOS nuevos');
+            else if(oi24<-0.5&&pd>0)F(-0.5,'OI 24h '+oi24.toFixed(1)+'% con precio subiendo → suben cerrando cortos (frágil)');
+            else if(oi24<-0.5&&pd<0)F(-0.5,'OI 24h '+oi24.toFixed(1)+'% cayendo con el precio → desapalancamiento');
+            else F(0,'OI 24h '+(oi24>=0?'+':'')+oi24.toFixed(1)+'% → estable');
+            // funding (nivel)
+            if(fnd!=null){if(fnd>0.02)F(-1,'Funding ALTO ('+fmt(fnd,3)+'/8h): los longs pagan caro → riesgo de long squeeze');
+              else if(fnd<0)F(1,'Funding NEGATIVO ('+fmt(fnd,3)+'): los cortos pagan → combustible para short squeeze');
+              else F(0.5,'Funding contenido ('+fmt(fnd,3)+') → apalancamiento sano');}
+            // taker 24h (el "Coinglass")
+            if(tk!=null){if(tk>0.53)F(1,'Se ABREN más largos que cortos ('+(tk*100).toFixed(1)+'% · taker 24h)');
+              else if(tk<0.47)F(-1,'Se ABREN más cortos / VENDEN ('+((1-tk)*100).toFixed(1)+'% short · taker 24h)');
+              else F(0,'Aperturas 24h equilibradas ('+(tk*100).toFixed(1)+'% long)');}
+            // CVD corto plazo
+            if(cd>0)F(1,'CVD subiendo (compra agresiva real)');else if(cd<0)F(-1,'CVD bajando (venta agresiva real)');
+            // Coinbase premium
+            if(cb!=null){if(cb>0.02)F(1,'Coinbase premium positivo ('+(cb>=0?'+':'')+cb.toFixed(3)+'%): instituciones EE.UU. comprando');
+              else if(cb<-0.02)F(-1,'Coinbase premium negativo ('+cb.toFixed(3)+'%): instituciones EE.UU. vendiendo');}
+            // masa vs pros
+            if(masa2!=null&&pros2!=null&&Math.abs(masa2-pros2)>0.08)F(masa2>pros2?-0.5:0.5,masa2>pros2?'Retail mucho más largo que los pros → sobreexposición':'Pros más largos que el retail → señal de calidad');
+            // COMBOS especiales (setups de squeeze) — sobreescriben el titular
+            let combo=null;
+            if(oi24>0.5&&fnd!=null&&fnd<0&&pd<=0)combo={e:'🧨',c:'var(--up)',t:'SETUP DE SHORT SQUEEZE',d:'Entran cortos nuevos (OI↑) pagando funding negativo. Si el precio aguanta, su cierre forzado impulsa AL ALZA.'};
+            else if(oi24>0.5&&fnd!=null&&fnd>0.02&&cd<0)combo={e:'🧨',c:'var(--down)',t:'SETUP DE LONG SQUEEZE',d:'Apalancamiento largo creciendo (OI↑) y pagando caro, SIN compra real detrás (CVD↓). Vulnerable a una barrida A LA BAJA.'};
+            else if(oi24<-0.5&&fnd!=null&&fnd>0.02)combo={e:'⚠️',c:'#F3BA2F',t:'MERCADO FRÁGIL',d:'El OI baja pero el funding sigue alto: los longs que quedan pagan caro → propenso a sacudidas.'};
+            const gl=sc>=2?{t:'DERIVADOS ALCISTAS',c:'var(--up)',e:'📈'}:sc<=-2?{t:'DERIVADOS BAJISTAS',c:'var(--down)',e:'📉'}:{t:'DERIVADOS MIXTOS',c:'#F3BA2F',e:'⚖️'};
+            return(<div style={{marginTop:10,paddingTop:10,borderTop:'1px solid var(--line2)'}}>
+              <div style={{fontSize:8,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.6,fontWeight:700,marginBottom:6}}>🧩 Lectura combinada · todos los indicadores afectan</div>
+              {combo&&<div style={{...flx({gap:8}),padding:'9px 11px',borderRadius:9,marginBottom:8,background:`${combo.c}10`,border:`1px solid ${combo.c}44`}}>
+                <span style={{fontSize:17}}>{combo.e}</span>
+                <div style={{flex:1}}><div style={{fontSize:11.5,fontWeight:800,color:combo.c}}>{combo.t}</div>
+                <div style={{fontSize:8.5,color:'var(--dim)',lineHeight:1.45}}>{combo.d}</div></div></div>}
+              <div style={{...flx({gap:8}),marginBottom:7}}>
+                <span style={{fontSize:15}}>{gl.e}</span>
+                <span style={{fontSize:12.5,fontWeight:800,color:gl.c}}>{gl.t}</span>
+                <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>puntuación {sc>=0?'+':''}{sc.toFixed(1)}</span>
+              </div>
+              {fx.map(([s,txt],i2)=>(<div key={i2} style={{...flx({gap:6}),padding:'2.5px 0'}}>
+                <span className="mono" style={{fontSize:9,fontWeight:800,width:14,flexShrink:0,color:s>0?'var(--up)':s<0?'var(--down)':'var(--dim)'}}>{s>0?'▲':s<0?'▼':'—'}</span>
+                <span style={{fontSize:9,color:'var(--dim)',lineHeight:1.4}}>{txt}</span>
+              </div>))}
+            </div>);})()}
+          <p style={{fontSize:8,color:'var(--faint)',marginTop:8,lineHeight:1.5}}>Naranja = precio · azul = CVD (delta acumulado de compras−ventas agresivas, Binance spot) · OI = interés abierto REAL de Binance Futures (histórico horario). La lectura combinada puntúa TODOS los indicadores a la vez (OI, funding, aperturas taker 24h, CVD, Coinbase premium, retail vs pros) y detecta los combos clásicos (OI↑ + funding negativo = setup de short squeeze, etc.). Solo velas cerradas. Se actualiza solo cada 2 min. No es consejo financiero.</p>
         </div>);})()}
 
       {/* RUTA CORTO PLAZO · seguimiento diario (la de 30d está más abajo en el cono) */}
