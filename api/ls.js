@@ -72,11 +72,16 @@ module.exports = async (req, res) => {
   // volumen AGRESIVO abrió largos vs cortos en 24h en Binance Futures. Distinto del
   // ratio de CUENTAS (posicionamiento): esto es FLUJO de órdenes, y suele rondar 50/50.
   try {
-    const tk = await fetch('https://fapi.binance.com/futures/data/takerlongshortRatio?symbol=BTCUSDT&period=1h&limit=24').then(r => r.json()).catch(() => null);
+    const tk = await fetch('https://fapi.binance.com/futures/data/takerlongshortRatio?symbol=BTCUSDT&period=1h&limit=480').then(r => r.json()).catch(() => null);
     if (Array.isArray(tk) && tk.length) {
-      let b = 0, s = 0;
-      for (const x of tk) { const bv = parseFloat(x.buyVol), sv = parseFloat(x.sellVol); if (Number.isFinite(bv)) b += bv; if (Number.isFinite(sv)) s += sv; }
-      if (b > 0 && s > 0) out.btc.taker = { b: +b.toFixed(0), s: +s.toFixed(0), pl: +(b / (b + s)).toFixed(4) };
+      let b24 = 0, s24 = 0, cum = 0; const cv = [];
+      for (let i = 0; i < tk.length; i++) {
+        const bv = parseFloat(tk[i].buyVol), sv = parseFloat(tk[i].sellVol);
+        if (Number.isFinite(bv) && Number.isFinite(sv)) { cum += bv - sv; if (i >= tk.length - 24) { b24 += bv; s24 += sv; } }
+        cv.push(+cum.toFixed(1));
+      }
+      if (b24 > 0 && s24 > 0) out.btc.taker = { b: +b24.toFixed(0), s: +s24.toFixed(0), pl: +(b24 / (b24 + s24)).toFixed(4) };
+      out.btc.cvdFut = cv; // CVD de FUTUROS acumulado (BTC, taker buy−sell), 1h × ~480 ≈ 20 días
     }
   } catch (e) {}
   // PREMIUM AGREGADO (el "Aggregated Premium" de Velo): prima del perpetuo sobre su

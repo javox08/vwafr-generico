@@ -2759,6 +2759,7 @@ function QuantView({gFunding}){
         if(j&&j.btc&&Array.isArray(j.btc.fundHist)&&j.btc.fundHist.length>5)out.fundHist=j.btc.fundHist;   // funding 8h (%)
         if(j&&j.btc&&Array.isArray(j.btc.premHistD)&&j.btc.premHistD.length>10)out.premHistD=j.btc.premHistD; // premium 1d (90d)
         if(j&&j.btc&&Array.isArray(j.btc.oiHistD)&&j.btc.oiHistD.length>5)out.oiHistD=j.btc.oiHistD;       // OI diario (30d)
+        if(j&&j.btc&&Array.isArray(j.btc.cvdFut)&&j.btc.cvdFut.length>10)out.cvdFut=j.btc.cvdFut;          // CVD de FUTUROS (BTC, 1h × 480)
       }catch(_){}
       if(alive)setFlowPro(out);
     };
@@ -3645,7 +3646,8 @@ function QuantView({gFunding}){
             </div>
           </div>
           <Pane title={'Precio BTC · '+sel.span} a={sel.spark.p} col="#F7931A" fv={v=>money(v)}/>
-          <Pane title="CVD · delta acumulado (compras−ventas agresivas, spot)" a={sel.spark.c} col="#5B9BFF" fv={fmtM}/>
+          <Pane title="CVD SPOT · delta acumulado (compras−ventas agresivas)" a={sel.spark.c} col="#5B9BFF" fv={fmtM}/>
+          <Pane title={'CVD FUTUROS · Binance (taker buy−sell)'+(isD?' · últ. 20d':'')} a={isD?((flowPro&&flowPro.cvdFut)||null):seg(flowPro&&flowPro.cvdFut)} col="#B18CFF" fv={v=>(v>=0?'+':'−')+Math.round(Math.abs(v)).toLocaleString('es-ES')+' BTC'}/>
           <Pane title={'Interés abierto · Binance Futures'+(isD?' · últ. 30d (máx. publicado)':'')} a={oiSeg} col="#1FE0A0" fv={v=>'$'+v.toFixed(2)+'B'}/>
           <Pane title="Funding (pagos de 8h)" a={fdSeg} col={fdSeg&&fdSeg[fdSeg.length-1]>=0?'#1FE0A0':'#FF5470'} fv={v=>(v>=0?'+':'')+v.toFixed(4)+'%'} zero/>
           <Pane title="Premium futuros−spot" a={pmSeg} col={pmSeg&&pmSeg[pmSeg.length-1]>=0?'#1FE0A0':'#FF5470'} fv={v=>(v>=0?'+':'')+v.toFixed(3)+'%'} zero/>
