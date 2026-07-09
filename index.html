@@ -2639,6 +2639,8 @@ function QuantView({gFunding}){
   const [infoSel,setInfoSel]=useState(null); // visor genérico (técnicos y manipulaciones)
   const [flowPro,setFlowPro]=useState(null); // panel PRO: Coinbase premium + long/short (masa/pros)
   const [veloTfSel,setVeloTfSel]=useState('4h'); // temporalidad de la Vista Velo (gráficos apilados)
+  const [showAllPats,setShowAllPats]=useState(false); // ver todos los patrones (la lista se capa a 12)
+  const [showAllFigs,setShowAllFigs]=useState(false); // ver todas las figuras (capa a 10)
   const longRef=React.useRef(null); // caché del histórico largo (no se re-pagina en cada refresco)
   const ohlcLongRef=React.useRef(null); // caché del OHLC largo (para backtests de velas fiables)
   const macroRef=React.useRef(null); // caché del ciclo económico (dato anual)
@@ -3849,10 +3851,12 @@ function QuantView({gFunding}){
             const w=pt.sig>0?pt.st.win:pt.sig<0?100-pt.st.win:50+Math.abs(pt.st.win-50)/2;
             return w-(pt.st.ci||0)/2;};
           const all=c.patterns.concat(c.patsMTF||[]).slice().sort((a,b)=>rel(b)-rel(a));
+          const CAP=12, vis=showAllPats?all:all.slice(0,CAP); // con persistencia la lista crece: cap + "ver todos"
           const tfCol={'4h':'#F3BA2F','1D':'var(--accent)','1S':'#8AA0FF'};
-          // CONFLUENCIA multi-temporalidad: solo patrones CON ventaja medida (acierto>52%).
-          // Varias escalas apuntando al mismo lado = señal más fiable que cualquiera sola.
-          const good=all.filter(p=>p.sig!==0&&p.st&&p.st.win>52);
+          // CONFLUENCIA multi-temporalidad: solo patrones CON ventaja medida EN SU DIRECCIÓN
+          // (win = % de veces que SUBIÓ: alcista fiable = win>52 · bajista fiable = win<48)
+          // y no cancelados. Varias escalas de acuerdo = señal más fiable que cualquiera sola.
+          const good=all.filter(p=>p.sig!==0&&p.st&&!p.cancelled&&(p.sig>0?p.st.win>52:p.st.win<48));
           const bull=good.filter(p=>p.sig>0).length,bear=good.filter(p=>p.sig<0).length;
           const tfs=[...new Set(good.map(p=>p.tf).filter(Boolean))];
           const confl=(bull+bear)>=3&&(bull>=2*bear||bear>=2*bull)?{up:bull>bear,n:bull>bear?bull:bear,vs:bull>bear?bear:bull}:null;
@@ -3865,7 +3869,7 @@ function QuantView({gFunding}){
               <div style={{fontSize:8.5,color:'var(--faint)',lineHeight:1.4}}>en {tfs.length>1?tfs.join(' + '):(tfs[0]||'1D')} · solo cuentan los de acierto &gt;52% · varias escalas de acuerdo = señal más fiable que cualquiera sola</div>
             </div>
           </div>}
-          {all.length?all.map((pt,i)=>(
+          {all.length?vis.map((pt,i)=>(
           <div key={i} onClick={()=>{if(pt.vela&&CANDLE_ART[pt.t])setVelaSel(pt);else setInfoSel({...pt,kind:'tecnico'});}} style={{...flx({gap:9}),padding:'9px 0',borderTop:i?'1px solid #12151F':'none',cursor:'pointer'}}>
             <span style={{fontSize:15,color:pt.sig>0?'var(--up)':pt.sig<0?'var(--down)':'var(--faint)'}}>{pt.sig>0?'▲':pt.sig<0?'▼':'◆'}{pt.vela?'🕯️':''}</span>
             <div style={{flex:1,minWidth:0}}>
@@ -3884,6 +3888,7 @@ function QuantView({gFunding}){
             ):<div style={{fontSize:8.5,color:'var(--faint)',textAlign:'right',flexShrink:0,maxWidth:60}}>pocos casos</div>}
           </div>
         )):<div style={{fontSize:11,color:'var(--faint)',textAlign:'center',padding:'8px 0'}}>Sin patrones claros ahora mismo en ninguna temporalidad.</div>}
+          {all.length>CAP&&<div onClick={()=>setShowAllPats(v=>!v)} style={{textAlign:'center',padding:'8px 0 2px',cursor:'pointer',fontSize:10,fontWeight:700,color:'var(--accent)'}}>{showAllPats?'▲ ver menos':'▼ ver los '+(all.length-CAP)+' patrones restantes'}</div>}
           </React.Fragment>);})()}
         <p style={{fontSize:9,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Patrones detectados en <b>3 temporalidades</b>: <b style={{color:'#F3BA2F'}}>4h</b> (corto plazo, ~166 días de historia), <b>1D</b> (diario, ~8 años) y <b style={{color:'#8AA0FF'}}>SEMANAL</b> (~6 años). Cada uno se backtestea EN SU temporalidad: % = acierto a 10 velas de esa escala (10×4h ≈ 40h · 10 días · 10 semanas) · n = nº de veces que ocurrió. Los de 4h son más frecuentes pero más ruidosos; los semanales, raros pero de más peso. <b style={{color:'var(--txt)'}}>Ordenados del MÁS fiable al menos</b> (acierto en la dirección del patrón − medio margen de error; "pocos casos" al final). <b style={{color:'var(--txt)'}}>Solo velas CERRADAS</b>: la vela en curso no confirma un patrón hasta su cierre (puede des-formarse antes) — igual que el backtest, que siempre midió cierres. Solo el diario alimenta el cono (evita doble-contar).</p>
       </div>
@@ -3895,8 +3900,10 @@ function QuantView({gFunding}){
           <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>4h · 1D · semanal</span>
         </div>
         {(()=>{const figsAll=c.chartPats.map(p=>({...p,tf:'1D'})).concat(c.chartPatsMTF||[]);
+          const CAPF=10, visF=showAllFigs?figsAll:figsAll.slice(0,CAPF);
           const tfCol={'4h':'#F3BA2F','1D':'var(--accent)','1S':'#8AA0FF'};
-          return figsAll.length?figsAll.map((pt,i)=>(
+          return(<React.Fragment>
+          {figsAll.length?visF.map((pt,i)=>(
           <div key={i} onClick={()=>setFigSel(pt)} style={{...flx({gap:9}),padding:'10px 0',borderTop:i?'1px solid #12151F':'none',cursor:'pointer'}}>
             <span style={{fontSize:16,color:pt.sig>0?'var(--up)':pt.sig<0?'var(--down)':'var(--faint)'}}>{pt.sig>0?'▲':pt.sig<0?'▼':'◆'}</span>
             <div style={{flex:1,minWidth:0}}>
@@ -3916,7 +3923,9 @@ function QuantView({gFunding}){
               {pt.avg!=null&&<div className="mono" style={{fontSize:8.5,color:pt.dud?'var(--downDim)':'var(--faint)'}}>{pt.avg>=0?'+':''}{pt.avg}% típico</div>}
             </div>
           </div>
-        )):<div style={{fontSize:11,color:'var(--faint)',textAlign:'center',padding:'8px 0'}}>Sin figuras gráficas claras ahora mismo en ninguna temporalidad.</div>;})()}
+        )):<div style={{fontSize:11,color:'var(--faint)',textAlign:'center',padding:'8px 0'}}>Sin figuras gráficas claras ahora mismo en ninguna temporalidad.</div>}
+          {figsAll.length>CAPF&&<div onClick={()=>setShowAllFigs(v=>!v)} style={{textAlign:'center',padding:'8px 0 2px',cursor:'pointer',fontSize:10,fontWeight:700,color:'var(--accent)'}}>{showAllFigs?'▲ ver menos':'▼ ver las '+(figsAll.length-CAPF)+' figuras restantes'}</div>}
+          </React.Fragment>);})()}
         <p style={{fontSize:9,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Figuras detectadas por pivotes de swing (dobles/triples techos y suelos, hombro-cabeza-hombro, triángulos, rupturas de rango) en <b>3 temporalidades</b>: <b style={{color:'#F3BA2F'}}>4h</b>, <b>1D</b> y <b style={{color:'#8AA0FF'}}>SEMANAL</b> — cada una backtesteada EN SU escala (el % es a 10 velas de esa temporalidad). <b style={{color:'var(--up)'}}>✓ confirmada</b> = ya rompió (solo las del diario alimentan el cono). <b style={{color:'#F3BA2F'}}>⏳ en formación</b> = la estructura está y el precio se acerca al disparo. <b>objetivo</b> = proyección por amplitud · <b>%</b> = acierto histórico ±margen. <b style={{color:'var(--down)'}}>⚠ no rentable</b> = la estadística contradice la teoría: no inclina el cono. Las canceladas se retiran a las 3 velas.</p>
       </div>
 
@@ -4490,7 +4499,10 @@ function QuantView({gFunding}){
 
       {/* VISOR DE FIGURA (modal estilo foto de perfil: toca fuera o la ✕ para cerrar) */}
       {figSel&&(()=>{const pt=figSel, up=pt.sig>0;
-        const rc=(c.closes||[]).slice(-70);
+        // el contexto usa la serie de la TEMPORALIDAD de la figura (4h/semanal/diaria)
+        const srcTf=pt.tf==='4h'?((q&&q.h4o)||[]).map(k=>k.c):pt.tf==='1S'?((q&&q.wko)||[]).map(k=>k.c):(c.closes||[]);
+        const rc=(srcTf.length?srcTf:(c.closes||[])).slice(-70);
+        const tfLbl=pt.tf==='4h'?'últimas 70 velas de 4h':pt.tf==='1S'?'últimas 70 semanas':'últimos 70 días';
         const allv=rc.concat(Number.isFinite(pt.target)?[pt.target]:[]);
         let lo=Math.min(...allv),hi=Math.max(...allv);const pad=((hi-lo)||1)*0.08;lo-=pad;hi+=pad;
         const W=270,H=120,P=8,nn=Math.max(2,rc.length);
@@ -4511,7 +4523,7 @@ function QuantView({gFunding}){
             </div>
             <div style={{fontSize:8.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.7,fontWeight:700,marginBottom:5}}>Cómo es la figura</div>
             <div style={{background:'#0A0D14',borderRadius:10,padding:'10px 8px'}}><PatternArt t={pt.t}/></div>
-            <div style={{fontSize:8.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.7,fontWeight:700,margin:'14px 0 5px'}}>BTC ahora · últimos 70 días</div>
+            <div style={{fontSize:8.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.7,fontWeight:700,margin:'14px 0 5px'}}>BTC ahora · {tfLbl}</div>
             <div style={{background:'#0A0D14',borderRadius:10,padding:'10px 8px'}}>
               <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{display:'block'}}>
                 {Number.isFinite(pt.target)&&<g><line x1="0" y1={Y(pt.target).toFixed(1)} x2={W} y2={Y(pt.target).toFixed(1)} stroke={col} strokeWidth="1.1" strokeDasharray="5 4" opacity=".8"/>
