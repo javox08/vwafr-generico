@@ -2631,6 +2631,7 @@ function QuantView({gFunding}){
   const [velaSel,setVelaSel]=useState(null); // visor de patrón de velas (modal)
   const [infoSel,setInfoSel]=useState(null); // visor genérico (técnicos y manipulaciones)
   const [flowPro,setFlowPro]=useState(null); // panel PRO: Coinbase premium + long/short (masa/pros)
+  const [veloTfSel,setVeloTfSel]=useState('4h'); // temporalidad de la Vista Velo (gráficos apilados)
   const longRef=React.useRef(null); // caché del histórico largo (no se re-pagina en cada refresco)
   const ohlcLongRef=React.useRef(null); // caché del OHLC largo (para backtests de velas fiables)
   const macroRef=React.useRef(null); // caché del ciclo económico (dato anual)
@@ -2745,6 +2746,8 @@ function QuantView({gFunding}){
         if(j&&j.btc&&Array.isArray(j.btc.oiHist)&&j.btc.oiHist.length>24)out.oiHist=j.btc.oiHist; // OI 1h × ~480 ($B)
         if(j&&j.btc&&j.btc.taker&&Number.isFinite(j.btc.taker.pl))out.taker=j.btc.taker.pl; // % long abierto 24h (Coinglass)
         if(j&&j.btc&&Number.isFinite(j.btc.prem))out.prem=j.btc.prem; // premium agregado futuros-spot (%)
+        if(j&&j.btc&&Array.isArray(j.btc.premHist)&&j.btc.premHist.length>10)out.premHist=j.btc.premHist; // premium 1h (%)
+        if(j&&j.btc&&Array.isArray(j.btc.fundHist)&&j.btc.fundHist.length>5)out.fundHist=j.btc.fundHist;   // funding 8h (%)
       }catch(_){}
       if(alive)setFlowPro(out);
     };
@@ -3521,6 +3524,53 @@ function QuantView({gFunding}){
               </div>))}
             </div>);})()}
           <p style={{fontSize:8,color:'var(--faint)',marginTop:8,lineHeight:1.5}}>Naranja = precio · azul = CVD (delta acumulado de compras−ventas agresivas, Binance spot) · OI = interés abierto REAL de Binance Futures (histórico horario). La lectura combinada puntúa TODOS los indicadores a la vez (OI, funding, aperturas taker 24h, CVD, Coinbase premium, retail vs pros) y detecta los combos clásicos (OI↑ + funding negativo = setup de short squeeze, etc.). Solo velas cerradas. Se actualiza solo cada 2 min. No es consejo financiero.</p>
+        </div>);})()}
+
+      {/* 📊 VISTA VELO: como una captura de velo.xyz — precio arriba y TODOS los
+          indicadores apilados debajo (CVD · OI · funding · premium), por temporalidad */}
+      {c.veloTF&&(()=>{
+        const sel=c.veloTF.find(r=>r.tf===veloTfSel)||c.veloTF[c.veloTF.length-1];
+        if(!sel)return null;
+        const hoursOf={'15m':24,'1h':120,'4h':480,'1D':480};
+        const hrs=hoursOf[sel.tf]||24;
+        const seg=a=>(a&&a.length>2)?a.slice(-Math.min(hrs,a.length)):null;
+        const oiSeg=seg(flowPro&&flowPro.oiHist), pmSeg=seg(flowPro&&flowPro.premHist);
+        const fdN=({'15m':3,'1h':15,'4h':60,'1D':60})[sel.tf]||6;
+        const fdSeg=(flowPro&&flowPro.fundHist&&flowPro.fundHist.length>2)?flowPro.fundHist.slice(-fdN):null;
+        const fmtM=v=>{const a=Math.abs(v);return (v<0?'−':'+')+(a>=1e9?'$'+(a/1e9).toFixed(1)+'B':'$'+Math.round(a/1e6)+'M');};
+        const Pane=({title,a,col,fv,zero})=>{if(!a||a.length<2)return null;
+          const W=300,H=42,P2=3;let mn=Math.min(...a),mx=Math.max(...a);if(zero){mn=Math.min(mn,0);mx=Math.max(mx,0);}const rg=(mx-mn)||1;
+          const X=i2=>P2+i2/(a.length-1)*(W-2*P2),Y=v=>H-P2-((v-mn)/rg)*(H-2*P2);
+          const dd='M '+a.map((v,i2)=>X(i2).toFixed(1)+' '+Y(v).toFixed(1)).join(' L ');
+          return(<div style={{marginBottom:6}}>
+            <div style={{...flx({justifyContent:'space-between'}),marginBottom:2}}>
+              <span style={{fontSize:7.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.5,fontWeight:700}}>{title}</span>
+              <span className="mono" style={{fontSize:8.5,fontWeight:800,color:col}}>{fv(a[a.length-1])}</span>
+            </div>
+            <div style={{background:'#0A0D14',borderRadius:7,padding:'4px 6px'}}>
+              <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{display:'block'}}>
+                {zero&&mn<0&&mx>0&&<line x1={P2} y1={Y(0).toFixed(1)} x2={W-P2} y2={Y(0).toFixed(1)} stroke="var(--faint)" strokeWidth="0.7" strokeDasharray="3 3" opacity=".6"/>}
+                <path d={dd} fill="none" stroke={col} strokeWidth="1.5"/>
+                <circle cx={X(a.length-1).toFixed(1)} cy={Y(a[a.length-1]).toFixed(1)} r="2.4" fill={col} stroke="var(--bg)" strokeWidth="1.3"/>
+              </svg>
+            </div>
+          </div>);};
+        return(
+        <div style={panel({marginBottom:14,padding:16})}>
+          <div style={{...flx({justifyContent:'space-between'}),marginBottom:8}}>
+            <span style={eyebrow}>📊 Vista Velo · BTC</span>
+            <div style={{...flx({gap:4})}}>
+              {c.veloTF.map(r=>(
+                <span key={r.tf} onClick={()=>setVeloTfSel(r.tf)} className="mono" style={{fontSize:9,fontWeight:800,padding:'3px 9px',borderRadius:8,cursor:'pointer',
+                  color:sel.tf===r.tf?'#07090E':'var(--dim)',background:sel.tf===r.tf?'var(--accent)':'rgba(255,255,255,.05)',border:'1px solid '+(sel.tf===r.tf?'var(--accent)':'var(--line2)')}}>{r.tf}</span>))}
+            </div>
+          </div>
+          <Pane title={'Precio BTC · '+sel.span} a={sel.spark.p} col="#F7931A" fv={v=>money(v)}/>
+          <Pane title="CVD · delta acumulado (compras−ventas agresivas, spot)" a={sel.spark.c} col="#5B9BFF" fv={fmtM}/>
+          <Pane title="Interés abierto · Binance Futures" a={oiSeg} col="#1FE0A0" fv={v=>'$'+v.toFixed(2)+'B'}/>
+          <Pane title="Funding (pagos de 8h)" a={fdSeg} col={fdSeg&&fdSeg[fdSeg.length-1]>=0?'#1FE0A0':'#FF5470'} fv={v=>(v>=0?'+':'')+v.toFixed(4)+'%'} zero/>
+          <Pane title="Premium futuros−spot" a={pmSeg} col={pmSeg&&pmSeg[pmSeg.length-1]>=0?'#1FE0A0':'#FF5470'} fv={v=>(v>=0?'+':'')+v.toFixed(3)+'%'} zero/>
+          <p style={{fontSize:8,color:'var(--faint)',marginTop:4,lineHeight:1.5}}>Los mismos paneles apilados de velo.xyz, por temporalidad: precio, CVD, interés abierto, funding y premium futuros−spot. El OI, funding y premium son de Binance Futures (histórico real vía relé); en 15m/1h/4h muestran el tramo equivalente. La lectura automática de todo esto está arriba, en "Análisis Velo". No es consejo financiero.</p>
         </div>);})()}
 
       {/* RUTA CORTO PLAZO · seguimiento diario (la de 30d está más abajo en el cono) */}

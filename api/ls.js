@@ -91,6 +91,16 @@ module.exports = async (req, res) => {
     if (bl) { const m = parseFloat(bl.markPrice), ix = parseFloat(bl.indexPrice); if (m > 0 && ix > 0) ps.push((m - ix) / ix * 100); }
     if (ps.length) out.btc.prem = +(ps.reduce((a, x) => a + x, 0) / ps.length).toFixed(4);
   } catch (e) {}
+  // HISTÓRICOS para la "Vista Velo" de la web: premium futuros-spot (1h × 480, %) y
+  // funding (últimos 60 pagos de 8h ≈ 20 días, %). Como los paneles apilados de velo.xyz.
+  try {
+    const pk = await fetch('https://fapi.binance.com/fapi/v1/premiumIndexKlines?symbol=BTCUSDT&interval=1h&limit=480').then(r => r.json()).catch(() => null);
+    if (Array.isArray(pk) && pk.length > 10) out.btc.premHist = pk.map(x => +((+x[4]) * 100).toFixed(4));
+  } catch (e) {}
+  try {
+    const fr2 = await fetch('https://fapi.binance.com/fapi/v1/fundingRate?symbol=BTCUSDT&limit=60').then(r => r.json()).catch(() => null);
+    if (Array.isArray(fr2) && fr2.length > 5) out.btc.fundHist = fr2.map(x => +((+x.fundingRate) * 100).toFixed(4));
+  } catch (e) {}
   // HISTÓRICO de OI de BTC (Binance, 1h × 480 ≈ 20 días, en $B): alimenta las tendencias
   // de interés abierto del "Análisis Velo" de la web (OI↑ con precio↑ = dinero nuevo, etc.)
   try {
