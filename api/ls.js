@@ -98,8 +98,18 @@ module.exports = async (req, res) => {
     if (Array.isArray(pk) && pk.length > 10) out.btc.premHist = pk.map(x => +((+x[4]) * 100).toFixed(4));
   } catch (e) {}
   try {
-    const fr2 = await fetch('https://fapi.binance.com/fapi/v1/fundingRate?symbol=BTCUSDT&limit=60').then(r => r.json()).catch(() => null);
+    const fr2 = await fetch('https://fapi.binance.com/fapi/v1/fundingRate?symbol=BTCUSDT&limit=270').then(r => r.json()).catch(() => null);
     if (Array.isArray(fr2) && fr2.length > 5) out.btc.fundHist = fr2.map(x => +((+x.fundingRate) * 100).toFixed(4));
+  } catch (e) {}
+  // VERSIONES DIARIAS para la temporalidad 1D de la Vista Velo (si no, 4h y 1D salían
+  // iguales): premium 1d × 90 y OI diario (Binance solo publica ~30 días de OI).
+  try {
+    const pk2 = await fetch('https://fapi.binance.com/fapi/v1/premiumIndexKlines?symbol=BTCUSDT&interval=1d&limit=90').then(r => r.json()).catch(() => null);
+    if (Array.isArray(pk2) && pk2.length > 10) out.btc.premHistD = pk2.map(x => +((+x[4]) * 100).toFixed(4));
+  } catch (e) {}
+  try {
+    const oh3 = await fetch('https://fapi.binance.com/futures/data/openInterestHist?symbol=BTCUSDT&period=1d&limit=30').then(r => r.json()).catch(() => null);
+    if (Array.isArray(oh3) && oh3.length > 5) out.btc.oiHistD = oh3.map(x => +((+x.sumOpenInterestValue) / 1e9).toFixed(3));
   } catch (e) {}
   // HISTÓRICO de OI de BTC (Binance, 1h × 480 ≈ 20 días, en $B): alimenta las tendencias
   // de interés abierto del "Análisis Velo" de la web (OI↑ con precio↑ = dinero nuevo, etc.)

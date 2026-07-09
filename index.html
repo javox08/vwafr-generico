@@ -2748,6 +2748,8 @@ function QuantView({gFunding}){
         if(j&&j.btc&&Number.isFinite(j.btc.prem))out.prem=j.btc.prem; // premium agregado futuros-spot (%)
         if(j&&j.btc&&Array.isArray(j.btc.premHist)&&j.btc.premHist.length>10)out.premHist=j.btc.premHist; // premium 1h (%)
         if(j&&j.btc&&Array.isArray(j.btc.fundHist)&&j.btc.fundHist.length>5)out.fundHist=j.btc.fundHist;   // funding 8h (%)
+        if(j&&j.btc&&Array.isArray(j.btc.premHistD)&&j.btc.premHistD.length>10)out.premHistD=j.btc.premHistD; // premium 1d (90d)
+        if(j&&j.btc&&Array.isArray(j.btc.oiHistD)&&j.btc.oiHistD.length>5)out.oiHistD=j.btc.oiHistD;       // OI diario (30d)
       }catch(_){}
       if(alive)setFlowPro(out);
     };
@@ -2838,7 +2840,7 @@ function QuantView({gFunding}){
           pd<0&&cd<0?{t:'BAJADA REAL (venden de verdad)',c:'var(--down)',e:'🔻'}:
           pd<0&&cd>0?{t:'CAE PERO ABSORBEN · posible suelo',c:'#5B9BFF',e:'🧲'}:
           pd>0?{t:'SUBE · dinero neutro',c:'var(--upDim)',e:'▲'}:pd<0?{t:'BAJA · dinero neutro',c:'var(--downDim)',e:'▼'}:
-          cd>0?{t:'LATERAL · acumulando',c:'#5B9BFF',e:'🧲'}:cd<0?{t:'LATERAL · distribuyendo',c:'#F3BA2F',e:'⚠️'}:{t:'LATERAL · sin señal',c:'var(--dim)',e:'➖'};
+          cd<0?{t:'VENDEN pero AGUANTA · absorción',c:'#5B9BFF',e:'🧲'}:cd>0?{t:'COMPRAN pero no sube · distribución',c:'#F3BA2F',e:'⚠️'}:{t:'LATERAL · sin señal',c:'var(--dim)',e:'➖'};
         // movimiento RÁPIDO más grande del tramo (6 velas) explicado automáticamente
         let best=null;const M2=6,aVol=vTot/w.length;
         for(let i2=0;i2+M2<w.length;i2++){const r=cls[i2+M2]/cls[i2]-1;
@@ -3494,14 +3496,26 @@ function QuantView({gFunding}){
             // 🗣️ NARRATIVA AUTOMÁTICA: responde solo a "¿por qué esta subida/bajada y qué
             // va a pasar?" — lo que antes se preguntaba pasando una captura.
             const mv=(pc&&pc.move)||(p1&&p1.move)||null;
-            const porque=mv?mv.expl:
-              pd>0?('El precio sube en el corto plazo'+(cd>0?' con compra agresiva real detrás (CVD↑)':cd<0?' pero SIN dinero agresivo detrás (CVD↓): movimiento de futuros':'')+(oi24>0.5?' y con dinero nuevo entrando (OI↑).':oi24<-0.5?' mientras se cierran posiciones (OI↓): más cierre de cortos que compra nueva.':'.')):
-              pd<0?('El precio cae en el corto plazo'+(cd<0?' con venta agresiva real (CVD↓)':cd>0?' pero el CVD no acompaña: presión de futuros/barrida, no venta real':'')+(oi24>0.5?' y entran cortos nuevos (OI↑): presión real.':oi24<-0.5?' cerrando posiciones (OI↓): desapalancamiento.':'.')):
-              'El precio está lateral: sin dirección clara en el corto plazo.';
-            const despues=combo?combo.d:
-              sc>=2?'Lo más probable: CONTINUIDAD ALCISTA mientras CVD y OI acompañen. Vigilar que el funding no se caliente (>0,02%/8h) — sería señal de sobreapalancamiento.':
-              sc<=-2?'Lo más probable: PRESIÓN BAJISTA hasta que el CVD deje de caer o el funding se ponga negativo (ahí los cortos empiezan a pagar y el riesgo se invierte).':
-              'Sin ventaja clara: escenario de RANGO. La ruptura fiable vendrá cuando precio, CVD y OI apunten al mismo lado — hasta entonces, los movimientos rápidos son ruido/barridas.';
+            // niveles del tramo corto (soporte/resistencia visibles) para dar escenarios CONCRETOS
+            const lo1=pc?Math.min(...pc.spark.p):null, hi1=pc?Math.max(...pc.spark.p):null;
+            // "¿Por qué?": se compone con TODAS las piezas, como un analista (CVD, OI, premium, Coinbase)
+            const parts=[];
+            parts.push(pd>0?'El precio sube en el corto plazo':pd<0?'El precio cae en el corto plazo':'El precio está lateral');
+            if(cd>0)parts.push(pd<=0?'pero COMPRAN agresivamente sin que suba (CVD↑): la oferta pasiva lo frena — distribución':'con compra agresiva real detrás (CVD↑)');
+            else if(cd<0)parts.push(pd>=0?'mientras VENDEN agresivamente (CVD↓) — y que NO caiga significa que hay compradores pasivos ABSORBIENDO':'con venta agresiva real (CVD↓)');
+            if(oi24>0.5)parts.push('el OI sube ('+oi24.toFixed(1)+'%) → '+(pd>=0?'entra dinero nuevo':'entran cortos nuevos'));
+            else if(oi24<-0.5)parts.push('el OI baja ('+oi24.toFixed(1)+'%) → se cierran posiciones, NO entra dinero nuevo');
+            if(prem!=null&&prem<-0.02)parts.push('los futuros cotizan con DESCUENTO sobre spot ('+prem.toFixed(3)+'%) → cautela/miedo');
+            else if(prem!=null&&prem>0.08)parts.push('los futuros pagan prima alta (+'+prem.toFixed(3)+'%) → euforia apalancada');
+            if(cb!=null&&cb<-0.05)parts.push('y Coinbase está en negativo ('+cb.toFixed(2)+'%) → EE.UU. vendiendo');
+            else if(cb!=null&&cb>0.05)parts.push('y Coinbase en positivo (+'+cb.toFixed(2)+'%) → EE.UU. comprando');
+            const porque=(mv?mv.expl+' En contexto: ':'')+parts.join('; ')+'.';
+            // "¿Qué es lo más probable?": escenario DOBLE con niveles concretos, como un analista
+            const despues=combo?combo.d+(lo1&&hi1?' Niveles: soporte '+money(lo1)+' · resistencia '+money(hi1)+'.':''):
+              (pd<=0&&cd<0&&oi24<-0.3)?('Venta agresiva contra un mercado que se desapalanca: si '+(lo1?money(lo1):'el soporte')+' AGUANTA mientras la venta se agota → rebote/short squeeze probable; si lo PIERDE con el CVD aún cayendo → caída rápida (no hay compra agresiva que la frene).'):
+              sc>=2?('Lo más probable: CONTINUIDAD ALCISTA mientras CVD y OI acompañen'+(hi1?' — objetivo natural del tramo: '+money(hi1):'')+'. Se cancela si el CVD se gira o el funding se calienta (>0,02%/8h).'):
+              sc<=-2?('PRESIÓN BAJISTA dominante'+(lo1?': perder '+money(lo1)+' abre caída rápida':'')+'. Se invierte cuando el CVD deje de caer o el funding se ponga negativo (los cortos empiezan a pagar).'):
+              ('Sin ventaja clara: RANGO probable'+(lo1&&hi1?' entre '+money(lo1)+' y '+money(hi1):'')+'. La ruptura fiable llegará cuando precio, CVD y OI apunten al mismo lado; hasta entonces, los movimientos rápidos suelen ser barridas.');
             return(<div style={{marginTop:10,paddingTop:10,borderTop:'1px solid var(--line2)'}}>
               <div style={{fontSize:8,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.6,fontWeight:700,marginBottom:6}}>🗣️ Qué está pasando (automático)</div>
               <div style={{padding:'9px 11px',borderRadius:9,marginBottom:9,background:'#0A0D14',border:'1px solid var(--line2)'}}>
@@ -3534,8 +3548,12 @@ function QuantView({gFunding}){
         const hoursOf={'15m':24,'1h':120,'4h':480,'1D':480};
         const hrs=hoursOf[sel.tf]||24;
         const seg=a=>(a&&a.length>2)?a.slice(-Math.min(hrs,a.length)):null;
-        const oiSeg=seg(flowPro&&flowPro.oiHist), pmSeg=seg(flowPro&&flowPro.premHist);
-        const fdN=({'15m':3,'1h':15,'4h':60,'1D':60})[sel.tf]||6;
+        // 1D usa sus series DIARIAS propias (premium 90d, OI 30d — el máximo que publica
+        // Binance); si no, 4h y 1D mostraban el mismo tramo horario y "no cambiaban".
+        const isD=sel.tf==='1D';
+        const oiSeg=isD?((flowPro&&flowPro.oiHistD)||null):seg(flowPro&&flowPro.oiHist);
+        const pmSeg=isD?((flowPro&&flowPro.premHistD)||null):seg(flowPro&&flowPro.premHist);
+        const fdN=({'15m':3,'1h':15,'4h':60,'1D':270})[sel.tf]||6;
         const fdSeg=(flowPro&&flowPro.fundHist&&flowPro.fundHist.length>2)?flowPro.fundHist.slice(-fdN):null;
         const fmtM=v=>{const a=Math.abs(v);return (v<0?'−':'+')+(a>=1e9?'$'+(a/1e9).toFixed(1)+'B':'$'+Math.round(a/1e6)+'M');};
         const Pane=({title,a,col,fv,zero})=>{if(!a||a.length<2)return null;
@@ -3573,7 +3591,7 @@ function QuantView({gFunding}){
           </div>
           <Pane title={'Precio BTC · '+sel.span} a={sel.spark.p} col="#F7931A" fv={v=>money(v)}/>
           <Pane title="CVD · delta acumulado (compras−ventas agresivas, spot)" a={sel.spark.c} col="#5B9BFF" fv={fmtM}/>
-          <Pane title="Interés abierto · Binance Futures" a={oiSeg} col="#1FE0A0" fv={v=>'$'+v.toFixed(2)+'B'}/>
+          <Pane title={'Interés abierto · Binance Futures'+(isD?' · últ. 30d (máx. publicado)':'')} a={oiSeg} col="#1FE0A0" fv={v=>'$'+v.toFixed(2)+'B'}/>
           <Pane title="Funding (pagos de 8h)" a={fdSeg} col={fdSeg&&fdSeg[fdSeg.length-1]>=0?'#1FE0A0':'#FF5470'} fv={v=>(v>=0?'+':'')+v.toFixed(4)+'%'} zero/>
           <Pane title="Premium futuros−spot" a={pmSeg} col={pmSeg&&pmSeg[pmSeg.length-1]>=0?'#1FE0A0':'#FF5470'} fv={v=>(v>=0?'+':'')+v.toFixed(3)+'%'} zero/>
           <p style={{fontSize:8,color:'var(--faint)',marginTop:4,lineHeight:1.5}}>Los mismos paneles apilados de velo.xyz, por temporalidad: precio, CVD, interés abierto, funding y premium futuros−spot. La <b style={{color:'var(--txt)'}}>línea de tendencia discontinua</b> une el mínimo y el máximo del tramo (verde ↗ si el mínimo vino antes = tendencia al alza · roja ↘ si el máximo vino antes = a la baja) — el trazo que dibujarías a mano. El OI, funding y premium son de Binance Futures (histórico real vía relé). La lectura automática está arriba, en "Análisis Velo". No es consejo financiero.</p>
