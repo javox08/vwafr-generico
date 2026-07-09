@@ -2638,10 +2638,13 @@ function QuantView({gFunding}){
         jget('https://www.deribit.com/api/v2/public/get_book_summary_by_currency?currency=BTC&kind=option').then(j=>{out.opts=j.result;}),
         // MULTI-TEMPORALIDAD: semanal y 4h con OHLC COMPLETO (no solo cierres) para
         // detectar y backtestear los patrones de velas también en esas temporalidades.
-        jget('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1w&limit=300').then(k=>{out.weekly=k.map(x=>parseFloat(x[4]));out.wko=k.map(x=>({o:+x[1],h:+x[2],l:+x[3],c:+x[4],v:+x[5],tb:+x[9]}));}),
-        jget('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=4h&limit=1000').then(k=>{out.h4=k.map(x=>parseFloat(x[4]));out.h4o=k.map(x=>({o:+x[1],h:+x[2],l:+x[3],c:+x[4],v:+x[5],tb:+x[9]}));}),
+        jget('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1w&limit=300').then(k=>{out.weekly=k.map(x=>parseFloat(x[4]));out.wko=k.map(x=>({o:+x[1],h:+x[2],l:+x[3],c:+x[4],v:+x[5],tb:+x[9],T:+x[6]}));}),
+        jget('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=4h&limit=1000').then(k=>{out.h4=k.map(x=>parseFloat(x[4]));out.h4o=k.map(x=>({o:+x[1],h:+x[2],l:+x[3],c:+x[4],v:+x[5],tb:+x[9],T:+x[6]}));}),
+        // 15m y 1h para el ANÁLISIS VELO multi-temporalidad (precio + CVD por escala)
+        jget('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=15m&limit=192').then(k=>{out.m15o=k.map(x=>({o:+x[1],h:+x[2],l:+x[3],c:+x[4],v:+x[5],tb:+x[9],T:+x[6]}));}),
+        jget('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1h&limit=240').then(k=>{out.h1o=k.map(x=>({o:+x[1],h:+x[2],l:+x[3],c:+x[4],v:+x[5],tb:+x[9],T:+x[6]}));}),
         // histórico largo (≈2.7 años) para backtests, Monte Carlo y volatilidad más fiables
-        jget('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=1000').then(k=>{out.ohlc=k.map(x=>({o:+x[1],h:+x[2],l:+x[3],c:+x[4],v:+x[5],tb:+x[9]}));}),
+        jget('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=1000').then(k=>{out.ohlc=k.map(x=>({o:+x[1],h:+x[2],l:+x[3],c:+x[4],v:+x[5],tb:+x[9],T:+x[6]}));}),
         // oro (PAXG) y liquidez cripto (stablecoins, proxy de M2 cripto) para correlaciones
         jget('https://api.coingecko.com/api/v3/coins/pax-gold/market_chart?vs_currency=usd&days=120&interval=daily').then(j=>{out.gold=j.prices.map(p=>p[1]);}),
         jget('https://stablecoins.llama.fi/stablecoincharts/all',12000).then(j=>{if(Array.isArray(j))out.liq=j.slice(-430).map(x=>{const t=x.totalCirculatingUSD||x.totalCirculating||{};let s=0;for(const kk in t)s+=(+t[kk]||0);return s;}).filter(x=>x>0);}),
@@ -2674,7 +2677,7 @@ function QuantView({gFunding}){
         let all=[],e=Date.now();
         for(let pg=0;pg<3;pg++){const k=await jget('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=1000&endTime='+e,9000);
           if(!Array.isArray(k)||!k.length)break;
-          all=k.map(x=>({o:+x[1],h:+x[2],l:+x[3],c:+x[4],v:+x[5],tb:+x[9]})).concat(all);
+          all=k.map(x=>({o:+x[1],h:+x[2],l:+x[3],c:+x[4],v:+x[5],tb:+x[9],T:+x[6]})).concat(all);
           e=k[0][0]-864e5; if(k.length<1000)break;}
         if(all.length>1200){out.ohlc=all;ohlcLongRef.current=all;out.closes=all.map(k=>k.c);}
       }catch(_){}}
@@ -2778,13 +2781,62 @@ function QuantView({gFunding}){
     // ══ SEÑALES QUE SESGAN EL MONTE CARLO (se calculan ANTES de simular) ══
     // Patrones técnicos (indicadores) + de velas (estilo Binance); todos con
     // backtest del retorno a los días 1…30 sobre el histórico real.
-    const patterns=analyzePatterns(cl).concat((q.ohlc&&q.ohlc.length>=60)?candlePatterns(q.ohlc).map(p=>({...p,tf:'1D'})):[]);
+    // SOLO VELAS CERRADAS para detectar patrones: la vela EN CURSO puede des-formarse
+    // antes del cierre (un martillo a mitad de día puede acabar siendo otra cosa) y el
+    // backtest siempre midió velas cerradas — la detección en vivo ahora es coherente.
+    const closedOh=oh=>(oh&&oh.length&&Number.isFinite(oh[oh.length-1].T)&&oh[oh.length-1].T>Date.now())?oh.slice(0,-1):oh;
+    const ohD=closedOh(q.ohlc), oh4=closedOh(q.h4o), ohW=closedOh(q.wko);
+    const patterns=analyzePatterns(cl).concat((ohD&&ohD.length>=60)?candlePatterns(ohD).map(p=>({...p,tf:'1D'})):[]);
     // MULTI-TEMPORALIDAD: los mismos detectores de velas sobre 4h y SEMANAL, cada uno
     // backtesteado EN SU temporalidad (el % es el acierto a 10 velas de ESA temporalidad).
     // Solo informativo/visual: el cono sigue alimentándose del diario (no doble-contar).
     const patsMTF=[]
-      .concat((q.h4o&&q.h4o.length>=120)?candlePatterns(q.h4o).map(p=>({...p,tf:'4h'})):[])
-      .concat((q.wko&&q.wko.length>=60)?candlePatterns(q.wko).map(p=>({...p,tf:'1S'})):[]);
+      .concat((oh4&&oh4.length>=120)?candlePatterns(oh4).map(p=>({...p,tf:'4h'})):[])
+      .concat((ohW&&ohW.length>=60)?candlePatterns(ohW).map(p=>({...p,tf:'1S'})):[]);
+    // ── ANÁLISIS "VELO" MULTI-TEMPORALIDAD: automatiza las líneas de tendencia que se
+    // trazan a mano en velo.xyz. En cada temporalidad se mide la tendencia del PRECIO
+    // (regresión lineal = línea de tendencia) y la del CVD (delta de volumen acumulado =
+    // dinero agresivo real). Precio y dinero de acuerdo = movimiento con respaldo; en
+    // desacuerdo = divergencia (subida hueca o absorción). Además detecta el movimiento
+    // RÁPIDO más grande del tramo y lo explica con CVD + volumen, automáticamente.
+    const veloTF=(()=>{
+      const defs=[['15m',closedOh(q.m15o),96,'últimas 24h'],['1h',closedOh(q.h1o),120,'últimos 5 días'],['4h',oh4,120,'últimos 20 días'],['1D',ohD,90,'últimos 90 días']];
+      const rows2=[];
+      for(const [tf,oh,W2,span] of defs){
+        if(!oh||oh.length<40)continue;
+        const w=oh.slice(-Math.min(W2,oh.length));
+        const cls=w.map(k=>k.c);
+        let cum=0; const cvd=w.map(k=>{cum+=(2*(k.tb||0)-(k.v||0))*k.c;return cum;});
+        const slope=a=>{const m2=a.length,mx=(m2-1)/2;let my=0;for(const v of a)my+=v;my/=m2;
+          let nu=0,de=0;for(let i2=0;i2<m2;i2++){nu+=(i2-mx)*(a[i2]-my);de+=(i2-mx)*(i2-mx);}return de?nu/de:0;};
+        const pSl=slope(cls)/(cls[0]||1)*w.length;                      // % del precio en el tramo (línea de tendencia)
+        const vTot=w.reduce((s2,k)=>s2+(k.v||0)*k.c,0)||1;
+        const cSl=slope(cvd)/vTot*w.length;                             // CVD relativo al volumen del tramo
+        const pd=pSl>0.005?1:pSl<-0.005?-1:0, cd=cSl>0.004?1:cSl<-0.004?-1:0;
+        const verd=pd>0&&cd>0?{t:'SUBIDA CON RESPALDO',c:'var(--up)',e:'✅'}:
+          pd>0&&cd<0?{t:'SUBE SIN DINERO · divergencia',c:'#F3BA2F',e:'⚠️'}:
+          pd<0&&cd<0?{t:'BAJADA REAL (venden de verdad)',c:'var(--down)',e:'🔻'}:
+          pd<0&&cd>0?{t:'CAE PERO ABSORBEN · posible suelo',c:'#5B9BFF',e:'🧲'}:
+          pd>0?{t:'SUBE · dinero neutro',c:'var(--upDim)',e:'▲'}:pd<0?{t:'BAJA · dinero neutro',c:'var(--downDim)',e:'▼'}:
+          cd>0?{t:'LATERAL · acumulando',c:'#5B9BFF',e:'🧲'}:cd<0?{t:'LATERAL · distribuyendo',c:'#F3BA2F',e:'⚠️'}:{t:'LATERAL · sin señal',c:'var(--dim)',e:'➖'};
+        // movimiento RÁPIDO más grande del tramo (6 velas) explicado automáticamente
+        let best=null;const M2=6,aVol=vTot/w.length;
+        for(let i2=0;i2+M2<w.length;i2++){const r=cls[i2+M2]/cls[i2]-1;
+          if(!best||Math.abs(r)>Math.abs(best.r)){
+            let dv=0,vv2=0;for(let k2=i2+1;k2<=i2+M2;k2++){dv+=(2*(w[k2].tb||0)-(w[k2].v||0))*w[k2].c;vv2+=(w[k2].v||0)*w[k2].c;}
+            best={r,i:i2,dv,volx:vv2/(aVol*M2||1)};}}
+        let move=null;
+        if(best&&Math.abs(best.r)>0.012){
+          const up2=best.r>0, backed=up2?best.dv>0:best.dv<0, ago=w.length-1-(best.i+M2);
+          move={pct:best.r*100,up:up2,backed,
+            expl:(up2?'Subida':'Bajada')+' rápida del '+(Math.abs(best.r)*100).toFixed(1)+'% ('+(ago<=0?'en curso':'hace '+ago+' velas')+')'+
+              (backed?((up2?' CON compra agresiva real detrás':' CON venta agresiva real detrás')+(best.volx>1.5?' y volumen '+best.volx.toFixed(1)+'× la media → movimiento con respaldo.':' → movimiento con respaldo.')):
+                ' SIN dinero agresivo detrás (el CVD no acompaña) → '+(up2?'subida hueca (futuros/squeeze): desconfía.':'presión de futuros/barrida: posible trampa bajista.'))};
+        }
+        rows2.push({tf,span,dir:pd,mdir:cd,verd,move,spark:{p:cls,c:cvd}});
+      }
+      return rows2.length?rows2:null;
+    })();
     const actSt=patterns.filter(p=>p.st);
     const sig10=actSt.length?qMean(actSt.map(p=>p.st.avg)):0;                  // retorno medio histórico 10d de las señales activas
     // Patrones gráficos clásicos (estilo Binance) con su estadística
@@ -3061,7 +3113,7 @@ function QuantView({gFunding}){
     // pasó por el nivel después: esas liquidaciones ya ocurrieron) y se agrupan en
     // clústeres del 1%. Antes el mapa era teórico puro (precio actual ±1/L, sin datos).
     const liqmap=(()=>{
-      const oh=q.ohlc; if(!oh||oh.length<40)return null;
+      const oh=ohD||q.ohlc; if(!oh||oh.length<40)return null; // solo velas CERRADAS (la abierta tiene volumen parcial)
       const rec=oh.slice(-90), n2=rec.length;
       const minAfter=new Array(n2).fill(Infinity), maxAfter=new Array(n2).fill(-Infinity);
       for(let i=n2-2;i>=0;i--){minAfter[i]=Math.min(minAfter[i+1],rec[i+1].l);maxAfter[i]=Math.max(maxAfter[i+1],rec[i+1].h);}
@@ -3217,7 +3269,7 @@ function QuantView({gFunding}){
     })();
     return {price,annVol,rsi,ma200,ma50,ma200w,mc,probUp,probUp15,probDn15,var99,cvar99,coneBT,hiConf,
       fair,lo,hi,valPct,realized,models,plSup,plRes,H,regime,fund,gf,opt,levels,cyc,patterns,corrE,corrS,corrG,corrAvg,liq,usdLiq,gold:q.gold,ritual,optExp,
-      route,tomorrow,tomPct,sig10,pdrift,trap,swingHi,swingLo,routes,biases,chartPats,patsMTF,liqmap,drift,drift30,shutdown,pctLong,pctLongM,lsrZ,lsStrength,manip:manipList,
+      route,tomorrow,tomPct,sig10,pdrift,trap,swingHi,swingLo,routes,biases,chartPats,patsMTF,liqmap,veloTF,drift,drift30,shutdown,pctLong,pctLongM,lsrZ,lsStrength,manip:manipList,
       cal,volScale,sigTarget,dvol:q.dvol,obImb:q.obImb,impDaily,closes:cl,db,skill};
   },[q,gFunding]);
 
@@ -3312,38 +3364,54 @@ function QuantView({gFunding}){
         </div>);
       })()}
 
-      {/* PRECIO OBJETIVO (hero) */}
-      <div className="rise" style={panel({position:'relative',overflow:'hidden',marginBottom:14,padding:'24px 20px',
-        background:`radial-gradient(120% 90% at 50% -10%, ${valState.col}1A 0%, var(--panel) 58%)`,borderColor:`${valState.col}33`})}>
-        <div style={{position:'absolute',top:0,left:'15%',right:'15%',height:1,background:`linear-gradient(90deg,transparent,${valState.col},transparent)`,opacity:.6}}/>
-        <div style={{textAlign:'center'}}>
-          <div style={{...eyebrow,color:valState.col,marginBottom:10}}>Precio objetivo · valor estimado</div>
-          <div className="mono" style={{fontSize:40,fontWeight:800,lineHeight:1,letterSpacing:-1.5,textShadow:`0 0 40px ${valState.col}40`}}>{money(c.fair)}</div>
-          <div style={{fontSize:9,color:'var(--faint)',marginTop:6}}>estimación a LARGO PLAZO (ciclo · ~1 año) · no es el objetivo a 30 días</div>
-          <div style={{...flx({justifyContent:'center',gap:8}),marginTop:11}}>
-            <span className="mono" style={{fontSize:11.5,color:'var(--dim)'}}>actual {money(c.price)}</span>
-            <span className="mono" style={{fontSize:12,fontWeight:700,color:valState.col,padding:'3px 10px',borderRadius:14,
-              background:`${valState.col}18`,border:`1px solid ${valState.col}40`}}>{c.valPct>=0?'+':''}{c.valPct.toFixed(0)}% · {valState.t}</span>
+      {/* 📡 ANÁLISIS VELO · multi-temporalidad (sustituye al "precio objetivo"; automatiza
+          las líneas de tendencia de precio+CVD que se trazan a mano en velo.xyz) */}
+      {c.veloTF&&(()=>{
+        const ups=c.veloTF.filter(r=>r.dir>0).length, dns=c.veloTF.filter(r=>r.dir<0).length;
+        const glob=ups>dns?{t:'ALCISTA en '+ups+' de '+c.veloTF.length+' temporalidades',c:'var(--up)',e:'📈'}:
+          dns>ups?{t:'BAJISTA en '+dns+' de '+c.veloTF.length+' temporalidades',c:'var(--down)',e:'📉'}:
+          {t:'MIXTO entre temporalidades',c:'#F3BA2F',e:'⚖️'};
+        const Spark=({p,cv})=>{const W=290,H=44,P2=3,n2=p.length;
+          const nrm=a=>{const mn=Math.min(...a),mx=Math.max(...a),rg=(mx-mn)||1;return a.map(v=>(v-mn)/rg);};
+          const pn=nrm(p),cn=nrm(cv);
+          const X=i2=>P2+i2/(n2-1)*(W-2*P2), Y=v=>H-P2-v*(H-2*P2);
+          const path=a=>'M '+a.map((v,i2)=>X(i2).toFixed(1)+' '+Y(v).toFixed(1)).join(' L ');
+          return(<svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{display:'block'}}>
+            <path d={path(cn)} fill="none" stroke="#5B9BFF" strokeWidth="1.3" opacity=".9"/>
+            <path d={path(pn)} fill="none" stroke="#F7931A" strokeWidth="1.6"/>
+          </svg>);};
+        return(
+        <div style={panel({marginBottom:14,padding:16})}>
+          <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
+            <span style={eyebrow}>📡 Análisis Velo · multi-temporalidad</span>
+            <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>precio + CVD · automático</span>
           </div>
-          <div style={{...flx({justifyContent:'space-between'}),marginTop:18,paddingTop:14,borderTop:'1px solid var(--line2)'}}>
-            <div><div style={{fontSize:8.5,letterSpacing:1.3,color:'var(--faint)',textTransform:'uppercase',fontWeight:600}}>Conservador</div>
-              <div className="mono" style={{fontSize:13,fontWeight:700,color:'#5B9BFF'}}>{money(c.lo)}</div></div>
-            <div style={{textAlign:'center'}}><div style={{fontSize:8.5,letterSpacing:1.3,color:'var(--faint)',textTransform:'uppercase',fontWeight:600}}>Precio justo</div>
-              <div className="mono" style={{fontSize:13,fontWeight:700,color:'var(--txt)'}}>{money(c.fair)}</div></div>
-            <div style={{textAlign:'right'}}><div style={{fontSize:8.5,letterSpacing:1.3,color:'var(--faint)',textTransform:'uppercase',fontWeight:600}}>Optimista</div>
-              <div className="mono" style={{fontSize:13,fontWeight:700,color:'var(--up)'}}>{money(c.hi)}</div></div>
+          <div style={{fontSize:9,color:'var(--faint)',marginBottom:9,lineHeight:1.5}}>Automatiza el análisis de líneas de tendencia sobre <b style={{color:'#F7931A'}}>precio</b> y <b style={{color:'#5B9BFF'}}>CVD</b> (dinero agresivo real) en cada temporalidad. Los dos de acuerdo = movimiento con respaldo; en desacuerdo = divergencia.</div>
+          {/* veredicto global */}
+          <div style={{...flx({gap:9}),padding:'10px 12px',borderRadius:10,marginBottom:10,background:`${glob.c}12`,border:`1px solid ${glob.c}33`}}>
+            <span style={{fontSize:20}}>{glob.e}</span>
+            <div style={{fontSize:13,fontWeight:800,color:glob.c}}>{glob.t}</div>
           </div>
-          <div style={{marginTop:13,paddingTop:11,borderTop:'1px solid var(--line2)'}}>
-            <div style={{...eyebrow,fontSize:8.5,marginBottom:7,textAlign:'left'}}>Modelos que lo componen</div>
-            {c.models.map((m,i)=>(
-              <div key={i} style={{...flx({justifyContent:'space-between'}),padding:'2.5px 0'}}>
-                <span style={{fontSize:10.5,color:'var(--dim)'}}>{m.n}</span>
-                <span className="mono" style={{fontSize:11,fontWeight:600,color:'var(--txt)'}}>{money(m.v)}</span>
+          {/* una fila por temporalidad: minigráfico + veredicto + explicación del movimiento rápido */}
+          {c.veloTF.map((r,i)=>(
+            <div key={i} style={{padding:'9px 0',borderTop:i?'1px solid #12151F':'none'}}>
+              <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
+                <span style={{...flx({gap:6})}}>
+                  <span className="mono" style={{fontSize:9.5,fontWeight:800,padding:'1px 7px',borderRadius:7,color:'var(--txt)',background:'rgba(255,255,255,.06)',border:'1px solid var(--line2)'}}>{r.tf}</span>
+                  <span style={{fontSize:8,color:'var(--faint)'}}>{r.span}</span>
+                </span>
+                <span className="mono" style={{fontSize:9.5,fontWeight:800,color:r.verd.c}}>{r.verd.e} {r.verd.t}</span>
               </div>
-            ))}
-          </div>
-        </div>
-      </div>
+              <div style={{background:'#0A0D14',borderRadius:8,padding:'5px 7px'}}>
+                <Spark p={r.spark.p} cv={r.spark.c}/>
+              </div>
+              {r.move&&<div style={{fontSize:8.5,lineHeight:1.5,marginTop:4,padding:'6px 9px',borderRadius:8,
+                color:'var(--dim)',background:r.move.backed?'rgba(31,224,160,.06)':'rgba(243,186,47,.07)',
+                border:`1px solid ${r.move.backed?'rgba(31,224,160,.22)':'rgba(243,186,47,.28)'}`}}>
+                {r.move.backed?'💪':'🕳️'} {r.move.expl}</div>}
+            </div>))}
+          <p style={{fontSize:8,color:'var(--faint)',marginTop:8,lineHeight:1.5}}>Naranja = precio · azul = CVD (delta acumulado de compras−ventas agresivas, Binance spot). Tendencias por regresión lineal (la "línea de tendencia" objetiva). Cada subida o bajada rápida y grande del tramo se explica automáticamente con el CVD y el volumen. Solo velas cerradas. Se actualiza solo cada 2 min. No es consejo financiero.</p>
+        </div>);})()}
 
       {/* RUTA CORTO PLAZO · seguimiento diario (la de 30d está más abajo en el cono) */}
       <div style={panel({marginBottom:14,padding:16})}>
@@ -3572,7 +3640,7 @@ function QuantView({gFunding}){
           </div>
         )):<div style={{fontSize:11,color:'var(--faint)',textAlign:'center',padding:'8px 0'}}>Sin patrones claros ahora mismo en ninguna temporalidad.</div>}
           </React.Fragment>);})()}
-        <p style={{fontSize:9,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Patrones detectados en <b>3 temporalidades</b>: <b style={{color:'#F3BA2F'}}>4h</b> (corto plazo, ~166 días de historia), <b>1D</b> (diario, ~8 años) y <b style={{color:'#8AA0FF'}}>SEMANAL</b> (~6 años). Cada uno se backtestea EN SU temporalidad: % = acierto a 10 velas de esa escala (10×4h ≈ 40h · 10 días · 10 semanas) · n = nº de veces que ocurrió. Los de 4h son más frecuentes pero más ruidosos; los semanales, raros pero de más peso. Solo el diario alimenta el cono (evita doble-contar).</p>
+        <p style={{fontSize:9,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Patrones detectados en <b>3 temporalidades</b>: <b style={{color:'#F3BA2F'}}>4h</b> (corto plazo, ~166 días de historia), <b>1D</b> (diario, ~8 años) y <b style={{color:'#8AA0FF'}}>SEMANAL</b> (~6 años). Cada uno se backtestea EN SU temporalidad: % = acierto a 10 velas de esa escala (10×4h ≈ 40h · 10 días · 10 semanas) · n = nº de veces que ocurrió. Los de 4h son más frecuentes pero más ruidosos; los semanales, raros pero de más peso. <b style={{color:'var(--txt)'}}>Solo velas CERRADAS</b>: la vela en curso no confirma un patrón hasta su cierre (puede des-formarse antes) — igual que el backtest, que siempre midió cierres. Solo el diario alimenta el cono (evita doble-contar).</p>
       </div>
 
       {/* PATRONES GRÁFICOS (figuras clásicas estilo Binance, con estadística) */}
