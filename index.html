@@ -4220,7 +4220,7 @@ function QuantView({gFunding}){
         <div style={panel({marginBottom:14,padding:16})}>
           <div style={{...eyebrow,marginBottom:12}}>Valoración on-chain</div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
-            {[['MVRV Z-Score',q.zscore!=null?q.zscore.toFixed(2):'—',zs],['Puell Multiple',q.puell!=null?q.puell.toFixed(2):'—',pu],['SOPR',q.sopr!=null?q.sopr.toFixed(3):'—',so]].map((m,i)=>(
+            {[['MVRV Z-Score',Number.isFinite(q.zscore)?q.zscore.toFixed(2):'—',zs],['Puell Multiple',Number.isFinite(q.puell)?q.puell.toFixed(2):'—',pu],['SOPR',Number.isFinite(q.sopr)?q.sopr.toFixed(3):'—',so]].map((m,i)=>(
               <div key={i} style={{background:'#0A0D14',borderRadius:9,padding:'11px 8px',textAlign:'center'}}>
                 <div className="mono" style={{fontSize:15,fontWeight:800,color:m[2].c}}>{m[1]}</div>
                 <div style={{fontSize:8.5,color:'var(--dim)',marginTop:4}}>{m[0]}</div>
@@ -4296,20 +4296,53 @@ function QuantView({gFunding}){
         </div>
         <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:12}}>{c.liqmap?'clústeres donde se acumulan liquidaciones PENDIENTES: el volumen que entró a cada precio implica liquidaciones a ±1/apalancamiento; las ya barridas por el precio se descartan':'zonas donde se concentran liquidaciones por apalancamiento'}</div>
         {c.liqmap?(()=>{
-          const rows=c.liqmap.above.concat(c.liqmap.below);
-          return rows.map((k,i)=>{
-            const above=k.side==='short', col=above?'#1FE0A0':'#FF5470';
-            return(
-            <div key={i} style={{...flx({gap:8}),padding:'5px 0'}}>
-              <span className="mono" style={{fontSize:10,color:'var(--dim)',width:62,flexShrink:0}}>{money(k.p)}</span>
-              <span className="mono" style={{fontSize:8,color:col,width:34,flexShrink:0}}>{((k.p/c.price-1)*100).toFixed(1)}%</span>
-              <div style={{flex:1,height:8,borderRadius:3,background:'#0A0D14',overflow:'hidden'}}>
-                <div style={{height:'100%',width:`${Math.max(8,k.rel*100)}%`,background:`linear-gradient(90deg,${col}40,${col})`,borderRadius:3,
-                  marginLeft:above?0:'auto'}}/>
-              </div>
-              <span style={{fontSize:8,color:col,width:48,flexShrink:0,textAlign:'right'}}>{above?'liq.cortos':'liq.largos'}</span>
-            </div>);
-          });})():liq.map((k,i)=>{
+          // MAPA vertical de verdad: eje de precio (arriba=más caro), línea del precio
+          // ACTUAL, barras hacia la derecha ∝ intensidad del clúster. Verde arriba =
+          // liquidaciones de CORTOS (imán alcista) · rojo abajo = de LARGOS (imán bajista).
+          const A=c.liqmap.above,B=c.liqmap.below,all2=A.concat(B);
+          const prices=all2.map(x=>x.p).concat([c.price]);
+          let phi=Math.max(...prices),plo=Math.min(...prices);
+          const ppad=((phi-plo)||c.price*0.02)*0.09;phi+=ppad;plo-=ppad;
+          const W=330,Hm=214,PLm=62,PRm=6;
+          const Ym=p=>10+(phi-p)/((phi-plo)||1)*(Hm-20);
+          const maxW=W-PLm-PRm-58; // deja hueco a la etiqueta del %
+          const strongest=all2.reduce((m,x)=>x.rel>m.rel?x:m,all2[0]);
+          // anti-solape: clústeres muy pegados en precio se separan al menos 13px
+          const pos=all2.map(k=>({k,y:Ym(k.p)})).sort((a,b)=>a.y-b.y);
+          for(let i2=1;i2<pos.length;i2++)if(pos[i2].y<pos[i2-1].y+13)pos[i2].y=pos[i2-1].y+13;
+          const yOf=new Map(pos.map(o=>[o.k,Math.min(Hm-8,o.y)]));
+          return(<React.Fragment>
+          <div style={{background:'#0A0D14',borderRadius:10,padding:'8px 6px'}}>
+            <svg viewBox={`0 0 ${W} ${Hm}`} width="100%" style={{display:'block'}}>
+              <defs>
+                <linearGradient id="liqU" x1="0" x2="1"><stop offset="0" stopColor="#1FE0A0" stopOpacity="0.25"/><stop offset="1" stopColor="#1FE0A0"/></linearGradient>
+                <linearGradient id="liqD" x1="0" x2="1"><stop offset="0" stopColor="#FF5470" stopOpacity="0.25"/><stop offset="1" stopColor="#FF5470"/></linearGradient>
+              </defs>
+              {/* eje */}
+              <line x1={PLm-2} y1="6" x2={PLm-2} y2={Hm-6} stroke="var(--line2)" strokeWidth="1"/>
+              {/* clústeres */}
+              {all2.map((k,i)=>{const up=k.side==='short',col=up?'#1FE0A0':'#FF5470';
+                const y=yOf.get(k),w=10+k.rel*(maxW-10),big=k===strongest;
+                return(<g key={i} opacity={big?1:0.82}>
+                  <text x={PLm-8} y={y+3} textAnchor="end" fill="var(--dim)" fontSize="8.5" fontWeight="600" className="mono">{money(k.p)}</text>
+                  <rect x={PLm} y={y-5.5} width={w} height={11} rx="3.5" fill={up?'url(#liqU)':'url(#liqD)'}
+                    stroke={big?col:'none'} strokeWidth={big?1.2:0}/>
+                  <text x={PLm+w+5} y={y+3} fill={col} fontSize="8" fontWeight={big?'800':'600'} className="mono">{(k.p/c.price-1)>=0?'+':''}{((k.p/c.price-1)*100).toFixed(1)}%{big?' ⚡':''}</text>
+                </g>);})}
+              {/* precio actual */}
+              <line x1={PLm-56} y1={Ym(c.price)} x2={W-PRm} y2={Ym(c.price)} stroke="#F7931A" strokeWidth="1.3" strokeDasharray="5 3" opacity=".95"/>
+              <rect x={PLm-60} y={Ym(c.price)-8} width="54" height="15" rx="4" fill="#F7931A"/>
+              <text x={PLm-33} y={Ym(c.price)+3} textAnchor="middle" fill="#07090E" fontSize="8.5" fontWeight="800" className="mono">{money(c.price)}</text>
+            </svg>
+          </div>
+          <div style={{...flx({justifyContent:'space-between'}),marginTop:7,fontSize:7.5,color:'var(--faint)'}}>
+            <span>🟢 liq. cortos (↑)</span><span>⚡ más fuerte</span><span>🔴 liq. largos (↓)</span>
+          </div>
+          <div style={{marginTop:8,padding:'8px 10px',borderRadius:9,background:strongest.side==='short'?'rgba(31,224,160,.07)':'rgba(255,84,112,.07)',
+            border:`1px solid ${strongest.side==='short'?'rgba(31,224,160,.25)':'rgba(255,84,112,.25)'}`,fontSize:9,color:'var(--dim)',lineHeight:1.5}}>
+            🧲 El imán más fuerte está <b style={{color:strongest.side==='short'?'var(--up)':'var(--down)'}}>{strongest.side==='short'?'ARRIBA':'ABAJO'} en {money(strongest.p)} ({(strongest.p/c.price-1)>=0?'+':''}{((strongest.p/c.price-1)*100).toFixed(1)}%)</b>: ahí se concentran las liquidaciones pendientes de {strongest.side==='short'?'cortos':'largos'} — el precio suele ir a buscar esa liquidez. Este imán <b>alimenta el cono</b>.
+          </div>
+          </React.Fragment>);})():liq.map((k,i)=>{
           const above=k.s===1, col=above?'#1FE0A0':'#FF5470', w=Math.min(100,k.L*0.9+10);
           return(
             <div key={i} style={{...flx({gap:8}),padding:'5px 0'}}>
