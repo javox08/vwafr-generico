@@ -2552,7 +2552,21 @@ function candlePatterns(oh){
       [bear(i)&&vol(i)>aVol(i)*3,1,'Clímax de ventas','volumen extremo vendiendo (agotamiento del pánico)',j=>bear(j)&&vol(j)>aVol(j)*3],
       [bull(i)&&vol(i)>aVol(i)*3,-1,'Clímax de compras','volumen extremo comprando (posible euforia/techo)',j=>bull(j)&&vol(j)>aVol(j)*3]);
   }
-  const out=[];for(const d of defs){if(d[0])out.push({t:d[2],sig:d[1],d:d[3],st:bt(d[4]),vela:true});}
+  // PERSISTENCIA: el patrón se queda visible desde que dispara hasta que AGOTA su
+  // horizonte (H=10 velas, el mismo del backtest) o se CANCELA (una vela cierra más
+  // allá del extremo contrario de la vela del patrón: invalida la señal).
+  const out=[];
+  for(const d of defs){
+    let j0=-1;for(let j=n-1;j>=Math.max(start,n-H);j--){if(d[4](j)){j0=j;break;}} // disparo más reciente
+    if(j0<0)continue;
+    const ago=n-1-j0, left=H-ago;
+    let cancelled=false;
+    for(let k=j0+1;k<n;k++){
+      if(d[1]>0&&cl[k]<lo[j0]){cancelled=true;break;}   // alcista: cierre bajo el mínimo de la vela del patrón
+      if(d[1]<0&&cl[k]>hi[j0]){cancelled=true;break;}   // bajista: cierre sobre el máximo
+    }
+    out.push({t:d[2],sig:d[1],d:d[3],st:bt(d[4]),vela:true,ago,left,cancelled});
+  }
   return out;
 }
 // Gráfico interactivo estilo TradingView: cruz (crosshair) que sigue el dedo/ratón
@@ -2730,6 +2744,7 @@ function QuantView({gFunding}){
         if(Number.isFinite(pos)&&pos>0)out.pros=pos/(1+pos);
         if(j&&j.btc&&Array.isArray(j.btc.oiHist)&&j.btc.oiHist.length>24)out.oiHist=j.btc.oiHist; // OI 1h × ~480 ($B)
         if(j&&j.btc&&j.btc.taker&&Number.isFinite(j.btc.taker.pl))out.taker=j.btc.taker.pl; // % long abierto 24h (Coinglass)
+        if(j&&j.btc&&Number.isFinite(j.btc.prem))out.prem=j.btc.prem; // premium agregado futuros-spot (%)
       }catch(_){}
       if(alive)setFlowPro(out);
     };
@@ -2839,7 +2854,7 @@ function QuantView({gFunding}){
       }
       return rows2.length?rows2:null;
     })();
-    const actSt=patterns.filter(p=>p.st);
+    const actSt=patterns.filter(p=>p.st&&!p.cancelled&&!(p.ago>0)); // el cono solo usa disparos FRESCOS y no cancelados (los persistentes son visuales)
     const sig10=actSt.length?qMean(actSt.map(p=>p.st.avg)):0;                  // retorno medio histórico 10d de las señales activas
     // Patrones gráficos clásicos (estilo Binance) con su estadística
     const chartPats=chartPatterns(cl);
@@ -3078,7 +3093,7 @@ function QuantView({gFunding}){
     // Perfil de retorno día a día (path histórico 1..30d) de TODO lo que afecta al
     // precio: patrones técnicos, de velas y figuras gráficas. AHORA las figuras
     // también traen su perfil REAL backtesteado sobre BTC (1…60d), igual que el resto.
-    const actPath=patterns.filter(p=>p.st&&p.st.path).concat(chartPats.filter(p=>p.st&&p.st.path&&!p.forming&&!p.fake&&!p.dud)); // ni EN FORMACIÓN, ni CANCELADAS (fake), ni NO RENTABLES (dud) inclinan el cono
+    const actPath=patterns.filter(p=>p.st&&p.st.path&&!p.cancelled&&!(p.ago>0)).concat(chartPats.filter(p=>p.st&&p.st.path&&!p.forming&&!p.fake&&!p.dud)); // ni EN FORMACIÓN, ni CANCELADAS (fake), ni NO RENTABLES (dud) inclinan el cono
     let cumPath=null;
     if(actPath.length){cumPath=new Array(31).fill(0);let wsum=0;
       for(const p of actPath){const w=Math.min(p.st.n,40),pa=p.st.pathX||p.st.path;wsum+=w;for(let h=1;h<=30;h++)cumPath[h]+=pa[h]*w;}
@@ -3461,13 +3476,35 @@ function QuantView({gFunding}){
               else if(cb<-0.02)F(-1,'Coinbase premium negativo ('+cb.toFixed(3)+'%): instituciones EE.UU. vendiendo');}
             // masa vs pros
             if(masa2!=null&&pros2!=null&&Math.abs(masa2-pros2)>0.08)F(masa2>pros2?-0.5:0.5,masa2>pros2?'Retail mucho más largo que los pros → sobreexposición':'Pros más largos que el retail → señal de calidad');
+            // premium agregado futuros-spot (el "Aggregated Premium" de Velo)
+            const prem=flowPro&&Number.isFinite(flowPro.prem)?flowPro.prem:null;
+            if(prem!=null){if(prem<-0.03)F(-0.5,'Premium agregado NEGATIVO ('+prem.toFixed(3)+'%): los futuros cotizan con descuento sobre spot → miedo (a veces marca suelo)');
+              else if(prem>0.15)F(-0.5,'Premium agregado MUY ALTO (+'+prem.toFixed(3)+'%): apalancamiento sobrecalentado');
+              else if(prem>0.02)F(0.5,'Premium agregado positivo (+'+prem.toFixed(3)+'%): futuros pagan sobre spot → apetito alcista');
+              else F(0,'Premium agregado neutro ('+(prem>=0?'+':'')+prem.toFixed(3)+'%)');}
             // COMBOS especiales (setups de squeeze) — sobreescriben el titular
             let combo=null;
             if(oi24>0.5&&fnd!=null&&fnd<0&&pd<=0)combo={e:'🧨',c:'var(--up)',t:'SETUP DE SHORT SQUEEZE',d:'Entran cortos nuevos (OI↑) pagando funding negativo. Si el precio aguanta, su cierre forzado impulsa AL ALZA.'};
             else if(oi24>0.5&&fnd!=null&&fnd>0.02&&cd<0)combo={e:'🧨',c:'var(--down)',t:'SETUP DE LONG SQUEEZE',d:'Apalancamiento largo creciendo (OI↑) y pagando caro, SIN compra real detrás (CVD↓). Vulnerable a una barrida A LA BAJA.'};
             else if(oi24<-0.5&&fnd!=null&&fnd>0.02)combo={e:'⚠️',c:'#F3BA2F',t:'MERCADO FRÁGIL',d:'El OI baja pero el funding sigue alto: los longs que quedan pagan caro → propenso a sacudidas.'};
             const gl=sc>=2?{t:'DERIVADOS ALCISTAS',c:'var(--up)',e:'📈'}:sc<=-2?{t:'DERIVADOS BAJISTAS',c:'var(--down)',e:'📉'}:{t:'DERIVADOS MIXTOS',c:'#F3BA2F',e:'⚖️'};
+            // 🗣️ NARRATIVA AUTOMÁTICA: responde solo a "¿por qué esta subida/bajada y qué
+            // va a pasar?" — lo que antes se preguntaba pasando una captura.
+            const mv=(pc&&pc.move)||(p1&&p1.move)||null;
+            const porque=mv?mv.expl:
+              pd>0?('El precio sube en el corto plazo'+(cd>0?' con compra agresiva real detrás (CVD↑)':cd<0?' pero SIN dinero agresivo detrás (CVD↓): movimiento de futuros':'')+(oi24>0.5?' y con dinero nuevo entrando (OI↑).':oi24<-0.5?' mientras se cierran posiciones (OI↓): más cierre de cortos que compra nueva.':'.')):
+              pd<0?('El precio cae en el corto plazo'+(cd<0?' con venta agresiva real (CVD↓)':cd>0?' pero el CVD no acompaña: presión de futuros/barrida, no venta real':'')+(oi24>0.5?' y entran cortos nuevos (OI↑): presión real.':oi24<-0.5?' cerrando posiciones (OI↓): desapalancamiento.':'.')):
+              'El precio está lateral: sin dirección clara en el corto plazo.';
+            const despues=combo?combo.d:
+              sc>=2?'Lo más probable: CONTINUIDAD ALCISTA mientras CVD y OI acompañen. Vigilar que el funding no se caliente (>0,02%/8h) — sería señal de sobreapalancamiento.':
+              sc<=-2?'Lo más probable: PRESIÓN BAJISTA hasta que el CVD deje de caer o el funding se ponga negativo (ahí los cortos empiezan a pagar y el riesgo se invierte).':
+              'Sin ventaja clara: escenario de RANGO. La ruptura fiable vendrá cuando precio, CVD y OI apunten al mismo lado — hasta entonces, los movimientos rápidos son ruido/barridas.';
             return(<div style={{marginTop:10,paddingTop:10,borderTop:'1px solid var(--line2)'}}>
+              <div style={{fontSize:8,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.6,fontWeight:700,marginBottom:6}}>🗣️ Qué está pasando (automático)</div>
+              <div style={{padding:'9px 11px',borderRadius:9,marginBottom:9,background:'#0A0D14',border:'1px solid var(--line2)'}}>
+                <div style={{fontSize:9.5,color:'var(--txt)',lineHeight:1.55}}><b style={{color:'var(--dim)'}}>¿Por qué se mueve?</b> {porque}</div>
+                <div style={{fontSize:9.5,color:'var(--txt)',lineHeight:1.55,marginTop:5}}><b style={{color:'var(--dim)'}}>¿Qué es lo más probable?</b> {despues}</div>
+              </div>
               <div style={{fontSize:8,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.6,fontWeight:700,marginBottom:6}}>🧩 Lectura combinada · todos los indicadores afectan</div>
               {combo&&<div style={{...flx({gap:8}),padding:'9px 11px',borderRadius:9,marginBottom:8,background:`${combo.c}10`,border:`1px solid ${combo.c}44`}}>
                 <span style={{fontSize:17}}>{combo.e}</span>
@@ -3681,7 +3718,7 @@ function QuantView({gFunding}){
           // ORDEN POR FIABILIDAD (el más fiable arriba): acierto EN LA DIRECCIÓN del patrón
           // (bajista fiable = % de subida BAJO) menos medio margen de error (así un 70%
           // con 5 casos no gana a un 65% con 200). Los "pocos casos" van al final.
-          const rel=pt=>{if(!pt.st)return -1;
+          const rel=pt=>{if(pt.cancelled)return -2;if(!pt.st)return -1;
             const w=pt.sig>0?pt.st.win:pt.sig<0?100-pt.st.win:50+Math.abs(pt.st.win-50)/2;
             return w-(pt.st.ci||0)/2;};
           const all=c.patterns.concat(c.patsMTF||[]).slice().sort((a,b)=>rel(b)-rel(a));
@@ -3708,6 +3745,7 @@ function QuantView({gFunding}){
               <div style={{...flx({gap:5})}}>
                 <span style={{fontSize:12.5,fontWeight:700,color:pt.sig>0?'var(--up)':pt.sig<0?'var(--down)':'var(--txt)'}}>{pt.t}</span>
                 {pt.tf&&<span className="mono" style={{fontSize:7.5,fontWeight:800,flexShrink:0,padding:'1px 5px',borderRadius:6,color:tfCol[pt.tf]||'var(--dim)',background:'rgba(255,255,255,.05)',border:'1px solid var(--line2)'}}>{pt.tf==='1S'?'SEMANAL':pt.tf}</span>}
+                {pt.left!=null&&<span className="mono" style={{fontSize:7.5,fontWeight:700,flexShrink:0,padding:'1px 5px',borderRadius:6,color:pt.cancelled?'var(--down)':pt.ago>0?'#F3BA2F':'var(--up)',background:'rgba(255,255,255,.04)'}}>{pt.cancelled?'✗ cancelado':pt.ago>0?'⏳ quedan '+pt.left:'✓ nuevo · '+pt.left+' velas'}</span>}
               </div>
               <div style={{fontSize:9.5,color:'var(--faint)'}}>{pt.d}</div>
             </div>

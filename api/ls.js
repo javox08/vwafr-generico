@@ -79,6 +79,18 @@ module.exports = async (req, res) => {
       if (b > 0 && s > 0) out.btc.taker = { b: +b.toFixed(0), s: +s.toFixed(0), pl: +(b / (b + s)).toFixed(4) };
     }
   } catch (e) {}
+  // PREMIUM AGREGADO (el "Aggregated Premium" de Velo): prima del perpetuo sobre su
+  // índice spot, media de Binance y Bybit. >0 = futuros pagan sobre spot (apalancamiento
+  // alcista); <0 = descuento (miedo). En %.
+  try {
+    const ps = [];
+    const bn = await fetch('https://fapi.binance.com/fapi/v1/premiumIndex?symbol=BTCUSDT').then(r => r.json()).catch(() => null);
+    if (bn) { const m = parseFloat(bn.markPrice), ix = parseFloat(bn.indexPrice); if (m > 0 && ix > 0) ps.push((m - ix) / ix * 100); }
+    const by = await fetch('https://api.bybit.com/v5/market/tickers?category=linear&symbol=BTCUSDT').then(r => r.json()).catch(() => null);
+    const bl = by && by.result && by.result.list && by.result.list[0];
+    if (bl) { const m = parseFloat(bl.markPrice), ix = parseFloat(bl.indexPrice); if (m > 0 && ix > 0) ps.push((m - ix) / ix * 100); }
+    if (ps.length) out.btc.prem = +(ps.reduce((a, x) => a + x, 0) / ps.length).toFixed(4);
+  } catch (e) {}
   // HISTÓRICO de OI de BTC (Binance, 1h × 480 ≈ 20 días, en $B): alimenta las tendencias
   // de interés abierto del "Análisis Velo" de la web (OI↑ con precio↑ = dinero nuevo, etc.)
   try {
