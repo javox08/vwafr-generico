@@ -3433,7 +3433,13 @@ function QuantView({gFunding}){
           {/* una fila por temporalidad: minigráfico + veredicto + OI + movimiento rápido */}
           {c.veloTF.map((r,i)=>{
             // OI del tramo (histórico real 1h del relé): la lectura clásica precio+OI
-            let oi=null;const oiH=flowPro&&flowPro.oiHist;
+            // + dirección del CVD de FUTUROS del mismo tramo (la lente de Velo; el veredicto
+            // usa el CVD spot = dinero real, y este chip muestra si los futuros coinciden)
+            let oi=null,futDir=null;const oiH=flowPro&&flowPro.oiHist;
+            {const cvF2=flowPro&&flowPro.cvdFut;const hoursOf2={'15m':24,'1h':120,'4h':480,'1D':480};
+              if(cvF2&&cvF2.length>24){const h2=Math.min(hoursOf2[r.tf]||24,cvF2.length-1);
+                const dF2=cvF2[cvF2.length-1]-cvF2[cvF2.length-1-h2];
+                if(Math.abs(dF2)>30)futDir=dF2>0?1:-1;}}
             if(oiH&&oiH.length>24){const hoursOf={'15m':24,'1h':120,'4h':480,'1D':480};
               const hrs=Math.min(hoursOf[r.tf]||24,oiH.length);const seg=oiH.slice(-hrs);
               const chg=(seg[seg.length-1]/seg[0]-1)*100;const up2=chg>0.5,dn2=chg<-0.5;
@@ -3450,6 +3456,7 @@ function QuantView({gFunding}){
                   <span className="mono" style={{fontSize:9.5,fontWeight:800,padding:'1px 7px',borderRadius:7,color:'var(--txt)',background:'rgba(255,255,255,.06)',border:'1px solid var(--line2)'}}>{r.tf}</span>
                   <span style={{fontSize:8,color:'var(--faint)'}}>{r.span}</span>
                   {oi&&<span className="mono" style={{fontSize:8,fontWeight:700,color:oi.chg>=0?'var(--up)':'var(--down)'}}>OI {oi.chg>=0?'+':''}{oi.chg.toFixed(1)}% ({oi.lbl})</span>}
+                  {futDir!=null&&<span className="mono" style={{fontSize:8,fontWeight:700,color:futDir>0?'#B18CFF':'#B06A86'}}>fut {futDir>0?'↑ compran':'↓ venden'}</span>}
                 </span>
                 <span className="mono" style={{fontSize:9.5,fontWeight:800,color:r.verd.c}}>{r.verd.e} {r.verd.t}</span>
               </div>
