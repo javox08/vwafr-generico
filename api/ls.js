@@ -68,6 +68,17 @@ module.exports = async (req, res) => {
       const bc = out.coins.find(x => x.c === 'BTC'); if (bc) bc.rp = out.btc.pos;
     }
   }
+  // TAKER LONG/SHORT 24h de BTC (el número que enseña Coinglass en portada): cuánto
+  // volumen AGRESIVO abrió largos vs cortos en 24h en Binance Futures. Distinto del
+  // ratio de CUENTAS (posicionamiento): esto es FLUJO de órdenes, y suele rondar 50/50.
+  try {
+    const tk = await fetch('https://fapi.binance.com/futures/data/takerlongshortRatio?symbol=BTCUSDT&period=1h&limit=24').then(r => r.json()).catch(() => null);
+    if (Array.isArray(tk) && tk.length) {
+      let b = 0, s = 0;
+      for (const x of tk) { const bv = parseFloat(x.buyVol), sv = parseFloat(x.sellVol); if (Number.isFinite(bv)) b += bv; if (Number.isFinite(sv)) s += sv; }
+      if (b > 0 && s > 0) out.btc.taker = { b: +b.toFixed(0), s: +s.toFixed(0), pl: +(b / (b + s)).toFixed(4) };
+    }
+  } catch (e) {}
   // VOLUMEN 24h FUTUROS vs SPOT (mismo exchange = comparable): Binance BTC+ETH.
   // Futuros = derivados apalancados; spot = compra/venta real. Ratio del mercado.
   {

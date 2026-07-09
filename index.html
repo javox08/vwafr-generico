@@ -3055,10 +3055,38 @@ function QuantView({gFunding}){
     // deriva TOTAL por día = parte constante (buckets) + perfil de patrones + corrección
     const drift30=[];for(let d=1;d<=30;d++)drift30[d-1]=cl0(constOther+(cumPath?patDrift[d]:techDaily)+db.adj+ritDrift[d],0.008);
     const drift=qMean(drift30); // escalar representativo (para mostrar)
-    // ── IMÁN del mapa de liquidez: el precio tiende hacia los clústeres de
-    // liquidaciones (niveles de apalancamiento) y hacia los máximos/mínimos recientes.
+    // ── MAPA DE LIQUIDEZ REAL (estimado con DATOS recolectados, estilo Coinglass):
+    // el volumen en $ que entró cada día a su precio implica liquidaciones PENDIENTES en
+    // e·(1±1/L) para los apalancamientos típicos. Se DESCARTAN las ya barridas (el precio
+    // pasó por el nivel después: esas liquidaciones ya ocurrieron) y se agrupan en
+    // clústeres del 1%. Antes el mapa era teórico puro (precio actual ±1/L, sin datos).
+    const liqmap=(()=>{
+      const oh=q.ohlc; if(!oh||oh.length<40)return null;
+      const rec=oh.slice(-90), n2=rec.length;
+      const minAfter=new Array(n2).fill(Infinity), maxAfter=new Array(n2).fill(-Infinity);
+      for(let i=n2-2;i>=0;i--){minAfter[i]=Math.min(minAfter[i+1],rec[i+1].l);maxAfter[i]=Math.max(maxAfter[i+1],rec[i+1].h);}
+      const tiers=[[10,0.7],[25,1],[50,0.9],[100,0.6]]; // [apalancamiento, peso de uso típico]
+      const bw=price*0.01, B=new Map(); // clústeres del 1%
+      const add=(p,side,w)=>{const k=Math.round(p/bw);const o=B.get(k)||{p:k*bw,long:0,short:0};o[side]+=w;B.set(k,o);};
+      for(let i=0;i<n2;i++){const e=(rec[i].h+rec[i].l+rec[i].c)/3, base=(rec[i].v||0)*e*(0.4+0.6*i/n2);
+        if(!(base>0))continue;
+        for(const [L,tw] of tiers){
+          const ql=e*(1-1/L); if(ql<price&&minAfter[i]>ql)add(ql,'long',base*tw/L);   // /L: a más apalancamiento, menos notional real detrás
+          const qs=e*(1+1/L); if(qs>price&&maxAfter[i]<qs)add(qs,'short',base*tw/L);
+        }}
+      const rows=[...B.values()];
+      const below=rows.filter(r=>r.long>0&&r.p<price).map(r=>({p:r.p,side:'long',w:r.long})).sort((a,b)=>b.w-a.w).slice(0,4);
+      const above=rows.filter(r=>r.short>0&&r.p>price).map(r=>({p:r.p,side:'short',w:r.short})).sort((a,b)=>b.w-a.w).slice(0,4);
+      const all=above.concat(below); if(!all.length)return null;
+      const wmax=Math.max(...all.map(x=>x.w));
+      for(const x of all)x.rel=x.w/wmax;
+      return {above:above.sort((a,b)=>b.p-a.p),below:below.sort((a,b)=>b.p-a.p)};
+    })();
+    // ── IMÁN del cono: los clústeres REALES del mapa (si hay); respaldo teórico si no.
     const mags=[];
-    for(const L of [100,50,25,10]){const w=L/100;
+    if(liqmap){for(const x of liqmap.above.slice(0,3))mags.push({p:x.p,w:0.4+0.6*x.rel});
+      for(const x of liqmap.below.slice(0,3))mags.push({p:x.p,w:0.4+0.6*x.rel});}
+    else for(const L of [100,50,25,10]){const w=L/100;
       mags.push({p:price*(1+1/L),w});mags.push({p:price*(1-1/L),w});}
     if(q.ohlc&&q.ohlc.length>10){const l60=q.ohlc.slice(-60);
       mags.push({p:Math.max(...l60.map(k=>k.h)),w:0.8});
@@ -3189,7 +3217,7 @@ function QuantView({gFunding}){
     })();
     return {price,annVol,rsi,ma200,ma50,ma200w,mc,probUp,probUp15,probDn15,var99,cvar99,coneBT,hiConf,
       fair,lo,hi,valPct,realized,models,plSup,plRes,H,regime,fund,gf,opt,levels,cyc,patterns,corrE,corrS,corrG,corrAvg,liq,usdLiq,gold:q.gold,ritual,optExp,
-      route,tomorrow,tomPct,sig10,pdrift,trap,swingHi,swingLo,routes,biases,chartPats,patsMTF,drift,drift30,shutdown,pctLong,pctLongM,lsrZ,lsStrength,manip:manipList,
+      route,tomorrow,tomPct,sig10,pdrift,trap,swingHi,swingLo,routes,biases,chartPats,patsMTF,liqmap,drift,drift30,shutdown,pctLong,pctLongM,lsrZ,lsStrength,manip:manipList,
       cal,volScale,sigTarget,dvol:q.dvol,obImb:q.obImb,impDaily,closes:cl,db,skill};
   },[q,gFunding]);
 
@@ -3922,14 +3950,28 @@ function QuantView({gFunding}){
         </div>);
       })()}
 
-      {/* MAPA DE LIQUIDEZ */}
+      {/* MAPA DE LIQUIDEZ (clústeres REALES estimados del volumen histórico) */}
       <div style={panel({marginBottom:14,padding:16})}>
         <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
-          <span style={eyebrow}>Mapa de liquidez · estimado</span>
-          <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>clústeres de liquidación</span>
+          <span style={eyebrow}>Mapa de liquidez</span>
+          <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>{c.liqmap?'estimado del volumen real 90d':'estimado teórico'}</span>
         </div>
-        <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:12}}>zonas donde se concentran liquidaciones por apalancamiento</div>
-        {liq.map((k,i)=>{
+        <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:12}}>{c.liqmap?'clústeres donde se acumulan liquidaciones PENDIENTES: el volumen que entró a cada precio implica liquidaciones a ±1/apalancamiento; las ya barridas por el precio se descartan':'zonas donde se concentran liquidaciones por apalancamiento'}</div>
+        {c.liqmap?(()=>{
+          const rows=c.liqmap.above.concat(c.liqmap.below);
+          return rows.map((k,i)=>{
+            const above=k.side==='short', col=above?'#1FE0A0':'#FF5470';
+            return(
+            <div key={i} style={{...flx({gap:8}),padding:'5px 0'}}>
+              <span className="mono" style={{fontSize:10,color:'var(--dim)',width:62,flexShrink:0}}>{money(k.p)}</span>
+              <span className="mono" style={{fontSize:8,color:col,width:34,flexShrink:0}}>{((k.p/c.price-1)*100).toFixed(1)}%</span>
+              <div style={{flex:1,height:8,borderRadius:3,background:'#0A0D14',overflow:'hidden'}}>
+                <div style={{height:'100%',width:`${Math.max(8,k.rel*100)}%`,background:`linear-gradient(90deg,${col}40,${col})`,borderRadius:3,
+                  marginLeft:above?0:'auto'}}/>
+              </div>
+              <span style={{fontSize:8,color:col,width:48,flexShrink:0,textAlign:'right'}}>{above?'liq.cortos':'liq.largos'}</span>
+            </div>);
+          });})():liq.map((k,i)=>{
           const above=k.s===1, col=above?'#1FE0A0':'#FF5470', w=Math.min(100,k.L*0.9+10);
           return(
             <div key={i} style={{...flx({gap:8}),padding:'5px 0'}}>
@@ -5193,7 +5235,7 @@ function App(){
           const j=await fetch(LS_RELAY).then(r=>r.json());
           out=((j&&j.coins)||[]).filter(x=>Number.isFinite(x.r)&&x.r>0).map(x=>({c:x.c,pl:x.r/(1+x.r),srcs:x.srcs||1,rp:x.rp,
             plPro:(Number.isFinite(x.rp)&&x.rp>0)?x.rp/(1+x.rp):null})); // pros (top traders) por moneda
-          if(alive&&j&&j.mkt)setLsMkt(j.mkt);
+          if(alive&&j&&(j.mkt||(j.btc&&j.btc.taker)))setLsMkt({...(j.mkt||{}),taker:(j.btc&&j.btc.taker)||null});
         }catch(_){}
         if(!out.length){ // respaldo: OKX directo (si algún día abre CORS)
           await Promise.all(FALLBACK_COINS.slice(0,10).map(async c2=>{try{
@@ -5501,6 +5543,11 @@ function App(){
               {/* quién mueve el FUNDING: siempre los futuros; el spot confirma o contradice */}
               {fundTxt&&<div style={{gridColumn:'1 / -1',fontSize:8.5,lineHeight:1.5,color:'var(--faint)',background:'#0A0D14',border:'1px solid var(--line2)',borderRadius:8,padding:'7px 9px'}}>
                 <b style={{color:fundColor}}>Funding {fmt(fNow,3)}</b> · lo mueven los <b style={{color:'var(--txt)'}}>FUTUROS</b> (el spot no tiene funding): {fundTxt}</div>}
+              {/* FILA "COINGLASS" · volumen taker 24h: cuánto se ABRIÓ en long vs short (flujo real) */}
+              {lsMkt&&lsMkt.taker&&Number.isFinite(lsMkt.taker.pl)&&<React.Fragment>
+                <Tile v={(lsMkt.taker.pl*100).toFixed(1)+'% LONG'} c={'var(--up)'} sub={'⚡ ABIERTO en 24h · volumen taker (estilo Coinglass)'}/>
+                <Tile v={((1-lsMkt.taker.pl)*100).toFixed(1)+'% SHORT'} c={'var(--down)'} sub={'⚡ ABIERTO en 24h · '+(lsMkt.taker.pl>=0.5?'dominan las aperturas de LARGOS':'dominan las aperturas de CORTOS')}/>
+              </React.Fragment>}
               {/* FILA 2 · MASA (cuentas retail): SESGO de posicionamiento en % (no es dinero:
                   en futuros el $ largo = $ corto = OI; esto es cuántas cuentas hay en cada lado) */}
               {masa!=null&&<React.Fragment>
