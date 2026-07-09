@@ -2373,10 +2373,14 @@ function chartPatterns(cl){
     if(!trig)continue;
     // INVALIDACIÓN ("fake"): si tras confirmar, el precio vuelve a cruzar el nivel de
     // ruptura en contra, la figura se marca cancelada y DEJA de inclinar el cono.
-    let fake=false;
+    // Se muestra como "✗ cancelada" durante 3 velas y luego SE RETIRA de la lista
+    // (su estadística sigue en la base; si vuelve a romper, reaparece).
+    let fake=false,fakeAgo=0;
     if(!forming&&trigJ>0&&trigJ<n-1){const ref=cl[trigJ-1];
-      if(sig>0&&cl[n-1]<ref*0.99)fake=true;
-      if(sig<0&&cl[n-1]>ref*1.01)fake=true;}
+      for(let k=trigJ+1;k<n;k++){
+        if((sig>0&&cl[k]<ref*0.99)||(sig<0&&cl[k]>ref*1.01)){fake=true;fakeAgo=n-1-k;break;}
+      }}
+    if(fake&&fakeAgo>=3)continue;
     const st=bt(fn,sig);
     // ¿la estadística CONTRADICE la teoría? patrón poco rentable: acierto histórico
     // por debajo del azar (<48%) o retorno medio en CONTRA de su dirección teórica.
@@ -2560,11 +2564,14 @@ function candlePatterns(oh){
     let j0=-1;for(let j=n-1;j>=Math.max(start,n-H);j--){if(d[4](j)){j0=j;break;}} // disparo más reciente
     if(j0<0)continue;
     const ago=n-1-j0, left=H-ago;
-    let cancelled=false;
+    let cancelled=false,cancelAgo=0;
     for(let k=j0+1;k<n;k++){
-      if(d[1]>0&&cl[k]<lo[j0]){cancelled=true;break;}   // alcista: cierre bajo el mínimo de la vela del patrón
-      if(d[1]<0&&cl[k]>hi[j0]){cancelled=true;break;}   // bajista: cierre sobre el máximo
+      if((d[1]>0&&cl[k]<lo[j0])||(d[1]<0&&cl[k]>hi[j0])){cancelled=true;cancelAgo=n-1-k;break;} // cierre más allá del extremo contrario
     }
+    // el cancelado se muestra 2 velas (aviso "✗ cancelado") y luego SE RETIRA de la
+    // lista para no estorbar; su estadística sigue en la base (bt) y si el patrón
+    // vuelve a dispararse, reaparece como disparo nuevo.
+    if(cancelled&&cancelAgo>=2)continue;
     out.push({t:d[2],sig:d[1],d:d[3],st:bt(d[4]),vela:true,ago,left,cancelled});
   }
   return out;
