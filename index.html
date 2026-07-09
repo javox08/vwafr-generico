@@ -3510,7 +3510,22 @@ function QuantView({gFunding}){
         )}
         {(()=>{const all=c.patterns.concat(c.patsMTF||[]);
           const tfCol={'4h':'#F3BA2F','1D':'var(--accent)','1S':'#8AA0FF'};
-          return all.length?all.map((pt,i)=>(
+          // CONFLUENCIA multi-temporalidad: solo patrones CON ventaja medida (acierto>52%).
+          // Varias escalas apuntando al mismo lado = señal más fiable que cualquiera sola.
+          const good=all.filter(p=>p.sig!==0&&p.st&&p.st.win>52);
+          const bull=good.filter(p=>p.sig>0).length,bear=good.filter(p=>p.sig<0).length;
+          const tfs=[...new Set(good.map(p=>p.tf).filter(Boolean))];
+          const confl=(bull+bear)>=3&&(bull>=2*bear||bear>=2*bull)?{up:bull>bear,n:bull>bear?bull:bear,vs:bull>bear?bear:bull}:null;
+          return(<React.Fragment>
+          {confl&&<div style={{...flx({gap:8}),marginBottom:10,padding:'9px 11px',borderRadius:9,
+            background:confl.up?'rgba(31,224,160,.08)':'rgba(255,84,112,.08)',border:`1px solid ${confl.up?'rgba(31,224,160,.3)':'rgba(255,84,112,.3)'}`}}>
+            <span style={{fontSize:15}}>{confl.up?'📈':'📉'}</span>
+            <div style={{flex:1}}>
+              <div style={{fontSize:11.5,fontWeight:800,color:confl.up?'var(--up)':'var(--down)'}}>Confluencia {confl.up?'ALCISTA':'BAJISTA'}: {confl.n} patrones con ventaja vs {confl.vs}</div>
+              <div style={{fontSize:8.5,color:'var(--faint)',lineHeight:1.4}}>en {tfs.length>1?tfs.join(' + '):(tfs[0]||'1D')} · solo cuentan los de acierto &gt;52% · varias escalas de acuerdo = señal más fiable que cualquiera sola</div>
+            </div>
+          </div>}
+          {all.length?all.map((pt,i)=>(
           <div key={i} onClick={()=>{if(pt.vela&&CANDLE_ART[pt.t])setVelaSel(pt);else setInfoSel({...pt,kind:'tecnico'});}} style={{...flx({gap:9}),padding:'9px 0',borderTop:i?'1px solid #12151F':'none',cursor:'pointer'}}>
             <span style={{fontSize:15,color:pt.sig>0?'var(--up)':pt.sig<0?'var(--down)':'var(--faint)'}}>{pt.sig>0?'▲':pt.sig<0?'▼':'◆'}{pt.vela?'🕯️':''}</span>
             <div style={{flex:1,minWidth:0}}>
@@ -3527,7 +3542,8 @@ function QuantView({gFunding}){
               </div>
             ):<div style={{fontSize:8.5,color:'var(--faint)',textAlign:'right',flexShrink:0,maxWidth:60}}>pocos casos</div>}
           </div>
-        )):<div style={{fontSize:11,color:'var(--faint)',textAlign:'center',padding:'8px 0'}}>Sin patrones claros ahora mismo en ninguna temporalidad.</div>;})()}
+        )):<div style={{fontSize:11,color:'var(--faint)',textAlign:'center',padding:'8px 0'}}>Sin patrones claros ahora mismo en ninguna temporalidad.</div>}
+          </React.Fragment>);})()}
         <p style={{fontSize:9,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Patrones detectados en <b>3 temporalidades</b>: <b style={{color:'#F3BA2F'}}>4h</b> (corto plazo, ~166 días de historia), <b>1D</b> (diario, ~8 años) y <b style={{color:'#8AA0FF'}}>SEMANAL</b> (~6 años). Cada uno se backtestea EN SU temporalidad: % = acierto a 10 velas de esa escala (10×4h ≈ 40h · 10 días · 10 semanas) · n = nº de veces que ocurrió. Los de 4h son más frecuentes pero más ruidosos; los semanales, raros pero de más peso. Solo el diario alimenta el cono (evita doble-contar).</p>
       </div>
 
