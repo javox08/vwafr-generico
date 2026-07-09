@@ -3516,11 +3516,51 @@ function QuantView({gFunding}){
               sc>=2?('Lo más probable: CONTINUIDAD ALCISTA mientras CVD y OI acompañen'+(hi1?' — objetivo natural del tramo: '+money(hi1):'')+'. Se cancela si el CVD se gira o el funding se calienta (>0,02%/8h).'):
               sc<=-2?('PRESIÓN BAJISTA dominante'+(lo1?': perder '+money(lo1)+' abre caída rápida':'')+'. Se invierte cuando el CVD deje de caer o el funding se ponga negativo (los cortos empiezan a pagar).'):
               ('Sin ventaja clara: RANGO probable'+(lo1&&hi1?' entre '+money(lo1)+' y '+money(hi1):'')+'. La ruptura fiable llegará cuando precio, CVD y OI apunten al mismo lado; hasta entonces, los movimientos rápidos suelen ser barridas.');
+            // 🎯 MOTIVOS DEL MOVIMIENTO ACTUAL: detecta lo que ACABA de hacer el precio
+            // (última pierna en 15m/1h) y lista los motivos leyendo cada indicador EN ese
+            // tramo — "cuando sube, motivos; cuando baja, motivos".
+            const fmtM2=v=>{const a=Math.abs(v);return (v<0?'−':'+')+(a>=1e9?'$'+(a/1e9).toFixed(1)+'B':'$'+Math.round(a/1e6)+'M');};
+            const r15=c.veloTF.find(r=>r.tf==='15m')||pc;
+            let motivo=null;
+            if(r15&&r15.spark&&r15.spark.p.length>26){
+              const P=r15.spark.p,C=r15.spark.c,n3=P.length,barsH=r15.tf==='15m'?0.25:1;
+              let bars=12,rr=P[n3-1]/P[n3-1-bars]-1;
+              const rr24=P[n3-1]/P[n3-25]-1; if(Math.abs(rr24)>Math.abs(rr)*1.6){bars=24;rr=rr24;}
+              const horas=Math.max(1,Math.round(bars*barsH));
+              if(Math.abs(rr)>=0.006){
+                const up3=rr>0, cvdD=C[n3-1]-C[n3-1-bars], ms=[];
+                if(up3&&cvdD>0)ms.push(['+','Compra agresiva REAL: '+fmtM2(cvdD)+' netos comprando a mercado (CVD↑)']);
+                else if(up3)ms.push(['!','SIN compra agresiva neta ('+fmtM2(cvdD)+'): sube por cierres/compra pasiva, no demanda nueva']);
+                else if(cvdD<0)ms.push(['-','Venta agresiva REAL: '+fmtM2(cvdD)+' netos vendiendo a mercado (CVD↓)']);
+                else ms.push(['!','SIN venta agresiva neta: cae por cierres de largos, no pánico vendedor']);
+                const oiH2=flowPro&&flowPro.oiHist;
+                if(oiH2&&oiH2.length>horas+1){const chgL=(oiH2[oiH2.length-1]/oiH2[oiH2.length-1-horas]-1)*100;
+                  if(up3&&chgL>0.15)ms.push(['+','OI +'+chgL.toFixed(1)+'%: LARGOS NUEVOS entrando → dinero nuevo apostando a la subida']);
+                  else if(up3&&chgL<-0.15)ms.push(['!','OI '+chgL.toFixed(1)+'%: CIERRE DE CORTOS (short covering) → sube porque los cortos recompran, no por demanda nueva']);
+                  else if(!up3&&chgL>0.15)ms.push(['-','OI +'+chgL.toFixed(1)+'%: CORTOS NUEVOS entrando → apuestan a más caída']);
+                  else if(!up3&&chgL<-0.15)ms.push(['!','OI '+chgL.toFixed(1)+'%: largos cerrando/liquidados → cae por desapalancamiento']);}
+                if(prem!=null&&prem<-0.02)ms.push([up3?'!':'-','Futuros aún con DESCUENTO ('+prem.toFixed(3)+'%): el mercado no se lo cree del todo']);
+                else if(prem!=null&&prem>0.08)ms.push([up3?'-':'!','Prima ALTA en futuros (+'+prem.toFixed(3)+'%): euforia apalancada']);
+                if(cb!=null&&cb<-0.05)ms.push([up3?'!':'-','Coinbase negativo ('+cb.toFixed(2)+'%): EE.UU./institucionales NO acompañan']);
+                else if(cb!=null&&cb>0.05)ms.push(['+','Coinbase positivo (+'+cb.toFixed(2)+'%): EE.UU. comprando spot (demanda real)']);
+                if(tk!=null&&tk>0.53)ms.push(['+','En 24h se abren más LARGOS que cortos ('+(tk*100).toFixed(0)+'%)']);
+                else if(tk!=null&&tk<0.47)ms.push(['-','En 24h se abren más CORTOS que largos ('+((1-tk)*100).toFixed(0)+'%)']);
+                motivo={up:up3,pct:rr*100,horas,ms};
+              }}
             return(<div style={{marginTop:10,paddingTop:10,borderTop:'1px solid var(--line2)'}}>
               <div style={{fontSize:8,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.6,fontWeight:700,marginBottom:6}}>🗣️ Qué está pasando (automático)</div>
               <div style={{padding:'9px 11px',borderRadius:9,marginBottom:9,background:'#0A0D14',border:'1px solid var(--line2)'}}>
-                <div style={{fontSize:9.5,color:'var(--txt)',lineHeight:1.55}}><b style={{color:'var(--dim)'}}>¿Por qué se mueve?</b> {porque}</div>
-                <div style={{fontSize:9.5,color:'var(--txt)',lineHeight:1.55,marginTop:5}}><b style={{color:'var(--dim)'}}>¿Qué es lo más probable?</b> {despues}</div>
+                {motivo?(<React.Fragment>
+                  <div style={{fontSize:12.5,fontWeight:800,color:motivo.up?'var(--up)':'var(--down)',marginBottom:5}}>
+                    {motivo.up?'📈 SUBIENDO':'📉 BAJANDO'} {motivo.pct>=0?'+':''}{motivo.pct.toFixed(1)}% en ~{motivo.horas}h · motivos:</div>
+                  {motivo.ms.map(([s2,txt],i3)=>(<div key={i3} style={{...flx({gap:6}),padding:'2px 0'}}>
+                    <span style={{fontSize:9,fontWeight:800,width:13,flexShrink:0,color:s2==='+'?'var(--up)':s2==='-'?'var(--down)':'#F3BA2F'}}>{s2==='+'?'▲':s2==='-'?'▼':'⚠'}</span>
+                    <span style={{fontSize:9.5,color:'var(--txt)',lineHeight:1.45}}>{txt}</span>
+                  </div>))}
+                </React.Fragment>):(
+                  <div style={{fontSize:9.5,color:'var(--txt)',lineHeight:1.55}}><b style={{color:'var(--dim)'}}>Sin movimiento fuerte ahora (lateral).</b> {porque}</div>
+                )}
+                <div style={{fontSize:9.5,color:'var(--txt)',lineHeight:1.55,marginTop:6,paddingTop:6,borderTop:'1px solid var(--line2)'}}><b style={{color:'var(--dim)'}}>¿Qué es lo más probable?</b> {despues}</div>
               </div>
               <div style={{fontSize:8,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.6,fontWeight:700,marginBottom:6}}>🧩 Lectura combinada · todos los indicadores afectan</div>
               {combo&&<div style={{...flx({gap:8}),padding:'9px 11px',borderRadius:9,marginBottom:8,background:`${combo.c}10`,border:`1px solid ${combo.c}44`}}>
