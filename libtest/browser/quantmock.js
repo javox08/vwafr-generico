@@ -1,0 +1,45 @@
+// MOCK COMPLETO: intercepta fetch y sirve datos sintéticos plausibles para que la vista
+// CUANTITATIVA monte entera (klines multi-temporalidad, relé ls, on-chain, etc.)
+(function(){
+  var errs=[];window.addEventListener('error',function(e){errs.push('ERR: '+(e.message||e.error));});
+  window.addEventListener('unhandledrejection',function(e){errs.push('REJ: '+(e.reason&&e.reason.message||e.reason));});
+  window.__errs=errs;
+  function klines(url){
+    var u=new URL(url),limit=+(u.searchParams.get('limit')||500),iv=u.searchParams.get('interval')||'1d';
+    var ms={'15m':9e5,'1h':36e5,'4h':144e5,'1d':864e5,'1w':6048e5}[iv]||864e5;
+    var end=Date.now(),px=60000,rows=[];
+    for(var i=limit-1;i>=0;i--){var t=end-i*ms;
+      var r=(Math.random()-0.493)*0.02,o=px,c=px*(1+r);px=c;
+      var h=Math.max(o,c)*(1+Math.random()*0.006),l=Math.min(o,c)*(1-Math.random()*0.006);
+      var v=100+Math.random()*100,tb=v*(0.44+Math.random()*0.12);
+      rows.push([t-ms,''+o,''+h,''+l,''+c,''+v,t+(i===0?ms/2:0),'0','0',''+tb,'0','0']);}
+    return rows;
+  }
+  var oiH=[];for(var i2=0;i2<480;i2++)oiH.push(+(6+Math.sin(i2/40)*0.3+Math.random()*0.05).toFixed(3));
+  var pmH=[];for(var i3=0;i3<480;i3++)pmH.push(+((Math.random()-0.6)*0.08).toFixed(4));
+  var fdH=[];for(var i4=0;i4<270;i4++)fdH.push(+((Math.random()*0.02)-0.005).toFixed(4));
+  var mk=function(c,r,rp){return {c:c,r:r,srcs:3,rp:rp};};
+  var lsData={t:Date.now(),coins:[mk('BTC',1.5,1.17),mk('ETH',1.8,1.05),mk('SOL',2.1,0.9),mk('XRP',1.2,1.3),mk('BNB',1.4,1.1),
+    mk('DOGE',2.5,0.8),mk('ADA',1.1,1.2),mk('AVAX',1.7,0.95),mk('LINK',1.3,1.15),mk('LTC',1.6,1.0)],
+    btc:{pos:1.17,posSrcs:2,posEx:['OKX','Binance'],posW:true,taker:{b:52300,s:49100,pl:0.5158},prem:-0.038,
+      oiHist:oiH,premHist:pmH,fundHist:fdH,premHistD:pmH.slice(0,90),oiHistD:oiH.slice(0,30),
+      hist:Array.from({length:72},function(){return 1.5+Math.random()*0.1;})},
+    mkt:{futVol:14.9,spotVol:1.2}};
+  var J=function(o){return Promise.resolve(new Response(JSON.stringify(o),{status:200,headers:{'Content-Type':'application/json'}}));};
+  window.fetch=function(u){u=''+u;
+    try{
+      if(u.indexOf('/api/ls')>=0)return J(lsData);
+      if(u.indexOf('/api/fr')>=0)return J({t:Date.now(),ex:{Gate:{BTC:{f:0.004,oi:2.1}},MEXC:{BTC:{f:0.01,oi:4.9}},Binance:{BTC:{f:0.008,oi:12.2}},Bybit:{BTC:{f:0.006,oi:7.5}},Bitget:{BTC:{f:0.004,oi:2.2}}}});
+      if(u.indexOf('/api/funding')>=0)return J({updated:Date.now(),coins:['BTC','ETH','SOL','XRP','BNB','DOGE','ADA','AVAX','LINK','LTC'],data:{}});
+      if(u.indexOf('/klines')>=0)return J(klines(u));
+      if(u.indexOf('api.binance.com/api/v3/ticker/price')>=0)return J({price:'60000'});
+      if(u.indexOf('coinbase.com/products/BTC-USD/ticker')>=0)return J({price:'60040'});
+      if(u.indexOf('alternative.me')>=0)return J({data:[{value:'45',value_classification:'Fear'}]});
+      if(u.indexOf('bitcoin-data.com/v1/mvrv/last')>=0)return J({mvrv:'1.21'});
+      if(u.indexOf('bitcoin-data.com/v1/nupl/last')>=0)return J({nupl:'0.16'});
+      if(u.indexOf('bitcoin-data.com')>=0)return J({});
+      if(u.indexOf('depth')>=0)return J({bids:[['60000','1']],asks:[['60010','1']]});
+      return J({});
+    }catch(e){return J({});}
+  };
+})();
