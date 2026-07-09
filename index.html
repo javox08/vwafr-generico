@@ -2728,6 +2728,7 @@ function QuantView({gFunding}){
         if(btc&&Number.isFinite(btc.r)&&btc.r>0)out.masa=btc.r/(1+btc.r);
         const pos=j&&j.btc&&j.btc.pos;
         if(Number.isFinite(pos)&&pos>0)out.pros=pos/(1+pos);
+        if(j&&j.btc&&Array.isArray(j.btc.oiHist)&&j.btc.oiHist.length>24)out.oiHist=j.btc.oiHist; // OI 1h × ~480 ($B)
       }catch(_){}
       if(alive)setFlowPro(out);
     };
@@ -3392,25 +3393,39 @@ function QuantView({gFunding}){
             <span style={{fontSize:20}}>{glob.e}</span>
             <div style={{fontSize:13,fontWeight:800,color:glob.c}}>{glob.t}</div>
           </div>
-          {/* una fila por temporalidad: minigráfico + veredicto + explicación del movimiento rápido */}
-          {c.veloTF.map((r,i)=>(
+          {/* una fila por temporalidad: minigráfico + veredicto + OI + movimiento rápido */}
+          {c.veloTF.map((r,i)=>{
+            // OI del tramo (histórico real 1h del relé): la lectura clásica precio+OI
+            let oi=null;const oiH=flowPro&&flowPro.oiHist;
+            if(oiH&&oiH.length>24){const hoursOf={'15m':24,'1h':120,'4h':480,'1D':480};
+              const hrs=Math.min(hoursOf[r.tf]||24,oiH.length);const seg=oiH.slice(-hrs);
+              const chg=(seg[seg.length-1]/seg[0]-1)*100;const up2=chg>0.5,dn2=chg<-0.5;
+              const read=r.dir>0&&up2?'sube CON dinero nuevo entrando (OI↑) → tendencia confirmada':
+                r.dir>0&&dn2?'sube CERRANDO cortos (OI↓) → subida frágil, sin dinero nuevo':
+                r.dir<0&&up2?'cae y ENTRAN cortos nuevos (OI↑) → presión bajista real':
+                r.dir<0&&dn2?'cae CERRANDO largos (OI↓) → desapalancamiento/capitulación':
+                up2?'OI creciendo en lateral (se carga la pistola)':dn2?'OI bajando (interés decayendo)':null;
+              oi={chg,read,lbl:hrs>=48?Math.round(hrs/24)+'d':hrs+'h'};}
+            return(
             <div key={i} style={{padding:'9px 0',borderTop:i?'1px solid #12151F':'none'}}>
               <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
                 <span style={{...flx({gap:6})}}>
                   <span className="mono" style={{fontSize:9.5,fontWeight:800,padding:'1px 7px',borderRadius:7,color:'var(--txt)',background:'rgba(255,255,255,.06)',border:'1px solid var(--line2)'}}>{r.tf}</span>
                   <span style={{fontSize:8,color:'var(--faint)'}}>{r.span}</span>
+                  {oi&&<span className="mono" style={{fontSize:8,fontWeight:700,color:oi.chg>=0?'var(--up)':'var(--down)'}}>OI {oi.chg>=0?'+':''}{oi.chg.toFixed(1)}% ({oi.lbl})</span>}
                 </span>
                 <span className="mono" style={{fontSize:9.5,fontWeight:800,color:r.verd.c}}>{r.verd.e} {r.verd.t}</span>
               </div>
               <div style={{background:'#0A0D14',borderRadius:8,padding:'5px 7px'}}>
                 <Spark p={r.spark.p} cv={r.spark.c}/>
               </div>
+              {oi&&oi.read&&<div style={{fontSize:8.5,color:'var(--dim)',lineHeight:1.45,marginTop:4}}>🧾 OI: {oi.read}.</div>}
               {r.move&&<div style={{fontSize:8.5,lineHeight:1.5,marginTop:4,padding:'6px 9px',borderRadius:8,
                 color:'var(--dim)',background:r.move.backed?'rgba(31,224,160,.06)':'rgba(243,186,47,.07)',
                 border:`1px solid ${r.move.backed?'rgba(31,224,160,.22)':'rgba(243,186,47,.28)'}`}}>
                 {r.move.backed?'💪':'🕳️'} {r.move.expl}</div>}
-            </div>))}
-          <p style={{fontSize:8,color:'var(--faint)',marginTop:8,lineHeight:1.5}}>Naranja = precio · azul = CVD (delta acumulado de compras−ventas agresivas, Binance spot). Tendencias por regresión lineal (la "línea de tendencia" objetiva). Cada subida o bajada rápida y grande del tramo se explica automáticamente con el CVD y el volumen. Solo velas cerradas. Se actualiza solo cada 2 min. No es consejo financiero.</p>
+            </div>);})}
+          <p style={{fontSize:8,color:'var(--faint)',marginTop:8,lineHeight:1.5}}>Naranja = precio · azul = CVD (delta acumulado de compras−ventas agresivas, Binance spot) · OI = interés abierto REAL de Binance Futures (histórico horario). Tendencias por regresión lineal (la "línea de tendencia" objetiva). Cada subida o bajada rápida y grande del tramo se explica automáticamente con el CVD y el volumen. Solo velas cerradas. Se actualiza solo cada 2 min. No es consejo financiero.</p>
         </div>);})()}
 
       {/* RUTA CORTO PLAZO · seguimiento diario (la de 30d está más abajo en el cono) */}
@@ -3604,7 +3619,14 @@ function QuantView({gFunding}){
             </div>
           </div>
         )}
-        {(()=>{const all=c.patterns.concat(c.patsMTF||[]);
+        {(()=>{
+          // ORDEN POR FIABILIDAD (el más fiable arriba): acierto EN LA DIRECCIÓN del patrón
+          // (bajista fiable = % de subida BAJO) menos medio margen de error (así un 70%
+          // con 5 casos no gana a un 65% con 200). Los "pocos casos" van al final.
+          const rel=pt=>{if(!pt.st)return -1;
+            const w=pt.sig>0?pt.st.win:pt.sig<0?100-pt.st.win:50+Math.abs(pt.st.win-50)/2;
+            return w-(pt.st.ci||0)/2;};
+          const all=c.patterns.concat(c.patsMTF||[]).slice().sort((a,b)=>rel(b)-rel(a));
           const tfCol={'4h':'#F3BA2F','1D':'var(--accent)','1S':'#8AA0FF'};
           // CONFLUENCIA multi-temporalidad: solo patrones CON ventaja medida (acierto>52%).
           // Varias escalas apuntando al mismo lado = señal más fiable que cualquiera sola.
@@ -3640,7 +3662,7 @@ function QuantView({gFunding}){
           </div>
         )):<div style={{fontSize:11,color:'var(--faint)',textAlign:'center',padding:'8px 0'}}>Sin patrones claros ahora mismo en ninguna temporalidad.</div>}
           </React.Fragment>);})()}
-        <p style={{fontSize:9,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Patrones detectados en <b>3 temporalidades</b>: <b style={{color:'#F3BA2F'}}>4h</b> (corto plazo, ~166 días de historia), <b>1D</b> (diario, ~8 años) y <b style={{color:'#8AA0FF'}}>SEMANAL</b> (~6 años). Cada uno se backtestea EN SU temporalidad: % = acierto a 10 velas de esa escala (10×4h ≈ 40h · 10 días · 10 semanas) · n = nº de veces que ocurrió. Los de 4h son más frecuentes pero más ruidosos; los semanales, raros pero de más peso. <b style={{color:'var(--txt)'}}>Solo velas CERRADAS</b>: la vela en curso no confirma un patrón hasta su cierre (puede des-formarse antes) — igual que el backtest, que siempre midió cierres. Solo el diario alimenta el cono (evita doble-contar).</p>
+        <p style={{fontSize:9,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Patrones detectados en <b>3 temporalidades</b>: <b style={{color:'#F3BA2F'}}>4h</b> (corto plazo, ~166 días de historia), <b>1D</b> (diario, ~8 años) y <b style={{color:'#8AA0FF'}}>SEMANAL</b> (~6 años). Cada uno se backtestea EN SU temporalidad: % = acierto a 10 velas de esa escala (10×4h ≈ 40h · 10 días · 10 semanas) · n = nº de veces que ocurrió. Los de 4h son más frecuentes pero más ruidosos; los semanales, raros pero de más peso. <b style={{color:'var(--txt)'}}>Ordenados del MÁS fiable al menos</b> (acierto en la dirección del patrón − medio margen de error; "pocos casos" al final). <b style={{color:'var(--txt)'}}>Solo velas CERRADAS</b>: la vela en curso no confirma un patrón hasta su cierre (puede des-formarse antes) — igual que el backtest, que siempre midió cierres. Solo el diario alimenta el cono (evita doble-contar).</p>
       </div>
 
       {/* PATRONES GRÁFICOS (figuras clásicas estilo Binance, con estadística) */}

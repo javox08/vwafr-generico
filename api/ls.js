@@ -79,6 +79,13 @@ module.exports = async (req, res) => {
       if (b > 0 && s > 0) out.btc.taker = { b: +b.toFixed(0), s: +s.toFixed(0), pl: +(b / (b + s)).toFixed(4) };
     }
   } catch (e) {}
+  // HISTÓRICO de OI de BTC (Binance, 1h × 480 ≈ 20 días, en $B): alimenta las tendencias
+  // de interés abierto del "Análisis Velo" de la web (OI↑ con precio↑ = dinero nuevo, etc.)
+  try {
+    const oh2 = await fetch('https://fapi.binance.com/futures/data/openInterestHist?symbol=BTCUSDT&period=1h&limit=480').then(r => r.json()).catch(() => null);
+    if (Array.isArray(oh2) && oh2.length > 10)
+      out.btc.oiHist = oh2.map(x => +((+x.sumOpenInterestValue) / 1e9).toFixed(3));
+  } catch (e) {}
   // VOLUMEN 24h FUTUROS vs SPOT (mismo exchange = comparable): Binance BTC+ETH.
   // Futuros = derivados apalancados; spot = compra/venta real. Ratio del mercado.
   {
