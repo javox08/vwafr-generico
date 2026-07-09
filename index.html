@@ -3549,6 +3549,10 @@ function QuantView({gFunding}){
                 else if(up3)ms.push(['!','SIN compra agresiva neta ('+fmtM2(cvdD)+'): sube por cierres/compra pasiva, no demanda nueva']);
                 else if(cvdD<0)ms.push(['-','Venta agresiva REAL: '+fmtM2(cvdD)+' netos vendiendo a mercado (CVD↓)']);
                 else ms.push(['!','SIN venta agresiva neta: cae por cierres de largos, no pánico vendedor']);
+                // CVD de FUTUROS en el tramo (los movimientos rápidos suelen venir de futuros)
+                const cvF=flowPro&&flowPro.cvdFut;
+                if(cvF&&cvF.length>horas+1){const dF=cvF[cvF.length-1]-cvF[cvF.length-1-horas];
+                  if(Math.abs(dF)>50)ms.push([ (dF>0)===up3?'+':'!', 'Futuros: '+(dF>0?'compraron':'vendieron')+' '+Math.round(Math.abs(dF)).toLocaleString('es-ES')+' BTC netos a mercado en el tramo'+((dF>0)!==up3?' (contra el movimiento → posible absorción)':'')]);}
                 const oiH2=flowPro&&flowPro.oiHist;
                 if(oiH2&&oiH2.length>horas+1){const chgL=(oiH2[oiH2.length-1]/oiH2[oiH2.length-1-horas]-1)*100;
                   if(up3&&chgL>0.15)ms.push(['+','OI +'+chgL.toFixed(1)+'%: LARGOS NUEVOS entrando → dinero nuevo apostando a la subida']);
