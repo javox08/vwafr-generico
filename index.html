@@ -3151,12 +3151,15 @@ function QuantView({gFunding}){
     // pasó por el nivel después: esas liquidaciones ya ocurrieron) y se agrupan en
     // clústeres del 1%. Antes el mapa era teórico puro (precio actual ±1/L, sin datos).
     const liqmap=(()=>{
-      const oh=ohD||q.ohlc; if(!oh||oh.length<40)return null; // solo velas CERRADAS (la abierta tiene volumen parcial)
-      const rec=oh.slice(-90), n2=rec.length;
+      // FUENTE FINA: velas de 4h (~166 días, entradas mucho más precisas que el diario);
+      // respaldo diario si no hay 4h. Solo velas CERRADAS (la abierta tiene volumen parcial).
+      const use4h=oh4&&oh4.length>=240;
+      const oh=use4h?oh4:(ohD||q.ohlc); if(!oh||oh.length<40)return null;
+      const rec=use4h?oh.slice(-990):oh.slice(-90), n2=rec.length;
       const minAfter=new Array(n2).fill(Infinity), maxAfter=new Array(n2).fill(-Infinity);
       for(let i=n2-2;i>=0;i--){minAfter[i]=Math.min(minAfter[i+1],rec[i+1].l);maxAfter[i]=Math.max(maxAfter[i+1],rec[i+1].h);}
       const tiers=[[10,0.7],[25,1],[50,0.9],[100,0.6]]; // [apalancamiento, peso de uso típico]
-      const bw=price*0.01, B=new Map(); // clústeres del 1%
+      const bw=price*0.0075, B=new Map(); // clústeres del 0,75% (más finos)
       const add=(p,side,w)=>{const k=Math.round(p/bw);const o=B.get(k)||{p:k*bw,long:0,short:0};o[side]+=w;B.set(k,o);};
       for(let i=0;i<n2;i++){const e=(rec[i].h+rec[i].l+rec[i].c)/3, base=(rec[i].v||0)*e*(0.4+0.6*i/n2);
         if(!(base>0))continue;
@@ -3165,12 +3168,12 @@ function QuantView({gFunding}){
           const qs=e*(1+1/L); if(qs>price&&maxAfter[i]<qs)add(qs,'short',base*tw/L);
         }}
       const rows=[...B.values()];
-      const below=rows.filter(r=>r.long>0&&r.p<price).map(r=>({p:r.p,side:'long',w:r.long})).sort((a,b)=>b.w-a.w).slice(0,4);
-      const above=rows.filter(r=>r.short>0&&r.p>price).map(r=>({p:r.p,side:'short',w:r.short})).sort((a,b)=>b.w-a.w).slice(0,4);
+      const below=rows.filter(r=>r.long>0&&r.p<price).map(r=>({p:r.p,side:'long',w:r.long})).sort((a,b)=>b.w-a.w).slice(0,6);
+      const above=rows.filter(r=>r.short>0&&r.p>price).map(r=>({p:r.p,side:'short',w:r.short})).sort((a,b)=>b.w-a.w).slice(0,6);
       const all=above.concat(below); if(!all.length)return null;
       const wmax=Math.max(...all.map(x=>x.w));
       for(const x of all)x.rel=x.w/wmax;
-      return {above:above.sort((a,b)=>b.p-a.p),below:below.sort((a,b)=>b.p-a.p)};
+      return {above:above.sort((a,b)=>b.p-a.p),below:below.sort((a,b)=>b.p-a.p),src:use4h?'4h':'1d'};
     })();
     // ── IMÁN del cono: los clústeres REALES del mapa (si hay); respaldo teórico si no.
     const mags=[];
@@ -4292,7 +4295,7 @@ function QuantView({gFunding}){
       <div style={panel({marginBottom:14,padding:16})}>
         <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
           <span style={eyebrow}>Mapa de liquidez</span>
-          <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>{c.liqmap?'estimado del volumen real 90d':'estimado teórico'}</span>
+          <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>{c.liqmap?(c.liqmap.src==='4h'?'volumen real · velas 4h · ~166 días':'volumen real · 90 días'):'estimado teórico'}</span>
         </div>
         <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:12}}>{c.liqmap?'clústeres donde se acumulan liquidaciones PENDIENTES: el volumen que entró a cada precio implica liquidaciones a ±1/apalancamiento; las ya barridas por el precio se descartan':'zonas donde se concentran liquidaciones por apalancamiento'}</div>
         {c.liqmap?(()=>{
@@ -4303,7 +4306,7 @@ function QuantView({gFunding}){
           const prices=all2.map(x=>x.p).concat([c.price]);
           let phi=Math.max(...prices),plo=Math.min(...prices);
           const ppad=((phi-plo)||c.price*0.02)*0.09;phi+=ppad;plo-=ppad;
-          const W=330,Hm=214,PLm=62,PRm=6;
+          const W=330,Hm=Math.max(200,36+all2.length*19),PLm=62,PRm=6;
           const Ym=p=>10+(phi-p)/((phi-plo)||1)*(Hm-20);
           const maxW=W-PLm-PRm-58; // deja hueco a la etiqueta del %
           const strongest=all2.reduce((m,x)=>x.rel>m.rel?x:m,all2[0]);
@@ -4327,7 +4330,7 @@ function QuantView({gFunding}){
                   <text x={PLm-8} y={y+3} textAnchor="end" fill="var(--dim)" fontSize="8.5" fontWeight="600" className="mono">{money(k.p)}</text>
                   <rect x={PLm} y={y-5.5} width={w} height={11} rx="3.5" fill={up?'url(#liqU)':'url(#liqD)'}
                     stroke={big?col:'none'} strokeWidth={big?1.2:0}/>
-                  <text x={PLm+w+5} y={y+3} fill={col} fontSize="8" fontWeight={big?'800':'600'} className="mono">{(k.p/c.price-1)>=0?'+':''}{((k.p/c.price-1)*100).toFixed(1)}%{big?' ⚡':''}</text>
+                  <text x={Math.min(PLm+w+5,W-PRm-38)} y={y+3} fill={col} fontSize="8" fontWeight={big?'800':'600'} className="mono">{(k.p/c.price-1)>=0?'+':''}{((k.p/c.price-1)*100).toFixed(1)}%{big?' ⚡':''}</text>
                 </g>);})}
               {/* precio actual */}
               <line x1={PLm-56} y1={Ym(c.price)} x2={W-PRm} y2={Ym(c.price)} stroke="#F7931A" strokeWidth="1.3" strokeDasharray="5 3" opacity=".95"/>
