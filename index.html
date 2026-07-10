@@ -3646,7 +3646,7 @@ function QuantView({gFunding}){
         const fdN=({'15m':3,'1h':15,'4h':60,'1D':270})[sel.tf]||6;
         const fdSeg=(flowPro&&flowPro.fundHist&&flowPro.fundHist.length>2)?flowPro.fundHist.slice(-fdN):null;
         const fmtM=v=>{const a=Math.abs(v);return (v<0?'−':'+')+(a>=1e9?'$'+(a/1e9).toFixed(1)+'B':'$'+Math.round(a/1e6)+'M');};
-        const Pane=({title,a,col,fv,zero})=>{if(!a||a.length<2)return null;
+        const Pane=({title,a,col,fv,zero,dPct,dv})=>{if(!a||a.length<2)return null;
           const W=300,H=42,P2=3;let mn=Math.min(...a),mx=Math.max(...a);if(zero){mn=Math.min(mn,0);mx=Math.max(mx,0);}const rg=(mx-mn)||1;
           const X=i2=>P2+i2/(a.length-1)*(W-2*P2),Y=v=>H-P2-((v-mn)/rg)*(H-2*P2);
           const dd='M '+a.map((v,i2)=>X(i2).toFixed(1)+' '+Y(v).toFixed(1)).join(' L ');
@@ -3655,10 +3655,17 @@ function QuantView({gFunding}){
           let iMn=0,iMx=0;for(let i2=1;i2<a.length;i2++){if(a[i2]<a[iMn])iMn=i2;if(a[i2]>a[iMx])iMx=i2;}
           const upTr=iMn<iMx, i1=Math.min(iMn,iMx), i22=Math.max(iMn,iMx);
           const trCol=upTr?'#1FE0A0':'#FF5470', showTr=i22>i1+2;
+          // Δ DEL TRAMO: cuánto cambió la serie en la ventana visible (% para precio/OI,
+          // delta neto para CVD/funding/premium) — el "en este tramo pasó X" de un vistazo.
+          const dAbs=a[a.length-1]-a[0];
+          const dTxt=dPct?(Math.abs(a[0])>1e-9?(dAbs>=0?'+':'')+(dAbs/Math.abs(a[0])*100).toFixed(Math.abs(dAbs/a[0])>=0.1?1:2)+'%':null):(dv?dv(dAbs):null);
+          const dCol=dAbs>=0?'#1FE0A0':'#FF5470';
           return(<div style={{marginBottom:6}}>
             <div style={{...flx({justifyContent:'space-between'}),marginBottom:2}}>
               <span style={{fontSize:7.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.5,fontWeight:700}}>{title}</span>
-              <span className="mono" style={{fontSize:8.5,fontWeight:800,color:col}}>{showTr&&<span style={{color:trCol,marginRight:5}}>{upTr?'↗':'↘'}</span>}{fv(a[a.length-1])}</span>
+              <span className="mono" style={{fontSize:8.5,fontWeight:800,color:col,whiteSpace:'nowrap'}}>
+                {dTxt&&<span style={{fontSize:7,fontWeight:800,color:dCol,background:dAbs>=0?'rgba(31,224,160,.12)':'rgba(255,84,112,.12)',border:'1px solid '+(dAbs>=0?'rgba(31,224,160,.3)':'rgba(255,84,112,.3)'),borderRadius:5,padding:'1px 4px',marginRight:5}}>Δ {dTxt}</span>}
+                {showTr&&<span style={{color:trCol,marginRight:5}}>{upTr?'↗':'↘'}</span>}{fv(a[a.length-1])}</span>
             </div>
             <div style={{background:'#0A0D14',borderRadius:7,padding:'4px 6px'}}>
               <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{display:'block'}}>
@@ -3679,13 +3686,13 @@ function QuantView({gFunding}){
                   color:sel.tf===r.tf?'#07090E':'var(--dim)',background:sel.tf===r.tf?'var(--accent)':'rgba(255,255,255,.05)',border:'1px solid '+(sel.tf===r.tf?'var(--accent)':'var(--line2)')}}>{r.tf}</span>))}
             </div>
           </div>
-          <Pane title={'Precio BTC · '+sel.span} a={sel.spark.p} col="#F7931A" fv={v=>money(v)}/>
-          <Pane title="CVD SPOT · delta acumulado (compras−ventas agresivas)" a={sel.spark.c} col="#5B9BFF" fv={fmtM}/>
-          <Pane title={'CVD FUTUROS · Binance (taker buy−sell)'+(isD?' · últ. 20d':'')} a={isD?((flowPro&&flowPro.cvdFut)||null):seg(flowPro&&flowPro.cvdFut)} col="#B18CFF" fv={v=>(v>=0?'+':'−')+Math.round(Math.abs(v)).toLocaleString('es-ES')+' BTC'}/>
-          <Pane title={'Interés abierto · Binance Futures'+(isD?' · últ. 30d (máx. publicado)':'')} a={oiSeg} col="#1FE0A0" fv={v=>'$'+v.toFixed(2)+'B'}/>
-          <Pane title="Funding (pagos de 8h)" a={fdSeg} col={fdSeg&&fdSeg[fdSeg.length-1]>=0?'#1FE0A0':'#FF5470'} fv={v=>(v>=0?'+':'')+v.toFixed(4)+'%'} zero/>
-          <Pane title="Premium futuros−spot" a={pmSeg} col={pmSeg&&pmSeg[pmSeg.length-1]>=0?'#1FE0A0':'#FF5470'} fv={v=>(v>=0?'+':'')+v.toFixed(3)+'%'} zero/>
-          <p style={{fontSize:8,color:'var(--faint)',marginTop:4,lineHeight:1.5}}>Los mismos paneles apilados de velo.xyz, por temporalidad: precio, CVD, interés abierto, funding y premium futuros−spot. La <b style={{color:'var(--txt)'}}>línea de tendencia discontinua</b> une el mínimo y el máximo del tramo (verde ↗ si el mínimo vino antes = tendencia al alza · roja ↘ si el máximo vino antes = a la baja) — el trazo que dibujarías a mano. El OI, funding y premium son de Binance Futures (histórico real vía relé). La lectura automática está arriba, en "Análisis Velo". No es consejo financiero.</p>
+          <Pane title={'Precio BTC · '+sel.span} a={sel.spark.p} col="#F7931A" fv={v=>money(v)} dPct/>
+          <Pane title="CVD SPOT · delta acumulado (compras−ventas agresivas)" a={sel.spark.c} col="#5B9BFF" fv={fmtM} dv={fmtM}/>
+          <Pane title={'CVD FUTUROS · Binance (taker buy−sell)'+(isD?' · últ. 20d':'')} a={isD?((flowPro&&flowPro.cvdFut)||null):seg(flowPro&&flowPro.cvdFut)} col="#B18CFF" fv={v=>(v>=0?'+':'−')+Math.round(Math.abs(v)).toLocaleString('es-ES')+' BTC'} dv={v=>(v>=0?'+':'−')+Math.round(Math.abs(v)).toLocaleString('es-ES')+' BTC'}/>
+          <Pane title={'Interés abierto · Binance Futures'+(isD?' · últ. 30d (máx. publicado)':'')} a={oiSeg} col="#1FE0A0" fv={v=>'$'+v.toFixed(2)+'B'} dPct/>
+          <Pane title="Funding (pagos de 8h)" a={fdSeg} col={fdSeg&&fdSeg[fdSeg.length-1]>=0?'#1FE0A0':'#FF5470'} fv={v=>(v>=0?'+':'')+v.toFixed(4)+'%'} zero dv={v=>(v>=0?'+':'')+v.toFixed(4)+' pts'}/>
+          <Pane title="Premium futuros−spot" a={pmSeg} col={pmSeg&&pmSeg[pmSeg.length-1]>=0?'#1FE0A0':'#FF5470'} fv={v=>(v>=0?'+':'')+v.toFixed(3)+'%'} zero dv={v=>(v>=0?'+':'')+v.toFixed(3)+' pts'}/>
+          <p style={{fontSize:8,color:'var(--faint)',marginTop:4,lineHeight:1.5}}>Los mismos paneles apilados de velo.xyz, por temporalidad: precio, CVD, interés abierto, funding y premium futuros−spot. El chip <b style={{color:'var(--txt)'}}>Δ</b> es cuánto cambió cada serie en el tramo visible (% en precio y OI · delta neto en el resto). La <b style={{color:'var(--txt)'}}>línea de tendencia discontinua</b> une el mínimo y el máximo del tramo (verde ↗ si el mínimo vino antes = tendencia al alza · roja ↘ si el máximo vino antes = a la baja) — el trazo que dibujarías a mano. El OI, funding y premium son de Binance Futures (histórico real vía relé). La lectura automática está arriba, en "Análisis Velo". No es consejo financiero.</p>
         </div>);})()}
 
       {/* RUTA CORTO PLAZO · seguimiento diario (la de 30d está más abajo en el cono) */}
