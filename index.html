@@ -3505,7 +3505,12 @@ function QuantView({gFunding}){
               (OI + funding + taker Coinglass + CVD + Coinbase premium + masa/pros),
               incluidos los combos clásicos: OI↑+funding<0 = setup de short squeeze, etc. */}
           {(()=>{
-            const oiH=flowPro&&flowPro.oiHist; if(!oiH||oiH.length<24)return null;
+            const oiH=flowPro&&flowPro.oiHist;
+            if(!oiH||oiH.length<24)return(
+              // HONESTIDAD: antes esto desaparecía en silencio y el análisis parecía "cojo"
+              <div style={{marginTop:10,padding:'8px 10px',borderRadius:9,background:'rgba(243,186,47,.07)',border:'1px solid rgba(243,186,47,.25)',fontSize:9,color:'var(--dim)',lineHeight:1.5}}>
+                ⚠️ <b style={{color:'#F3BA2F'}}>Fuentes de derivados no disponibles ahora mismo</b> (OI/funding/taker del relé). El análisis de arriba es solo precio+CVD; la lectura combinada volverá sola cuando el relé responda (reintenta cada 2 min).
+              </div>);
             const chg=(h)=>{const seg=oiH.slice(-Math.min(h,oiH.length));return (seg[seg.length-1]/seg[0]-1)*100;};
             const oi24=chg(24), oi5d=chg(120);
             const p1=c.veloTF.find(r=>r.tf==='1D'), pc=c.veloTF.find(r=>r.tf==='1h')||c.veloTF[0];
