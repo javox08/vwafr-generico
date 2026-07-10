@@ -189,14 +189,6 @@
 </head>
 <body>
 
-<div class="ad-wrap" style="padding-top:14px">
-  <a class="promo" href="https://www.bitunix.com/register?inviteCode=ffcczq" target="_blank" rel="noopener nofollow">
-    <span class="pico"><img src="https://www.google.com/s2/favicons?domain=bitunix.com&sz=64" alt="Bitunix"/></span>
-    <span><span class="p1">Opera futuros en Bitunix</span><span class="p2">Regístrate con código <b>ffcczq</b> · bono de bienvenida</span></span>
-    <span class="pcta">Abrir cuenta →</span>
-  </a>
-</div>
-
 <div id="root" style="position:relative;z-index:1"></div>
 
 <!-- ─────────── Contenido SEO/GEO rastreable (visible y sin depender de JS) ─────────── -->
@@ -236,19 +228,11 @@
     <p>No. Es una herramienta informativa con datos de exchanges públicos. No constituye consejo financiero ni recomendación de inversión.</p>
   </div>
 
-  <p style="margin-top:16px">¿Quieres operar estos funding rates? Puedes abrir cuenta de futuros en <a href="https://www.bitunix.com/register?inviteCode=ffcczq" rel="noopener nofollow">Bitunix</a> con el código <strong>ffcczq</strong>.</p>
   <p style="margin-top:18px;border-top:1px solid #1A1E2B;padding-top:14px;font-size:11px;color:#5A6378">
     <a href="/privacidad.html">Política de privacidad</a> · <a href="/contacto.html">Contacto</a> · Solo informativo, no es consejo financiero.
   </p>
 </section>
 
-<div class="ad-wrap" style="padding-bottom:26px;margin-top:14px">
-  <a class="promo" href="https://www.bitunix.com/register?inviteCode=ffcczq" target="_blank" rel="noopener nofollow">
-    <span class="pico"><img src="https://www.google.com/s2/favicons?domain=bitunix.com&sz=64" alt="Bitunix"/></span>
-    <span><span class="p1">¿Vas a operar estos funding?</span><span class="p2">Hazlo en Bitunix · código <b>ffcczq</b></span></span>
-    <span class="pcta">Registrarme →</span>
-  </a>
-</div>
 
 <script type="text/babel">
 const {useState,useEffect,useCallback,useMemo}=React;
@@ -400,15 +384,6 @@ const flx=(ex={})=>({display:'flex',alignItems:'center',...ex});
 const fmt=(v,d=4)=>{const n=Number.isFinite(v)?v:0;return(n>=0?'+':'')+n.toFixed(d)+'%';};
 
 const BITUNIX='https://www.bitunix.com/register?inviteCode=ffcczq';
-function Promo({t1,t2,cta}){
-  return(
-    <a className="promo" href={BITUNIX} target="_blank" rel="noopener nofollow">
-      <span className="pico"><img src="https://www.google.com/s2/favicons?domain=bitunix.com&sz=64" alt="Bitunix"/></span>
-      <span><span className="p1">{t1}</span><span className="p2">{t2}</span></span>
-      <span className="pcta">{cta}</span>
-    </a>
-  );
-}
 
 function verdict(v){
   return v>0.015 ?{t:'ALCISTA FUERTE',    s:'Longs pagan fuerte a shorts',     up:1}:
@@ -464,9 +439,6 @@ function Hero({vwafr,label,big}){
           <span style={{fontSize:9,color:'var(--faint)',letterSpacing:.5}}>NEUTRAL</span>
           <span style={{fontSize:9,color:'var(--upDim)',fontWeight:600,letterSpacing:.5}}>▲ LONGS</span>
         </div>
-        {big&&(
-          <a className="herocta" href={BITUNIX} target="_blank" rel="noopener nofollow">⚡ Opera estos movimientos en Bitunix →</a>
-        )}
       </div>
     </div>
   );
@@ -530,7 +502,6 @@ function Calc({coin,data,source,sel}){
           <div style={{fontSize:15,fontWeight:800,letterSpacing:-.3,lineHeight:1.05}}>{coin} · funding por exchange</div>
           <div style={{...eyebrow,fontSize:9}}>perpetuos USDT · ponderado por OI</div>
         </div>
-        <a className="opbtn" href={BITUNIX} target="_blank" rel="noopener nofollow" style={{marginLeft:'auto'}}>Operar {coin} →</a>
       </div>
 
       <Hero vwafr={vwafr} label={`Veredicto del funding · ${coin}`}/>
@@ -3707,7 +3678,7 @@ function QuantView({gFunding}){
           <Pane title="CVD SPOT · delta acumulado (compras−ventas agresivas)" a={sel.spark.c} col="#5B9BFF" fv={fmtM} dv={fmtM}/>
           <Pane title={'CVD FUTUROS · Binance (taker buy−sell)'+(isD?' · últ. 20d':'')} a={isD?((flowPro&&flowPro.cvdFut)||null):seg(flowPro&&flowPro.cvdFut)} col="#B18CFF" fv={v=>(v>=0?'+':'−')+Math.round(Math.abs(v)).toLocaleString('es-ES')+' BTC'} dv={v=>(v>=0?'+':'−')+Math.round(Math.abs(v)).toLocaleString('es-ES')+' BTC'}/>
           <Pane title={'Interés abierto · Binance Futures'+(isD?' · últ. 30d (máx. publicado)':'')} a={oiSeg} col="#1FE0A0" fv={v=>'$'+v.toFixed(2)+'B'} dPct/>
-          <Pane title="Funding (pagos de 8h)" a={fdSeg} col={fdSeg&&fdSeg[fdSeg.length-1]>=0?'#1FE0A0':'#FF5470'} fv={v=>(v>=0?'+':'')+v.toFixed(4)+'%'} zero dv={v=>(v>=0?'+':'')+v.toFixed(4)+' pts'}/>
+          <Pane title={'Funding (pagos de 8h) · próximo en '+(()=>{const ms=28800000-(Date.now()%28800000),h2=Math.floor(ms/3600000),m2=Math.floor(ms%3600000/60000);return h2>0?h2+'h '+m2+'m':m2+'m';})()} a={fdSeg} col={fdSeg&&fdSeg[fdSeg.length-1]>=0?'#1FE0A0':'#FF5470'} fv={v=>(v>=0?'+':'')+v.toFixed(4)+'%'} zero dv={v=>(v>=0?'+':'')+v.toFixed(4)+' pts'}/>
           <Pane title="Premium futuros−spot" a={pmSeg} col={pmSeg&&pmSeg[pmSeg.length-1]>=0?'#1FE0A0':'#FF5470'} fv={v=>(v>=0?'+':'')+v.toFixed(3)+'%'} zero dv={v=>(v>=0?'+':'')+v.toFixed(3)+' pts'}/>
           <p style={{fontSize:8,color:'var(--faint)',marginTop:4,lineHeight:1.5}}>Los mismos paneles apilados de velo.xyz, por temporalidad: precio, CVD, interés abierto, funding y premium futuros−spot. El chip <b style={{color:'var(--txt)'}}>Δ</b> es cuánto cambió cada serie en el tramo visible (% en precio y OI · delta neto en el resto). La <b style={{color:'var(--txt)'}}>línea de tendencia discontinua</b> une el mínimo y el máximo del tramo (verde ↗ si el mínimo vino antes = tendencia al alza · roja ↘ si el máximo vino antes = a la baja) — el trazo que dibujarías a mano. El OI, funding y premium son de Binance Futures (histórico real vía relé). La lectura automática está arriba, en "Análisis Velo". No es consejo financiero.</p>
         </div>);})()}
@@ -5384,19 +5355,6 @@ function BotsView({gFunding}){
         </div>);
       })()}
 
-      {/* Enlace directo al bot de trading en Bitunix — siempre visible */}
-      <a href={BITUNIX} target="_blank" rel="noopener noreferrer" style={{textDecoration:'none',display:'block'}}>
-        <div style={panel({marginBottom:14,padding:'12px 14px',display:'flex',alignItems:'center',gap:10,
-          background:'linear-gradient(135deg, rgba(31,224,160,.10), var(--panel) 60%)',borderColor:'rgba(31,224,160,.35)',cursor:'pointer'})}>
-          <span style={{fontSize:20}}>🤖</span>
-          <div style={{flex:1}}>
-            <div style={{fontSize:12.5,fontWeight:800,color:'var(--txt)'}}>Tradea el bot en Bitunix</div>
-            <div style={{fontSize:9.5,color:'var(--dim)',lineHeight:1.4}}>ábrete cuenta con el código <b style={{color:'var(--up)'}}>ffcczq</b> y copia las señales del bot aprobado · no es consejo financiero</div>
-          </div>
-          <span className="mono" style={{fontSize:10.5,fontWeight:800,color:'var(--up)',flexShrink:0}}>Entrar →</span>
-        </div>
-      </a>
-
       {/* 🏅 BOT QUE LO APRUEBA TODO: pasa los 8 innegociables (auto-detectado) */}
       {(()=>{
         const passAll=r=>r.id!=='future'&&r.oos&&r.is&&r.oos.cagr>0&&r.oos.sharpe>=0.4&&r.dsr>=0.9
@@ -5435,10 +5393,6 @@ function BotsView({gFunding}){
               </div>
               <div style={{fontSize:8.5,color:'var(--faint)',lineHeight:1.5,marginBottom:7}}>backtest {yr} años con comisiones · fuera de muestra {(a.oos.cagr>=0?'+':'')+a.oos.cagr.toFixed(0)}%/año (expectativa realista) · no garantizado</div>
               <div style={{fontSize:8.5,color:'var(--dim)',lineHeight:1.5,marginBottom:9,padding:'7px 9px',borderRadius:8,background:'#0A0D14',border:'1px solid var(--line2)'}}>⚙️ <b style={{color:'var(--txt)'}}>Apalancamiento del bot automático: 1,5× fijo</b> (variable <b>BITUNIX_LEV</b>) → caída máxima histórica <b style={{color:'var(--down)'}}>~50%</b>. Ajustable: 1,1×≈38% · 1,5×≈50% · 2×≈60% · 3×≈77%. Menos que aguantar BTC al contado (~77%). <b style={{color:'var(--up)'}}>Sin stop-loss ni take-profit fijo</b>: el bot <b>sale solo cuando la señal se apaga</b> (deja correr la tendencia) — así lo que se opera es EXACTAMENTE lo backtesteado. El apalancamiento que ves arriba en el "trade recomendado" es <b>automático por volatilidad</b> (solo pantalla); el que OPERA de verdad es este 1,5×.</div>
-              <a href={BITUNIX} target="_blank" rel="noopener nofollow" style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,padding:'10px',borderRadius:9,textDecoration:'none',
-                background:'linear-gradient(100deg,#F3BA2F,#1FE0A0)',color:'#07090E',fontWeight:800,fontSize:12}}>
-                ⚡ Tradealo en Bitunix · código ffcczq →
-              </a>
               <div style={{fontSize:8,color:'var(--faint)',marginTop:7,lineHeight:1.5}}>¿Que <b style={{color:'var(--txt)'}}>tradee él solo 24/7</b>? El worker del proyecto (carpeta <b>worker/</b>) ejecuta esta señal en Bitunix Futures con TP/SL automáticos: pon tu API y <b>BITUNIX_TRADE=live</b> (README, ~5 min). Empieza con tamaño mínimo.</div>
             </div>
             <div style={{fontSize:8.5,color:'var(--faint)',marginTop:8,lineHeight:1.5}}>Aprueba: rentable fuera de muestra · Deflated Sharpe ≥90% · caída &lt;80% · Sharpe ≥0,5 · sin decaimiento del alfa. Se re-evalúa solo cada día.</div>
@@ -5796,9 +5750,8 @@ function App(){
   const coins=(payload&&payload.coins)||FALLBACK_COINS;
   const data=(payload&&payload.data)||{};
   const g=useMemo(()=>vwafrGlobal(data),[payload]);
-  const [showCta,setShowCta]=useState(true);
   const [fundOpen,setFundOpen]=useState(false);
-  const [view,setView]=useState('home');
+  const [view,setView]=useState('quant'); // la web abre en Cuantitativo (petición del usuario)
   useEffect(()=>{ if(!g.oi)return;
     try{const h=JSON.parse(localStorage.getItem('vwafr_fh')||'[]');const now=Date.now();
       if(!h.length||now-h[h.length-1].t>3.6e6){h.push({t:now,f:+g.vwafr.toFixed(5)});while(h.length>240)h.shift();localStorage.setItem('vwafr_fh',JSON.stringify(h));}
@@ -6032,10 +5985,6 @@ function App(){
         </div>
       )}
 
-      {/* ── Referido Bitunix (central) ── */}
-      <div style={{marginBottom:16}}>
-        <Promo t1="Pasa del análisis a la acción" t2="Abre cuenta en Bitunix con el código ffcczq" cta="Empezar →"/>
-      </div>
 
       {/* ── RESUMEN · todas las monedas (formato lista, estilo boceto) ── */}
       <div style={panel({marginBottom:16,padding:'12px 14px 6px'})}>
@@ -6068,10 +6017,6 @@ function App(){
         })}
       </div>
 
-      {/* ── Referido Bitunix (antes del detalle) ── */}
-      <div style={{marginBottom:16}}>
-        <Promo t1="Opera BTC, ETH y +200 pares" t2="Futuros perpetuos en Bitunix · código ffcczq" cta="Registrarme →"/>
-      </div>
 
       {/* ── Detalle de TODAS las monedas, apiladas (BTC, ETH, SOL, ...) ── */}
       {coins.map((c,idx)=>(
@@ -6081,7 +6026,6 @@ function App(){
           </div>
           {(idx===0||idx===4)&&(
             <div style={{marginBottom:16}}>
-              <Promo t1="Trada estos funding en Bitunix" t2="Comisiones bajas · código ffcczq" cta="Abrir cuenta →"/>
             </div>
           )}
         </React.Fragment>
@@ -6165,21 +6109,11 @@ function App(){
         <div className="links">
           <a href="/privacidad.html">Privacidad</a>
           <a href="/contacto.html">Contacto</a>
-          <a href={BITUNIX} target="_blank" rel="noopener nofollow">Bitunix · ffcczq</a>
         </div>
         <div style={{fontSize:9.5,color:'var(--faint)',marginTop:6,lineHeight:1.6}}>Datos: Binance · Deribit · CoinGecko · bitcoin-data · Banco Mundial. Modelos estadísticos con fines educativos — <b style={{color:'var(--down)'}}>no es consejo de inversión</b>.</div>
       </div>
 
     </div>
-    {showCta&&home&&(
-      <div className="cta-bar"><div className="row">
-        <a href={BITUNIX} target="_blank" rel="noopener nofollow">
-          <img src="https://www.google.com/s2/favicons?domain=bitunix.com&sz=64" alt="" width="18" height="18" style={{borderRadius:4}}/>
-          Abrir cuenta en Bitunix · código ffcczq
-        </a>
-        <span className="xc" onClick={()=>setShowCta(false)} title="Cerrar">✕</span>
-      </div></div>
-    )}
     </>
   );
 }
@@ -6205,28 +6139,11 @@ class ErrorBoundary extends React.Component{
 }
 ReactDOM.createRoot(document.getElementById('root')).render(<ErrorBoundary><App/></ErrorBoundary>);
 
-// PWA: registra el service worker (app instalable + offline + cargas repetidas rápidas)
-// + AVISO DE VERSIÓN NUEVA: cuando el SW detecta una actualización desplegada, muestra
-// un botón "⬆️ Hay versión nueva" que recarga (la web itera rápido y sin esto el usuario
-// instalado como PWA se queda días con la versión vieja).
+// PWA: registra el service worker (app instalable + offline). Sin aviso de "versión
+// nueva": el SW hace skipWaiting y el documento es network-first, así que cada
+// recarga ya trae la última versión sola.
 if('serviceWorker' in navigator){
-  window.addEventListener('load',()=>{
-    navigator.serviceWorker.register('/sw.js').then(reg=>{
-      const show=()=>{ if(document.getElementById('updbar'))return;
-        const b=document.createElement('div'); b.id='updbar';
-        b.textContent='⬆️ Hay versión nueva · toca para actualizar';
-        b.style.cssText='position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:9999;background:#1FE0A0;color:#07090E;font:700 12.5px system-ui;padding:11px 18px;border-radius:12px;box-shadow:0 6px 24px rgba(31,224,160,.45);cursor:pointer;';
-        b.onclick=()=>{location.reload();};
-        document.body.appendChild(b);
-      };
-      if(reg.waiting)show();
-      reg.addEventListener('updatefound',()=>{const nw=reg.installing;
-        if(!nw)return; nw.addEventListener('statechange',()=>{
-          if(nw.state==='installed'&&navigator.serviceWorker.controller)show();});
-      });
-      document.addEventListener('visibilitychange',()=>{if(!document.hidden)reg.update().catch(()=>{});});
-    }).catch(()=>{});
-  });
+  window.addEventListener('load',()=>{navigator.serviceWorker.register('/sw.js').catch(()=>{});});
 }
 </script>
 </body>

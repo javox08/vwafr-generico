@@ -1,7 +1,7 @@
 const fs=require('fs');
 const SP=process.env.SP, V=process.argv[2]||'home';
 let s=fs.readFileSync('index.html','utf8');
-s=s.replace("const [view,setView]=useState('home');","const [view,setView]=useState('"+V+"');");
+s=s.replace(/const \[view,setView\]=useState\('[a-z]+'\);?[^\n]*/, "const [view,setView]=useState('"+V+"');");
 s=s.replace('https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js','./libs/react.production.min.js');
 s=s.replace('https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js','./libs/react-dom.production.min.js');
 s=s.replace('https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js','./libs/babel.min.js');
