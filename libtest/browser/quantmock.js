@@ -37,7 +37,14 @@
       if(u.indexOf('alternative.me')>=0)return J({data:[{value:'45',value_classification:'Fear'}]});
       if(u.indexOf('bitcoin-data.com/v1/mvrv/last')>=0)return J({mvrv:'1.21'});
       if(u.indexOf('bitcoin-data.com/v1/nupl/last')>=0)return J({nupl:'0.16'});
+      if(u.indexOf('bitcoin-data.com/v1/mvrv-zscore/last')>=0)return J({mvrvZscore:'1.9'});
+      if(u.indexOf('bitcoin-data.com/v1/mvrv-zscore')>=0){var zs=[];for(var z=0;z<1700;z++)zs.push({mvrvZscore:''+(2+Math.sin(z/120)*2.5).toFixed(2)});return J(zs);}
+      if(u.indexOf('bitcoin-data.com/v1/puell-multiple/last')>=0)return J({puellMultiple:'0.92'});
+      if(u.indexOf('bitcoin-data.com/v1/sopr/last')>=0)return J({sopr:'1.01'});
+      if(u.indexOf('bitcoin-data.com/v1/fear-greed/last')>=0)return J({fearGreed:'45'});
       if(u.indexOf('bitcoin-data.com')>=0)return J({});
+      if(u.indexOf('coingecko.com/api/v3/coins/markets')>=0)return J([{current_price:60000,ath:126000,ath_change_percentage:-52.4,price_change_percentage_24h:1.2,market_cap:1.19e12}]);
+      if(u.indexOf('okx.com/api/v5/market/ticker')>=0)return J({data:[{last:'60000',open24h:'59500'}]});
       if(u.indexOf('depth')>=0)return J({bids:[['60000','1']],asks:[['60010','1']]});
       // Banco Mundial (vista Macro/PIB): formato [meta,[{value,date,countryiso3code,country},…]]
       if(u.indexOf('api.worldbank.org')>=0){
