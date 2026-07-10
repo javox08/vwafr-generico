@@ -43,12 +43,12 @@
     "@graph": [
       {
         "@type": "WebApplication",
-        "name": "VWAFR · Funding de Cripto en Vivo",
+        "name": "VWAFR · Cripto Quant — análisis cripto automático",
         "url": "https://vwafr-generico.pages.dev/",
         "applicationCategory": "FinanceApplication",
         "operatingSystem": "Web",
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "EUR" },
-        "description": "Calculadora en vivo del funding rate de Bitcoin, Ethereum y el top 10 de criptomonedas en 8 exchanges de futuros perpetuos, con el VWAFR (funding medio ponderado por interés abierto) y un veredicto de sentimiento de mercado.",
+        "description": "Análisis cripto automático y gratis en español: funding rate en vivo (VWAFR) de 8 exchanges, análisis multi-temporalidad estilo Velo (CVD, interés abierto, funding, premium) que explica por qué sube o baja Bitcoin, mapa de liquidaciones, patrones backtesteados, cono de probabilidad Monte Carlo, ciclo por halving y bots con backtest de 9 años.",
         "inLanguage": "es"
       },
       {
@@ -63,7 +63,13 @@
           { "@type": "Question", "name": "¿Cada cuánto se actualizan los datos?",
             "acceptedAnswer": { "@type": "Answer", "text": "Los datos de funding e interés abierto se actualizan automáticamente cada 60 segundos desde las APIs públicas de cada exchange." } },
           { "@type": "Question", "name": "¿Funding positivo o negativo, qué significa?",
-            "acceptedAnswer": { "@type": "Answer", "text": "Funding positivo indica que predominan los largos y el sentimiento es alcista. Funding negativo indica que predominan los cortos y el sentimiento es bajista. Cuanto más extremo, mayor el apalancamiento direccional acumulado." } }
+            "acceptedAnswer": { "@type": "Answer", "text": "Funding positivo indica que predominan los largos y el sentimiento es alcista. Funding negativo indica que predominan los cortos y el sentimiento es bajista. Cuanto más extremo, mayor el apalancamiento direccional acumulado." } },
+          { "@type": "Question", "name": "¿Por qué sube o baja Bitcoin ahora mismo?",
+            "acceptedAnswer": { "@type": "Answer", "text": "La sección Cuantitativo incluye un Análisis Velo automático que explica cada subida o bajada con motivos medibles: CVD spot y de futuros (compras/ventas agresivas reales), interés abierto (dinero nuevo o cierres), funding, premium agregado de futuros y Coinbase premium, en 4 temporalidades (15m, 1h, 4h y 1D), y dice qué es lo más probable a continuación." } },
+          { "@type": "Question", "name": "¿Qué es el CVD (Cumulative Volume Delta)?",
+            "acceptedAnswer": { "@type": "Answer", "text": "El CVD es el delta acumulado de compras menos ventas agresivas (órdenes taker). Si el precio sube con CVD subiendo, el movimiento tiene respaldo real; si sube sin CVD, es una subida hueca (futuros/squeeze) de la que conviene desconfiar." } },
+          { "@type": "Question", "name": "¿Qué es el cono de probabilidad de BTC?",
+            "acceptedAnswer": { "@type": "Answer", "text": "Es una proyección Monte Carlo a 30 días con 700 simulaciones construidas con bloques de días históricos de régimen parecido al actual y bandas conformales calibradas: en 9 años de test, la banda del 90% contuvo el precio ~91% de las veces. Da probabilidades, no predicciones exactas." } }
         ]
       }
     ]
