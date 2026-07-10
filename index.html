@@ -5934,6 +5934,12 @@ function App(){
               <div style={{gridColumn:'1 / -1',fontSize:8,color:'var(--faint)',lineHeight:1.4}}>Reparto estimado del empuje: cuánto se desvía cada mercado de su equilibrio (50/50). Más % = ese mercado manda ahora.</div>
             </div>);})()}
           <div style={{fontSize:8.5,color:'var(--faint)',marginTop:8,lineHeight:1.5}}>Ahora mandan: <b style={{color:'var(--txt)'}}>{who}</b>. "Spot % compras" = órdenes agresivas de compra sobre el volumen total (taker). Esta lectura y el % long/short también <b>alimentan el cono</b> de la ruta del Cuantitativo.</div>
+          <div onClick={()=>{setView('quant');setTimeout(()=>{try{const el=document.getElementById('sec-velo');if(el)el.scrollIntoView({behavior:'smooth',block:'start'});}catch(_){}},450);}}
+            style={{...flx({gap:8,justifyContent:'center'}),marginTop:10,padding:'9px 12px',borderRadius:9,cursor:'pointer',
+              background:'rgba(110,139,255,.08)',border:'1px dashed rgba(110,139,255,.35)'}}>
+            <span style={{fontSize:13}}>📡</span>
+            <span style={{fontSize:10,fontWeight:700,color:'var(--accent)'}}>Ver el análisis completo de POR QUÉ sube o baja (CVD · OI · funding, estilo Velo) →</span>
+          </div>
         </div>);
       })()}
 
