@@ -6025,7 +6025,9 @@ function App(){
               </div>))}
           </div>
           {(()=>{ // REPARTO DEL EMPUJE: % futuros (longs/shorts) vs % spot (compras/ventas)
-            const pl2=(Number.isFinite(flow.lsr)&&flow.lsr>0)?flow.lsr/(1+flow.lsr):null;
+            // pros (posiciones = dinero) primero, como el resto de paneles; masa de respaldo
+            const lsrEff=(Number.isFinite(flow.lsrPos)&&flow.lsrPos>0)?flow.lsrPos:((Number.isFinite(flow.lsr)&&flow.lsr>0)?flow.lsr:null);
+            const pl2=lsrEff!=null?lsrEff/(1+lsrEff):null;
             if(pl2==null)return null;
             const sSpot=Math.abs(tb-0.5), sFut=Math.abs(pl2-0.5);
             if((sSpot+sFut)<=0.001)return null;
