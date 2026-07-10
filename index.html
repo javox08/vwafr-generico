@@ -3895,6 +3895,20 @@ function QuantView({gFunding}){
           {/* long/short BTC (cuentas vs top traders) — estilo Coinglass, como SESGO en % */}
           {(masa!=null||pros!=null)&&<div style={{marginTop:9,paddingTop:9,borderTop:'1px solid var(--line2)'}}>
             <div style={{fontSize:8,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.6,fontWeight:700,marginBottom:5}}>Long/Short BTC · sesgo de posicionamiento</div>
+            {(()=>{ // ⭐ CONSENSO: el mismo número único que muestran la portada y el mapa
+              const tk3=flowPro&&Number.isFinite(flowPro.taker)?flowPro.taker:null;
+              const parts=[];if(pros!=null)parts.push(pros,pros);if(masa!=null)parts.push(masa);if(tk3!=null)parts.push(tk3);
+              if(parts.length<2)return null;const cons=parts.reduce((a,x)=>a+x,0)/parts.length;
+              return(<div style={{marginBottom:7,padding:'7px 9px',borderRadius:8,background:'rgba(110,139,255,.07)',border:'1px solid rgba(110,139,255,.3)'}}>
+                <div style={{...flx({justifyContent:'space-between'}),marginBottom:3}}>
+                  <span className="mono" style={{fontSize:10.5,fontWeight:800,color:'var(--up)'}}>▲ {(cons*100).toFixed(0)}%L</span>
+                  <span style={{fontSize:7,fontWeight:800,color:'var(--accent)',letterSpacing:.5}}>⭐ CONSENSO · masa+pros(×2)+aperturas</span>
+                  <span className="mono" style={{fontSize:10.5,fontWeight:800,color:'var(--down)'}}>{((1-cons)*100).toFixed(0)}%S ▼</span>
+                </div>
+                <div style={{display:'flex',height:6,borderRadius:4,overflow:'hidden'}}>
+                  <div style={{width:(cons*100)+'%',background:'var(--up)',opacity:.8}}/><div style={{flex:1,background:'var(--down)',opacity:.8}}/>
+                </div>
+              </div>);})()}
             {[['👥 Cuentas (retail)',masa],['🐋 Top traders (pros)',pros]].map(([lbl,v],i)=>v==null?null:(
               <div key={i} style={{marginBottom:6}}>
                 <div style={{...flx({justifyContent:'space-between'}),marginBottom:2}}>
@@ -4423,14 +4437,22 @@ function QuantView({gFunding}){
           const Ym=p=>10+(phi-p)/((phi-plo)||1)*(Hm-20);
           const maxW=W-PLm-PRm-58; // deja hueco a la etiqueta del %
           const strongest=all2.reduce((m,x)=>x.rel>m.rel?x:m,all2[0]);
-          // anti-solape: clústeres muy pegados en precio se separan al menos 13px.
-          // Pasada de bajada + pasada INVERSA desde el borde inferior: antes, el clamp
-          // a Hm-8 aplastaba las últimas filas unas encima de otras (etiquetas ilegibles).
+          // anti-solape: clústeres muy pegados se separan ≥13px, POR LADO y respetando
+          // una franja de ±11px alrededor de la línea del precio (antes la etiqueta
+          // naranja podía pisar la barra más cercana). Pasada de bajada + inversa.
+          const pY=Ym(c.price), sep=13, gapP=11;
           const pos=all2.map(k=>({k,y:Ym(k.p)})).sort((a,b)=>a.y-b.y);
-          for(let i2=1;i2<pos.length;i2++)if(pos[i2].y<pos[i2-1].y+13)pos[i2].y=pos[i2-1].y+13;
-          if(pos.length){
-            if(pos[pos.length-1].y>Hm-10)pos[pos.length-1].y=Hm-10;
-            for(let i2=pos.length-2;i2>=0;i2--)if(pos[i2].y>pos[i2+1].y-13)pos[i2].y=pos[i2+1].y-13;
+          const grpUp=pos.filter(o=>o.y<=pY), grpDn=pos.filter(o=>o.y>pY);
+          for(let i2=1;i2<grpUp.length;i2++)if(grpUp[i2].y<grpUp[i2-1].y+sep)grpUp[i2].y=grpUp[i2-1].y+sep;
+          if(grpUp.length){
+            if(grpUp[grpUp.length-1].y>pY-gapP)grpUp[grpUp.length-1].y=pY-gapP;
+            for(let i2=grpUp.length-2;i2>=0;i2--)if(grpUp[i2].y>grpUp[i2+1].y-sep)grpUp[i2].y=grpUp[i2+1].y-sep;
+          }
+          for(let i2=0;i2<grpDn.length;i2++){const mn=i2?grpDn[i2-1].y+sep:pY+gapP;if(grpDn[i2].y<mn)grpDn[i2].y=mn;}
+          if(grpDn.length){
+            if(grpDn[grpDn.length-1].y>Hm-10)grpDn[grpDn.length-1].y=Hm-10;
+            for(let i2=grpDn.length-2;i2>=0;i2--)if(grpDn[i2].y>grpDn[i2+1].y-sep)grpDn[i2].y=grpDn[i2+1].y-sep;
+            if(grpDn[0].y<pY+gapP)grpDn[0].y=pY+gapP;
           }
           const yOf=new Map(pos.map(o=>[o.k,o.y]));
           // REPARTO DEL DINERO: cuánto espera ser liquidado en cada lado (todos los bins)
@@ -4467,17 +4489,17 @@ function QuantView({gFunding}){
           <div style={{width:92,flexShrink:0,display:'flex',flexDirection:'column',gap:6}}>
             <div style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'center',textAlign:'center',padding:'7px 5px',borderRadius:10,
               background:'rgba(31,224,160,.08)',border:'1px solid '+(moreShorts?'rgba(31,224,160,.55)':'rgba(31,224,160,.2)')}}>
-              <div style={{fontSize:7,fontWeight:800,color:'var(--up)',letterSpacing:.4}}>🟢 CORTOS ↑{moreShorts?' ⚡':''}</div>
+              <div style={{fontSize:7,fontWeight:800,color:'var(--up)',letterSpacing:.4}}>💥 RIESGO ARRIBA{moreShorts?' ⚡':''}</div>
               <div className="mono" style={{fontSize:14,fontWeight:800,color:'var(--up)',margin:'3px 0 1px'}}>{pS.toFixed(0)}%</div>
               <div className="mono" style={{fontSize:8,color:'var(--dim)'}}>≈{fm$(totS)}</div>
-              <div style={{fontSize:6.5,color:'var(--faint)',marginTop:2,lineHeight:1.35}}>dinero por liquidar ARRIBA</div>
+              <div style={{fontSize:6.5,color:'var(--faint)',marginTop:2,lineHeight:1.35}}>cortos atrapados: los liquidarían SUBIENDO</div>
             </div>
             <div style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'center',textAlign:'center',padding:'7px 5px',borderRadius:10,
               background:'rgba(255,84,112,.08)',border:'1px solid '+(!moreShorts?'rgba(255,84,112,.55)':'rgba(255,84,112,.2)')}}>
-              <div style={{fontSize:7,fontWeight:800,color:'var(--down)',letterSpacing:.4}}>🔴 LARGOS ↓{!moreShorts?' ⚡':''}</div>
+              <div style={{fontSize:7,fontWeight:800,color:'var(--down)',letterSpacing:.4}}>💥 RIESGO ABAJO{!moreShorts?' ⚡':''}</div>
               <div className="mono" style={{fontSize:14,fontWeight:800,color:'var(--down)',margin:'3px 0 1px'}}>{pL.toFixed(0)}%</div>
               <div className="mono" style={{fontSize:8,color:'var(--dim)'}}>≈{fm$(totL)}</div>
-              <div style={{fontSize:6.5,color:'var(--faint)',marginTop:2,lineHeight:1.35}}>dinero por liquidar ABAJO</div>
+              <div style={{fontSize:6.5,color:'var(--faint)',marginTop:2,lineHeight:1.35}}>largos atrapados: los liquidarían BAJANDO</div>
             </div>
           </div>
           </div>
@@ -5703,33 +5725,35 @@ function App(){
       let vol=0,buy=0;for(const x of k){vol+=+x[5];buy+=+x[9];}
       const takerBuy=vol>0?buy/vol:0.5, priceChg=(+k[k.length-1][4])/(+k[0][1])-1;
       if(!Number.isFinite(takerBuy)||!Number.isFinite(priceChg))return;
-      // ratio LONG/SHORT: CUENTAS (todo el mercado) y DINERO (posiciones de top
-      // traders). OKX no permite CORS desde el navegador, así que se intenta
-      // directo y, si falla, se usa el RELÉ de Vercel (api/ls.js, con caché).
-      // La fuerza se mide con el z-score del ratio vs su historia reciente.
-      let lsr=null,lsrPos=null,lsrZ=null;
+      // ratio LONG/SHORT: CUENTAS (masa) y DINERO (posiciones de top traders).
+      // FUENTE CANÓNICA: el RELÉ multi-exchange (media OKX+Bybit+Binance y pros
+      // OKX+Binance ponderados por OI) — los MISMOS números que muestran el panel
+      // "Mercado · dinero real", el "Flujo de dinero" del Cuantitativo y el consenso.
+      // Antes este efecto usaba OKX directo (una sola bolsa) y cada panel enseñaba
+      // un % distinto para el mismo concepto. OKX directo queda solo de respaldo.
+      let lsr=null,lsrPos=null,lsrZ=null,posSrcs=null,posEx=null,posW=false;
       const zOf=(hs,v)=>{if(!(hs&&hs.length>30&&v))return null;
         const m=hs.reduce((s,x)=>s+x,0)/hs.length;
         const sd=Math.sqrt(hs.reduce((s,x)=>s+(x-m)*(x-m),0)/hs.length);
         return sd>1e-6?(v-m)/sd:null;};
-      try{const j=await fetch('https://www.okx.com/api/v5/rubik/stat/contracts/long-short-account-ratio?ccy=BTC&period=1H').then(r=>r.json());
+      try{
+        const j=await fetch(LS_RELAY).then(r=>r.json());
+        const bc=((j&&j.coins)||[]).find(x=>x.c==='BTC');
+        if(bc&&Number.isFinite(bc.r)&&bc.r>0)lsr=bc.r;
+        const hs=(j&&j.btc&&j.btc.hist)||[];
+        if(hs.length)lsrZ=zOf(hs,lsr!=null?lsr:hs[0]);
+        if(j&&j.btc&&Number.isFinite(j.btc.pos)&&j.btc.pos>0){lsrPos=j.btc.pos;posSrcs=j.btc.posSrcs||1;posEx=j.btc.posEx||null;posW=!!(j.btc&&j.btc.posW);}
+      }catch(_){}
+      if(lsr==null){try{ // respaldo: OKX directo (una bolsa, solo si el relé falla)
+        const j=await fetch('https://www.okx.com/api/v5/rubik/stat/contracts/long-short-account-ratio?ccy=BTC&period=1H').then(r=>r.json());
         const arr=(j&&j.data)||[]; const v=parseFloat(arr[0]&&(Array.isArray(arr[0])?arr[0][1]:arr[0].ratio));
         if(Number.isFinite(v)&&v>0)lsr=v;
         lsrZ=zOf(arr.map(x=>parseFloat(Array.isArray(x)?x[1]:x&&x.ratio)).filter(x=>Number.isFinite(x)&&x>0),lsr);
-      }catch(_){}
-      if(lsr!=null){try{const j=await fetch('https://www.okx.com/api/v5/rubik/stat/contracts/long-short-position-ratio-contract-top-trader?instId=BTC-USDT-SWAP&period=1H').then(r=>r.json());
+      }catch(_){}}
+      if(lsrPos==null){try{
+        const j=await fetch('https://www.okx.com/api/v5/rubik/stat/contracts/long-short-position-ratio-contract-top-trader?instId=BTC-USDT-SWAP&period=1H').then(r=>r.json());
         const dd=j&&j.data&&j.data[0]; const v=parseFloat(Array.isArray(dd)?dd[1]:dd&&dd.ratio);
-        if(Number.isFinite(v)&&v>0)lsrPos=v;}catch(_){}}
-      let posSrcs=null,posEx=null,posW=false;
-      if(lsr==null||lsrPos==null){try{ // RESPALDO por el relé (el navegador no puede con OKX)
-        const j=await fetch(LS_RELAY).then(r=>r.json());
-        // ratio de la MASA: 1º del histórico, 2º del array coins (más fiable)
-        const hs=(j&&j.btc&&j.btc.hist)||[];
-        if(lsr==null&&hs.length){lsr=hs[0];lsrZ=zOf(hs,lsr);}
-        if(lsr==null){const bc=((j&&j.coins)||[]).find(x=>x.c==='BTC');
-          if(bc&&Number.isFinite(bc.r)&&bc.r>0)lsr=bc.r;}
-        // DINERO de los pros (posiciones top traders): dato clave del panel
-        if(lsrPos==null&&j&&j.btc&&Number.isFinite(j.btc.pos)&&j.btc.pos>0){lsrPos=j.btc.pos;posSrcs=j.btc.posSrcs||1;posEx=j.btc.posEx||null;posW=!!(j.btc&&j.btc.posW);}
+        if(Number.isFinite(v)&&v>0){lsrPos=v;posEx=['OKX'];}
       }catch(_){}}
       const f={takerBuy,priceChg,lsr,lsrPos,lsrZ,posSrcs,posEx,posW,t:Date.now()};
       if(alive)setFlow(f);
@@ -6021,18 +6045,22 @@ function App(){
         <div style={panel({marginBottom:16,padding:'12px 14px'})}>
           <div style={{...flx({justifyContent:'space-between'}),marginBottom:8}}>
             <span style={eyebrow}>Mercado · dinero real</span>
-            <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>top {lsTop.length} · pond. OI{lsAt?' · '+new Date(lsAt).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}):''}</span>
+            <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>BTC · fuentes oficiales{lsAt?' · '+new Date(lsAt).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}):''}</span>
           </div>
           {(()=>{
             // interés abierto por moneda (suma de los exchanges del panel, $B)
             const oiOf=c2=>{const bd=(data&&data[c2])||{};let oi=0;
               for(const ex in bd){const o=bd[ex];if(o&&o.ok&&Number.isFinite(o.oi)&&o.oi>0)oi+=o.oi;}return oi;};
             const fmtB=fmtUsd;
-            // OI total del top y ratios ponderados por OI (masa = cuentas, pros = top traders)
-            let tot=0,mL=0,mtot=0,pL=0,ptot=0;
-            for(const r of lsTop){const oi=oiOf(r.c);if(oi>0){tot+=oi;mL+=oi*r.pl;mtot+=oi;}
-              if(Number.isFinite(r.plPro)){const w=oi||0.1;pL+=w*r.plPro;ptot+=w;}}
-            const masa=mtot>0?mL/mtot:null, pro=ptot>0?pL/ptot:null;
+            // OI total del top (solo para el importe $) — pero los ratios masa/pros son
+            // LOS DE BTC (fuente canónica del relé): antes eran el agregado del top-10
+            // ponderado por OI y salía un % DISTINTO al de los demás paneles (que son de
+            // BTC). Ahora todos los apartados enseñan el mismo número por concepto.
+            let tot=0;
+            for(const r of lsTop){const oi=oiOf(r.c);if(oi>0)tot+=oi;}
+            const rBtc=lsTop.find(r=>r.c==='BTC');
+            const masa=rBtc&&Number.isFinite(rBtc.pl)?rBtc.pl:null;
+            const pro=rBtc&&Number.isFinite(rBtc.plPro)?rBtc.plPro:null;
             // MASA (cuentas) y PROS (top traders) se muestran como % de SESGO, no como $:
             // en futuros el notional largo = corto = OI siempre, así que no existe "más
             // dinero en un lado". El único importe real es el OI total (se muestra una vez).
@@ -6069,14 +6097,30 @@ function App(){
               {/* FILA 2 · MASA (cuentas retail): SESGO de posicionamiento en % (no es dinero:
                   en futuros el $ largo = $ corto = OI; esto es cuántas cuentas hay en cada lado) */}
               {masa!=null&&<React.Fragment>
-                <Tile v={(masa*100).toFixed(0)+'% LONG'} c={'var(--up)'} sub={'👥 MASA · cuentas retail (OKX+Bybit+Binance)'}/>
-                <Tile v={((1-masa)*100).toFixed(0)+'% SHORT'} c={'var(--down)'} sub={'👥 MASA · cuentas retail'}/>
+                <Tile v={(masa*100).toFixed(0)+'% LONG'} c={'var(--up)'} sub={'👥 MASA BTC · cuentas retail (OKX+Bybit+Binance)'}/>
+                <Tile v={((1-masa)*100).toFixed(0)+'% SHORT'} c={'var(--down)'} sub={'👥 MASA BTC · cuentas retail'}/>
               </React.Fragment>}
               {/* FILA 3 · PROS (top traders): SESGO de sus posiciones en % */}
               {pro!=null&&<React.Fragment>
-                <Tile v={(pro*100).toFixed(0)+'% LONG'} vc={'#8AA0FF'} sub={'🐋 PROS · top traders (OKX+Binance)'}/>
-                <Tile v={((1-pro)*100).toFixed(0)+'% SHORT'} vc={'#B06A86'} sub={'🐋 PROS · top traders'}/>
+                <Tile v={(pro*100).toFixed(0)+'% LONG'} vc={'#8AA0FF'} sub={'🐋 PROS BTC · top traders (OKX+Binance)'}/>
+                <Tile v={((1-pro)*100).toFixed(0)+'% SHORT'} vc={'#B06A86'} sub={'🐋 PROS BTC · top traders'}/>
               </React.Fragment>}
+              {/* ⭐ CONSENSO: un solo número que junta las 3 fuentes (pros pesan doble) —
+                  el mismo criterio que muestran el Cuantitativo y el mapa de liquidez */}
+              {(()=>{const parts=[];if(pro!=null)parts.push(pro,pro);if(masa!=null)parts.push(masa);
+                if(lsMkt&&lsMkt.taker&&Number.isFinite(lsMkt.taker.pl))parts.push(lsMkt.taker.pl);
+                if(parts.length<2)return null;const cons=parts.reduce((a,x)=>a+x,0)/parts.length;
+                return(<div style={{gridColumn:'1 / -1',background:'rgba(110,139,255,.07)',border:'1px solid rgba(110,139,255,.3)',borderRadius:9,padding:'8px 10px'}}>
+                  <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
+                    <span className="mono" style={{fontSize:12,fontWeight:800,color:'var(--up)'}}>▲ {(cons*100).toFixed(0)}% LONG</span>
+                    <span style={{fontSize:7.5,fontWeight:800,color:'var(--accent)',letterSpacing:.5}}>⭐ CONSENSO · masa+pros(×2)+aperturas</span>
+                    <span className="mono" style={{fontSize:12,fontWeight:800,color:'var(--down)'}}>{((1-cons)*100).toFixed(0)}% SHORT ▼</span>
+                  </div>
+                  <div style={{display:'flex',height:6,borderRadius:4,overflow:'hidden'}}>
+                    <div style={{width:(cons*100)+'%',background:'var(--up)',opacity:.8}}/>
+                    <div style={{flex:1,background:'var(--down)',opacity:.8}}/>
+                  </div>
+                </div>);})()}
               {/* dinero REAL (OI, mostrado una vez) + lectura de divergencia */}
               {masa!=null&&pro!=null&&<div style={{gridColumn:'1 / -1',fontSize:8.5,color:'var(--faint)',lineHeight:1.5,marginTop:1}}>
                 💰 <b style={{color:'var(--txt)'}}>Dinero real en juego (OI top {lsTop.length}): {fmtB(tot)}</b>. En futuros el $ largo = $ corto = OI siempre; los <b>%</b> de arriba son el <b>SESGO</b> de cada grupo (qué parte está en cada lado), no importes distintos. {Math.abs(masa-pro)>0.08?('⚠️ Divergencia: la masa (retail) está '+(masa>pro?'MÁS larga':'MÁS corta')+' que los pros ('+Math.abs((masa-pro)*100).toFixed(0)+' pts). Los top traders suelen tener razón — precaución al lado de la multitud.'):'Masa y pros alineados: sin divergencia relevante.'} Este sesgo <b>alimenta el cono</b> del Cuantitativo. <b style={{color:'var(--dim)'}}>¿No cuadran los % entre apartados?</b> Es normal: masa = CUENTAS · pros = POSICIONES · aperturas 24h = FLUJO taker · mapa de liquidez (Cuantitativo) = dinero EN RIESGO de liquidación — miden cosas distintas; la señal fuerte es cuando todos apuntan igual.</div>}
