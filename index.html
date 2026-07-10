@@ -3252,9 +3252,9 @@ function QuantView({gFunding}){
           const qs=e*(1+1/L); if(qs>price&&maxAfter[i]<qs)add(qs,'short',base*tw/L*(1-bf)*2);
         }}
       const rows=[...B.values()];
-      // El MAPA se limita a ±18% del precio: los niveles heredados de tendencias pasadas
-      // (p.ej. cortos de +32% arriba tras una caída) estiraban el eje y inflaban un lado.
-      const ZMAP=0.18;
+      // El MAPA se limita a la MISMA zona operativa que los totales (±12%): antes pintaba
+      // hasta ±18% y las cajas contaban ±12% — se veían barras que 'no sumaban'.
+      const ZMAP=0.12; // MISMA zona que los totales: lo que ves pintado es lo que se cuenta
       const below=rows.filter(r=>r.long>0&&r.p<price&&(1-r.p/price)<=ZMAP).map(r=>({p:r.p,side:'long',w:r.long})).sort((a,b)=>b.w-a.w).slice(0,6);
       const above=rows.filter(r=>r.short>0&&r.p>price&&(r.p/price-1)<=ZMAP).map(r=>({p:r.p,side:'short',w:r.short})).sort((a,b)=>b.w-a.w).slice(0,6);
       const all=above.concat(below); if(!all.length)return null;
