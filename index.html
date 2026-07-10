@@ -6136,8 +6136,27 @@ class ErrorBoundary extends React.Component{
 ReactDOM.createRoot(document.getElementById('root')).render(<ErrorBoundary><App/></ErrorBoundary>);
 
 // PWA: registra el service worker (app instalable + offline + cargas repetidas rápidas)
+// + AVISO DE VERSIÓN NUEVA: cuando el SW detecta una actualización desplegada, muestra
+// un botón "⬆️ Hay versión nueva" que recarga (la web itera rápido y sin esto el usuario
+// instalado como PWA se queda días con la versión vieja).
 if('serviceWorker' in navigator){
-  window.addEventListener('load',()=>{navigator.serviceWorker.register('/sw.js').catch(()=>{});});
+  window.addEventListener('load',()=>{
+    navigator.serviceWorker.register('/sw.js').then(reg=>{
+      const show=()=>{ if(document.getElementById('updbar'))return;
+        const b=document.createElement('div'); b.id='updbar';
+        b.textContent='⬆️ Hay versión nueva · toca para actualizar';
+        b.style.cssText='position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:9999;background:#1FE0A0;color:#07090E;font:700 12.5px system-ui;padding:11px 18px;border-radius:12px;box-shadow:0 6px 24px rgba(31,224,160,.45);cursor:pointer;';
+        b.onclick=()=>{location.reload();};
+        document.body.appendChild(b);
+      };
+      if(reg.waiting)show();
+      reg.addEventListener('updatefound',()=>{const nw=reg.installing;
+        if(!nw)return; nw.addEventListener('statechange',()=>{
+          if(nw.state==='installed'&&navigator.serviceWorker.controller)show();});
+      });
+      document.addEventListener('visibilitychange',()=>{if(!document.hidden)reg.update().catch(()=>{});});
+    }).catch(()=>{});
+  });
 }
 </script>
 </body>
