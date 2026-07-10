@@ -5169,7 +5169,7 @@ function BotsView({gFunding}){
       <div style={panel({marginBottom:14,padding:16,background:'radial-gradient(130% 80% at 50% 0%, rgba(31,224,160,.08) 0%, var(--panel) 55%)',borderColor:'rgba(31,224,160,.35)'})}>
         <div style={{...flx({justifyContent:'space-between'}),marginBottom:6}}>
           <span className="mono" style={{fontSize:9,fontWeight:800,color:'var(--up)',padding:'2px 8px',borderRadius:10,background:'rgba(31,224,160,.14)',border:'1px solid rgba(31,224,160,.35)'}}>🏆 Nº1 · más rentable</span>
-          <span className="mono" style={{fontSize:8.5,fontWeight:700,color:dsrCol(top.dsr),padding:'2px 7px',borderRadius:10,background:'rgba(255,255,255,.04)'}}>Deflated Sharpe {(top.dsr*100).toFixed(0)}%</span>
+          <span className="mono" style={{fontSize:8.5,fontWeight:700,color:dsrCol(top.dsr),padding:'2px 7px',borderRadius:10,background:'rgba(255,255,255,.04)',flexShrink:0}}>DSR {(top.dsr*100).toFixed(0)}%</span>
         </div>
         <div style={{fontSize:16,fontWeight:800,letterSpacing:-.3,color:'var(--txt)'}}>{top.name}</div>
         <div style={{fontSize:9.5,color:'var(--faint)',marginTop:3,lineHeight:1.5}}>{top.tipo} · {top.hyp}</div>
