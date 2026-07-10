@@ -477,6 +477,22 @@ function Hero({vwafr,label,big}){
   );
 }
 
+// ── Render PEREZOSO: el hijo solo se monta al acercarse al viewport (la portada
+//    apila 10 calculadoras de ~1.500px; montarlas todas de golpe hacía pesado el
+//    primer pintado). El placeholder conserva la altura para que el salto del
+//    "Resumen top 10" (scrollIntoView a #coin-X) siga funcionando. ──
+function Lazy({children,est=1500}){
+  const ref=React.useRef(null); const [on,setOn]=useState(false);
+  useEffect(()=>{
+    if(on)return;
+    const el=ref.current;
+    if(!el||typeof IntersectionObserver==='undefined'){setOn(true);return;}
+    const io=new IntersectionObserver(es=>{for(const e of es)if(e.isIntersecting){setOn(true);io.disconnect();return;}},{rootMargin:'900px'});
+    io.observe(el); return()=>io.disconnect();
+  },[on]);
+  return on?children:<div ref={ref} style={{minHeight:est}}/>;
+}
+
 // ── Bloque calculador por moneda ──
 function Calc({coin,data,source,sel}){
   const [rows,setRows]=useState(META.map(m=>({...m,funding:0,oi:1,mode:'auto',on:true,status:'idle'})));
@@ -6202,15 +6218,11 @@ function App(){
 
       {/* ── Detalle de TODAS las monedas, apiladas (BTC, ETH, SOL, ...) ── */}
       {coins.map((c,idx)=>(
-        <React.Fragment key={c}>
-          <div id={'coin-'+c} style={{scrollMarginTop:10}}>
-            <Calc coin={c} data={data[c]} source={source} sel={c===tab}/>
-          </div>
-          {(idx===0||idx===4)&&(
-            <div style={{marginBottom:16}}>
-            </div>
-          )}
-        </React.Fragment>
+        <div key={c} id={'coin-'+c} style={{scrollMarginTop:10}}>
+          {idx===0
+            ? <Calc coin={c} data={data[c]} source={source} sel={c===tab}/>
+            : <Lazy><Calc coin={c} data={data[c]} source={source} sel={c===tab}/></Lazy>}
+        </div>
       ))}
 
       {/* ── TELEGRAM: avisos automáticos ── */}
