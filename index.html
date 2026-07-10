@@ -4416,10 +4416,16 @@ function QuantView({gFunding}){
           const Ym=p=>10+(phi-p)/((phi-plo)||1)*(Hm-20);
           const maxW=W-PLm-PRm-58; // deja hueco a la etiqueta del %
           const strongest=all2.reduce((m,x)=>x.rel>m.rel?x:m,all2[0]);
-          // anti-solape: clústeres muy pegados en precio se separan al menos 13px
+          // anti-solape: clústeres muy pegados en precio se separan al menos 13px.
+          // Pasada de bajada + pasada INVERSA desde el borde inferior: antes, el clamp
+          // a Hm-8 aplastaba las últimas filas unas encima de otras (etiquetas ilegibles).
           const pos=all2.map(k=>({k,y:Ym(k.p)})).sort((a,b)=>a.y-b.y);
           for(let i2=1;i2<pos.length;i2++)if(pos[i2].y<pos[i2-1].y+13)pos[i2].y=pos[i2-1].y+13;
-          const yOf=new Map(pos.map(o=>[o.k,Math.min(Hm-8,o.y)]));
+          if(pos.length){
+            if(pos[pos.length-1].y>Hm-10)pos[pos.length-1].y=Hm-10;
+            for(let i2=pos.length-2;i2>=0;i2--)if(pos[i2].y>pos[i2+1].y-13)pos[i2].y=pos[i2+1].y-13;
+          }
+          const yOf=new Map(pos.map(o=>[o.k,o.y]));
           // REPARTO DEL DINERO: cuánto espera ser liquidado en cada lado (todos los bins)
           const totS=c.liqmap.totS||0, totL=c.liqmap.totL||0, totAll=totS+totL;
           const pS=totAll>0?totS/totAll*100:50, pL=100-pS;
@@ -5985,11 +5991,11 @@ function App(){
             return(<div style={{marginTop:8,display:'grid',gridTemplateColumns:'1fr 1fr',gap:7}}>
               <div style={{background:'#0A0D14',borderRadius:8,padding:'8px 9px',textAlign:'center'}}>
                 <div className="mono" style={{fontSize:13,fontWeight:800,color:pl2>=0.5?'var(--up)':'var(--down)'}}>{pctF.toFixed(0)}%</div>
-                <div style={{fontSize:7.5,color:'var(--dim)',marginTop:2,lineHeight:1.4}}>FUTUROS · {pl2>=0.5?'empujan los LONGS':'empujan los SHORTS'} ({(pl2*100).toFixed(0)}% long)</div>
+                <div style={{fontSize:7.5,color:'var(--dim)',marginTop:2,lineHeight:1.4}}>FUTUROS · {Math.abs(pl2-0.5)<0.01?'equilibrados':pl2>=0.5?'empujan los LONGS':'empujan los SHORTS'} ({(pl2*100).toFixed(0)}% long)</div>
               </div>
               <div style={{background:'#0A0D14',borderRadius:8,padding:'8px 9px',textAlign:'center'}}>
                 <div className="mono" style={{fontSize:13,fontWeight:800,color:tb>=0.5?'var(--up)':'var(--down)'}}>{pctS.toFixed(0)}%</div>
-                <div style={{fontSize:7.5,color:'var(--dim)',marginTop:2,lineHeight:1.4}}>SPOT · {tb>=0.5?'empujan las COMPRAS':'empujan las VENTAS'} ({(tb*100).toFixed(0)}% compras)</div>
+                <div style={{fontSize:7.5,color:'var(--dim)',marginTop:2,lineHeight:1.4}}>SPOT · {Math.abs(tb-0.5)<0.01?'equilibrado':tb>=0.5?'empujan las COMPRAS':'empujan las VENTAS'} ({(tb*100).toFixed(0)}% compras)</div>
               </div>
               <div style={{gridColumn:'1 / -1',fontSize:8,color:'var(--faint)',lineHeight:1.4}}>Reparto estimado del empuje: cuánto se desvía cada mercado de su equilibrio (50/50). Más % = ese mercado manda ahora.</div>
             </div>);})()}
@@ -6051,7 +6057,7 @@ function App(){
               {/* FILA "COINGLASS" · volumen taker 24h: cuánto se ABRIÓ en long vs short (flujo real) */}
               {lsMkt&&lsMkt.taker&&Number.isFinite(lsMkt.taker.pl)&&<React.Fragment>
                 <Tile v={(lsMkt.taker.pl*100).toFixed(1)+'% LONG'} c={'var(--up)'} sub={'⚡ ABIERTO en 24h · volumen taker (estilo Coinglass)'}/>
-                <Tile v={((1-lsMkt.taker.pl)*100).toFixed(1)+'% SHORT'} c={'var(--down)'} sub={'⚡ ABIERTO en 24h · '+(lsMkt.taker.pl>=0.5?'dominan las aperturas de LARGOS':'dominan las aperturas de CORTOS')}/>
+                <Tile v={((1-lsMkt.taker.pl)*100).toFixed(1)+'% SHORT'} c={'var(--down)'} sub={'⚡ ABIERTO en 24h · aperturas de cortos'}/>
               </React.Fragment>}
               {/* FILA 2 · MASA (cuentas retail): SESGO de posicionamiento en % (no es dinero:
                   en futuros el $ largo = $ corto = OI; esto es cuántas cuentas hay en cada lado) */}
