@@ -241,6 +241,17 @@ const FALLBACK_COINS=['BTC','ETH','SOL','XRP','BNB','DOGE','ADA','AVAX','LINK','
 // Relé de datos long/short (Vercel, mismo proyecto que el relé de Bitunix):
 // OKX no envía CORS y el navegador no puede llamarle directo.
 const LS_RELAY='https://vwafr-generico.vercel.app/api/ls';
+// UNA sola llamada compartida al relé long/short: todos los paneles leen el MISMO
+// snapshot (antes cada efecto pedía el suyo en momentos distintos y, con la caché
+// de por medio, el mismo concepto podía salir 60% en un panel y 61% en otro).
+let LS_SNAP={t:0,p:null};
+function fetchLS(){
+  if(LS_SNAP.p&&Date.now()-LS_SNAP.t<60000)return LS_SNAP.p;
+  const p=fetch(LS_RELAY).then(r=>r.json());
+  LS_SNAP={t:Date.now(),p};
+  p.catch(()=>{if(LS_SNAP.p===p)LS_SNAP={t:0,p:null};}); // un fallo no envenena la caché
+  return p;
+}
 
 // Exchanges base (color)
 const META=[
@@ -2780,7 +2791,7 @@ function QuantView({gFunding}){
         if(Number.isFinite(cp)&&Number.isFinite(bp)&&bp>0)out.cbPrem=(cp-bp)/bp*100;
       }catch(_){}
       try{
-        const j=await fetch(LS_RELAY).then(r=>r.json());
+        const j=await fetchLS();
         const btc=((j&&j.coins)||[]).find(x=>x.c==='BTC');
         if(btc&&Number.isFinite(btc.r)&&btc.r>0)out.masa=btc.r/(1+btc.r);
         const pos=j&&j.btc&&j.btc.pos;
@@ -5737,7 +5748,7 @@ function App(){
         const sd=Math.sqrt(hs.reduce((s,x)=>s+(x-m)*(x-m),0)/hs.length);
         return sd>1e-6?(v-m)/sd:null;};
       try{
-        const j=await fetch(LS_RELAY).then(r=>r.json());
+        const j=await fetchLS();
         const bc=((j&&j.coins)||[]).find(x=>x.c==='BTC');
         if(bc&&Number.isFinite(bc.r)&&bc.r>0)lsr=bc.r;
         const hs=(j&&j.btc&&j.btc.hist)||[];
@@ -5776,7 +5787,7 @@ function App(){
       try{
         let out=[];
         try{ // fuente principal: el RELÉ (media OKX+Bybit+Binance con nº de fuentes)
-          const j=await fetch(LS_RELAY).then(r=>r.json());
+          const j=await fetchLS();
           out=((j&&j.coins)||[]).filter(x=>Number.isFinite(x.r)&&x.r>0).map(x=>({c:x.c,pl:x.r/(1+x.r),srcs:x.srcs||1,rp:x.rp,
             plPro:(Number.isFinite(x.rp)&&x.rp>0)?x.rp/(1+x.rp):null})); // pros (top traders) por moneda
           if(alive&&j&&(j.mkt||(j.btc&&j.btc.taker)))setLsMkt({...(j.mkt||{}),taker:(j.btc&&j.btc.taker)||null});
