@@ -2986,6 +2986,8 @@ function QuantView({gFunding}){
     const lsrZ=(flow&&Number.isFinite(flow.lsrZ))?flow.lsrZ:null;
     const lsStrength=lsrZ==null?null:(Math.abs(lsrZ)>=1.5?'FUERTE':Math.abs(lsrZ)>=0.7?'moderado':'leve');
     const plEff=pctLongM!=null?pctLongM:pctLong; // prioriza el DINERO sobre las cuentas
+    // fuente REAL del dato de pros (la guarda la vista Funding): OKX, Binance o ambas
+    const lsSrcLbl=(flow&&flow.posEx&&flow.posEx.length)?flow.posEx.join('+'):'OKX';
     const strengthMul=lsrZ==null?1:Math.min(1.6,0.6+0.5*Math.abs(lsrZ));
     const lsB=plEff!=null?cl0((0.5-plEff)*2*0.0018*strengthMul,0.0012):null;
     // DIVERGENCIA PROS vs MASA: si los top traders (dinero) van al revés que la
@@ -3139,7 +3141,7 @@ function QuantView({gFunding}){
     if(usdLiqB!=null&&usdLiq)biases.push({k:'Dólar + Oro (sentimiento)',v:usdLiqB,why:'dólar '+(usdLiq.usdChg>=0?'+':'')+(usdLiq.usdChg*100).toFixed(1)+'% · oro '+(usdLiq.goldChg!=null?(usdLiq.goldChg>=0?'+':'')+(usdLiq.goldChg*100).toFixed(1)+'%':'—')+' · '+usdLiq.verdict.t});
     if(goldB!=null&&goldB!==0)biases.push({k:'Oro (correlación)',v:goldB,why:'corr BTC–oro '+corrG.toFixed(2)+' · oro '+((q.gold[q.gold.length-1]/q.gold[q.gold.length-31]-1)>=0?'subiendo':'bajando')+' 30d'});
     if(flowB!=null&&flowB!==0)biases.push({k:'Flujo spot (taker)',v:flowB,why:(flow.takerBuy*100).toFixed(0)+'% compras agresivas 24h '+(flow.takerBuy>=0.5?'(compradores)':'(vendedores)')});
-    if(lsB!=null)biases.push({k:'Long/Short (posicionamiento)',v:lsB,why:(plEff*100).toFixed(0)+'% long / '+((1-plEff)*100).toFixed(0)+'% short ('+(pctLongM!=null?'dinero top traders':'cuentas')+', OKX)'+(lsStrength?' · '+lsStrength:'')+' · contraria: multitud '+(plEff>=0.5?'larga':'corta')});
+    if(lsB!=null)biases.push({k:'Long/Short (posicionamiento)',v:lsB,why:(plEff*100).toFixed(0)+'% long / '+((1-plEff)*100).toFixed(0)+'% short ('+(pctLongM!=null?'dinero top traders '+lsSrcLbl:'cuentas OKX+Bybit+Binance')+')'+(lsStrength?' · '+lsStrength:'')+' · contraria: multitud '+(plEff>=0.505?'larga':plEff<=0.495?'corta':'equilibrada')});
     if(manipB!=null)biases.push({k:'Manipulación / barridos',v:manipB,why:manipRecent.t+(manipRecent.ago>0?' hace '+manipRecent.ago+'d':' hoy')+(manipRecent.win!=null?' · '+manipRecent.win+'% revierte histórico (n='+manipRecent.samples+')':'')+' · el cono juega la reversión'});
     if(pushB!=null)biases.push({k:'Quién empuja (spot/futuros)',v:cl0(pushB,0.0009),why:pushWhy});
     if(divB!=null&&Math.abs(pctLongM-pctLong)>0.05)biases.push({k:'Divergencia pros vs masa',v:divB,why:'top traders '+(pctLongM*100).toFixed(0)+'% long vs masa '+(pctLong*100).toFixed(0)+'% long → el cono sigue a los pros'});
@@ -3196,9 +3198,14 @@ function QuantView({gFunding}){
       const add=(p,side,w)=>{const k=Math.round(p/bw);const o=B.get(k)||{p:k*bw,long:0,short:0};o[side]+=w;B.set(k,o);};
       for(let i=0;i<n2;i++){const e=(rec[i].h+rec[i].l+rec[i].c)/3, base=(rec[i].v||0)*e*(0.4+0.6*i/n2);
         if(!(base>0))continue;
+        // REPARTO REAL por vela: el taker buy/sell de Binance dice qué parte del volumen
+        // fue compra agresiva (abre largos) vs venta agresiva (abre cortos). Antes cada
+        // vela contaba 50/50 a ambos lados y el mapa quedaba descorrelacionado del
+        // posicionamiento real; ahora cada lado pesa lo que de verdad se abrió.
+        const bf=(rec[i].tb>0&&rec[i].v>0)?Math.max(0.2,Math.min(0.8,rec[i].tb/rec[i].v)):0.5;
         for(const [L,tw] of tiers){
-          const ql=e*(1-1/L); if(ql<price&&minAfter[i]>ql)add(ql,'long',base*tw/L);   // /L: a más apalancamiento, menos notional real detrás
-          const qs=e*(1+1/L); if(qs>price&&maxAfter[i]<qs)add(qs,'short',base*tw/L);
+          const ql=e*(1-1/L); if(ql<price&&minAfter[i]>ql)add(ql,'long',base*tw/L*bf*2);   // /L: a más apalancamiento, menos notional real detrás
+          const qs=e*(1+1/L); if(qs>price&&maxAfter[i]<qs)add(qs,'short',base*tw/L*(1-bf)*2);
         }}
       const rows=[...B.values()];
       const below=rows.filter(r=>r.long>0&&r.p<price).map(r=>({p:r.p,side:'long',w:r.long})).sort((a,b)=>b.w-a.w).slice(0,6);
@@ -3209,7 +3216,7 @@ function QuantView({gFunding}){
       // TOTALES por lado (sobre TODOS los bins, no solo el top-6): cuánto dinero estimado
       // espera ser liquidado arriba (cortos) vs abajo (largos) — para el resumen del mapa.
       let totS=0,totL=0; for(const r of rows){if(r.p>price)totS+=r.short;if(r.p<price)totL+=r.long;}
-      return {above:above.sort((a,b)=>b.p-a.p),below:below.sort((a,b)=>b.p-a.p),totS,totL,src:use4h?'4h':'1d'};
+      return {above:above.sort((a,b)=>b.p-a.p),below:below.sort((a,b)=>b.p-a.p),totS,totL,posRef:plEff,src:use4h?'4h':'1d'};
     })();
     // ── IMÁN del cono: los clústeres REALES del mapa (si hay); respaldo teórico si no.
     const mags=[];
@@ -3346,7 +3353,7 @@ function QuantView({gFunding}){
     })();
     return {price,annVol,rsi,ma200,ma50,ma200w,mc,probUp,probUp15,probDn15,var99,cvar99,coneBT,hiConf,
       fair,lo,hi,valPct,realized,models,plSup,plRes,H,regime,fund,gf,opt,levels,cyc,patterns,corrE,corrS,corrG,corrAvg,liq,usdLiq,gold:q.gold,ritual,optExp,
-      route,tomorrow,tomPct,sig10,pdrift,trap,swingHi,swingLo,routes,biases,chartPats,chartPatsMTF,patsMTF,liqmap,veloTF,drift,drift30,shutdown,pctLong,pctLongM,lsrZ,lsStrength,manip:manipList,
+      route,tomorrow,tomPct,sig10,pdrift,trap,swingHi,swingLo,routes,biases,chartPats,chartPatsMTF,patsMTF,liqmap,veloTF,drift,drift30,shutdown,pctLong,pctLongM,lsrZ,lsStrength,lsSrcLbl,manip:manipList,
       cal,volScale,sigTarget,dvol:q.dvol,obImb:q.obImb,impDaily,closes:cl,db,skill};
   },[q,gFunding]);
 
@@ -3798,7 +3805,7 @@ function QuantView({gFunding}){
           <div style={{marginTop:12,paddingTop:11,borderTop:'1px solid var(--line2)'}}>
             <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
               <span className="mono" style={{fontSize:10,fontWeight:800,color:'var(--up)'}}>▲ LONG {(pl*100).toFixed(0)}%</span>
-              <span style={{fontSize:8,color:'var(--faint)'}}>{c.pctLongM!=null?'DINERO en futuros (top traders OKX)':'cuentas en futuros (OKX)'}{c.lsStrength?' · '+c.lsStrength:''}</span>
+              <span style={{fontSize:8,color:'var(--faint)'}}>{c.pctLongM!=null?'DINERO en futuros (top traders '+(c.lsSrcLbl||'OKX')+')':'cuentas en futuros (OKX+Bybit+Binance)'}{c.lsStrength?' · '+c.lsStrength:''}</span>
               <span className="mono" style={{fontSize:10,fontWeight:800,color:'var(--down)'}}>{((1-pl)*100).toFixed(0)}% SHORT ▼</span>
             </div>
             <div style={{display:'flex',height:7,borderRadius:5,overflow:'hidden'}}>
@@ -3806,7 +3813,7 @@ function QuantView({gFunding}){
               <div style={{flex:1,background:'var(--down)',opacity:.75}}/>
             </div>
             <div style={{fontSize:8.5,color:'var(--dim)',marginTop:5,lineHeight:1.5}}>
-              {c.gf>0.0005?('Funding positivo porque dominan los longs ('+(c.pctLong*100).toFixed(0)+'% de cuentas): los longs pagan a los shorts.'):c.gf<-0.0005?('Funding negativo porque dominan los shorts: los shorts pagan a los longs.'):'Funding casi neutro: posicionamiento repartido.'}
+              {c.gf>0.0005?('Funding positivo: los longs pagan a los shorts (presión compradora apalancada)'+(c.pctLong!=null&&c.pctLong>0.52?' — además el '+(c.pctLong*100).toFixed(0)+'% de cuentas está long':'')+'.'):c.gf<-0.0005?('Funding negativo: los shorts pagan a los longs (presión vendedora apalancada)'+(c.pctLong!=null&&c.pctLong<0.48?' — además solo el '+(c.pctLong*100).toFixed(0)+'% de cuentas está long':'')+'.'):'Funding casi neutro: posicionamiento repartido.'}
               {c.lsStrength?' Posicionamiento '+c.lsStrength+' (z-score '+(c.lsrZ!=null?c.lsrZ.toFixed(1):'—')+' vs su media reciente).':''}
               {' '}Esta lectura entra en el cono como <b>señal contraria</b> — cuanto más fuerte, más inclina: multitud muy cargada de un lado = riesgo de squeeze al otro.
             </div>
@@ -4481,7 +4488,7 @@ function QuantView({gFunding}){
             <div style={{width:pS+'%',background:'linear-gradient(90deg,#1FE0A0,#1FE0A088)'}}/>
             <div style={{width:pL+'%',background:'linear-gradient(90deg,#FF547088,#FF5470)'}}/>
           </div>
-          <div style={{marginTop:5,fontSize:8.5,color:'var(--dim)',lineHeight:1.5}}>💰 Hay más dinero esperando liquidación en <b style={{color:moreShorts?'var(--up)':'var(--down)'}}>{moreShorts?'CORTOS (arriba, '+pS.toFixed(0)+'%)':'LARGOS (abajo, '+pL.toFixed(0)+'%)'}</b> — el precio tiende a ir donde más liquidez hay. $ = notional estimado del volumen real (no dato oficial).{(strongest.side==='short')!==moreShorts?' Ojo: el clúster SUELTO más fuerte ⚡ está en el otro lado — imán cercano puntual vs peso total del lado.':''} <b style={{color:'var(--dim)'}}>Esto NO es "cuántos longs/shorts hay"</b> (eso está en Flujo de dinero; en futuros el $ largo siempre = $ corto): es dónde LIQUIDARÍAN a los que ya están dentro.</div>
+          <div style={{marginTop:5,fontSize:8.5,color:'var(--dim)',lineHeight:1.5}}>💰 Hay más dinero esperando liquidación en <b style={{color:moreShorts?'var(--up)':'var(--down)'}}>{moreShorts?'CORTOS (arriba, '+pS.toFixed(0)+'%)':'LARGOS (abajo, '+pL.toFixed(0)+'%)'}</b> — el precio tiende a ir donde más liquidez hay. $ = notional estimado del volumen real (no dato oficial).{(strongest.side==='short')!==moreShorts?' Ojo: el clúster SUELTO más fuerte ⚡ está en el otro lado — imán cercano puntual vs peso total del lado.':''} Cada vela reparte su volumen entre largos y cortos según su <b style={{color:'var(--txt)'}}>taker buy/sell REAL</b> (Binance).{Number.isFinite(c.liqmap.posRef)?' Posicionamiento AHORA: '+(c.liqmap.posRef*100).toFixed(0)+'% long / '+((1-c.liqmap.posRef)*100).toFixed(0)+'% short (dinero top traders) — el mapa mide otra cosa: el riesgo ACUMULADO de los que ya entraron y dónde los liquidarían.':' Esto NO es "cuántos longs/shorts hay" (eso, en Flujo de dinero): es dónde LIQUIDARÍAN a los que ya están dentro.'}</div>
           <div style={{marginTop:8,padding:'8px 10px',borderRadius:9,background:strongest.side==='short'?'rgba(31,224,160,.07)':'rgba(255,84,112,.07)',
             border:`1px solid ${strongest.side==='short'?'rgba(31,224,160,.25)':'rgba(255,84,112,.25)'}`,fontSize:9,color:'var(--dim)',lineHeight:1.5}}>
             🧲 El imán más fuerte está <b style={{color:strongest.side==='short'?'var(--up)':'var(--down)'}}>{strongest.side==='short'?'ARRIBA':'ABAJO'} en {money(strongest.p)} ({(strongest.p/c.price-1)>=0?'+':''}{((strongest.p/c.price-1)*100).toFixed(1)}%)</b>: ahí se concentran las liquidaciones pendientes de {strongest.side==='short'?'cortos':'largos'} — el precio suele ir a buscar esa liquidez. Este imán <b>alimenta el cono</b>.
@@ -6037,7 +6044,7 @@ function App(){
             // (el spot no tiene funding). El spot solo CONFIRMA o CONTRADICE el movimiento.
             const fNow=(g&&Number.isFinite(g.vwafr))?g.vwafr:null;
             const tb=(flow&&Number.isFinite(flow.takerBuy))?flow.takerBuy:null;
-            const fPos=fNow!=null&&fNow>0.0005, fNeg=fNow!=null&&fNow<-0.0005;
+            const fPos=fNow!=null&&fNow>0.002, fNeg=fNow!=null&&fNow<-0.002; // ±0,002%: por debajo, decir "dominan los longs" exagera
             const fundTxt=fNow==null?null:(fPos?('dominan los LONGS apalancados (pagan a los shorts).'+(tb!=null?(tb<0.48?' El SPOT vende → subida solo apalancada, frágil.':tb>0.52?' Y el SPOT compra → subida sana, confirmada.':' Spot neutro.'):'')):
               fNeg?('dominan los SHORTS apalancados (pagan a los longs).'+(tb!=null?(tb>0.52?' Pero el SPOT compra → posible short squeeze.':tb<0.48?' Y el SPOT vende → bajada real.':' Spot neutro.'):'')):
               'los futuros están equilibrados, sin sesgo claro.');
