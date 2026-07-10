@@ -4696,6 +4696,7 @@ function PIBView(){
   const [macro,setMacro]=useState(null);
   const [err,setErr]=useState(false);
   const [sel,setSel]=useState('USA');
+  const [retry,setRetry]=useState(0); // botón "reintentar" del estado de error
   useEffect(()=>{let a=true;
     const base=`https://api.worldbank.org/v2/country/${PIB_LIST}/indicator/`;
     Promise.all([
@@ -4718,9 +4719,13 @@ function PIBView(){
           if(s.length)macroData[code]=s;}});
       setRaw(m); setMacro(analyzeMacro(macroData));
     }).catch(()=>{if(a)setErr(true);});
-    return()=>{a=false;};},[]);
+    return()=>{a=false;};},[retry]);
 
-  if(err)return(<div style={{textAlign:'center',color:'var(--faint)',fontSize:12,padding:'40px 0'}}>No se pudo cargar el PIB ahora mismo. Vuelve a intentarlo en un momento.</div>);
+  if(err)return(<div style={{textAlign:'center',color:'var(--faint)',fontSize:12,padding:'40px 0'}}>
+    <div style={{marginBottom:14}}>No se pudo cargar el PIB ahora mismo (el Banco Mundial a veces tarda o falla).</div>
+    <button onClick={()=>{setErr(false);setRaw(null);setRetry(r=>r+1);}} style={{background:'rgba(110,139,255,.12)',border:'1px solid rgba(110,139,255,.35)',
+      borderRadius:9,padding:'9px 22px',color:'var(--accent)',fontSize:12.5,fontWeight:800,cursor:'pointer'}}>↻ Reintentar</button>
+  </div>);
   if(!raw)return(<div style={{textAlign:'center',color:'var(--faint)',fontSize:13,padding:'40px 0'}}>
     <div style={{fontSize:20,marginBottom:8,animation:'spin 1s linear infinite',display:'inline-block'}}>◌</div>
     <div>Cargando PIB por país…</div><div style={{fontSize:10,marginTop:6}}>fuente: Banco Mundial</div></div>);
