@@ -22,6 +22,7 @@
   var lsData={t:Date.now(),coins:[mk('BTC',1.5,1.17),mk('ETH',1.8,1.05),mk('SOL',2.1,0.9),mk('XRP',1.2,1.3),mk('BNB',1.4,1.1),
     mk('DOGE',2.5,0.8),mk('ADA',1.1,1.2),mk('AVAX',1.7,0.95),mk('LINK',1.3,1.15),mk('LTC',1.6,1.0)],
     btc:{pos:1.17,posSrcs:2,posEx:['OKX','Binance'],posW:true,taker:{b:52300,s:49100,pl:0.5158},prem:-0.038,
+      lsEx:{acc:{OKX:1.2,Bybit:1.35,Binance:1.95},pro:{OKX:1.008,Binance:1.35}},
       oiHist:oiH,premHist:pmH,cvdFut:oiH.map(function(v,i){return +(i*10-2000+Math.random()*50).toFixed(1);}),fundHist:fdH,premHistD:pmH.slice(0,90),oiHistD:oiH.slice(0,30),
       hist:Array.from({length:72},function(){return 1.5+Math.random()*0.1;})},
     mkt:{futVol:14.9,spotVol:1.2}};

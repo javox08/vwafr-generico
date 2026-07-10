@@ -2820,6 +2820,7 @@ function QuantView({gFunding}){
         if(j&&j.btc&&Array.isArray(j.btc.premHistD)&&j.btc.premHistD.length>10)out.premHistD=j.btc.premHistD; // premium 1d (90d)
         if(j&&j.btc&&Array.isArray(j.btc.oiHistD)&&j.btc.oiHistD.length>5)out.oiHistD=j.btc.oiHistD;       // OI diario (30d)
         if(j&&j.btc&&Array.isArray(j.btc.cvdFut)&&j.btc.cvdFut.length>10)out.cvdFut=j.btc.cvdFut;          // CVD de FUTUROS (BTC, 1h × 480)
+        if(j&&j.btc&&j.btc.lsEx)out.lsEx=j.btc.lsEx; // desglose por exchange (verificable 1:1)
       }catch(_){}
       if(alive)setFlowPro(out);
     };
@@ -3951,6 +3952,18 @@ function QuantView({gFunding}){
                   <div style={{width:(v*100)+'%',background:'var(--up)',opacity:.8}}/><div style={{flex:1,background:'var(--down)',opacity:.8}}/>
                 </div>
               </div>))}
+            {(()=>{ // 🔎 VERIFICACIÓN: el ratio de CADA exchange tal cual lo publica su web
+              const ex=flowPro&&flowPro.lsEx; if(!ex)return null;
+              const f=r2=>Number.isFinite(r2)&&r2>0?(r2/(1+r2)*100).toFixed(0)+'%L':null;
+              const accs=Object.entries(ex.acc||{}).map(([k,v])=>[k,f(v)]).filter(x=>x[1]);
+              const pros3=Object.entries(ex.pro||{}).map(([k,v])=>[k,f(v)]).filter(x=>x[1]);
+              if(!accs.length&&!pros3.length)return null;
+              return(<div style={{fontSize:8,color:'var(--dim)',lineHeight:1.6,marginTop:2,padding:'6px 8px',borderRadius:7,background:'#0A0D14',border:'1px solid var(--line2)'}}>
+                🔎 <b style={{color:'var(--txt)'}}>Verifícalo tú mismo</b> (dato oficial de cada exchange, el mismo que verás en Coinglass):
+                {accs.length>0&&<span> cuentas → {accs.map(([k,v])=>k+' '+v).join(' · ')}.</span>}
+                {pros3.length>0&&<span> top traders → {pros3.map(([k,v])=>k+' '+v).join(' · ')}.</span>}
+                {' '}Nuestra media pondera esas fuentes (pros por OI) — por eso puede no coincidir con UNA sola web.
+              </div>);})()}
             <div style={{fontSize:8,color:'var(--faint)',lineHeight:1.5,marginTop:3}}>% = qué parte de cada grupo está en cada lado (no es dinero: en futuros el $ largo = corto = OI). {masa!=null&&pros!=null&&Math.abs(masa-pros)>0.08?'⚠️ La masa está '+(masa>pros?'MÁS larga':'MÁS corta')+' que los pros: los top traders suelen tener razón.':''} <b style={{color:'var(--dim)'}}>¿No cuadra con otros apartados?</b> Es normal: masa = CUENTAS · pros = POSICIONES de top traders · aperturas 24h = FLUJO taker · mapa de liquidez = dinero EN RIESGO de liquidación. Miden cosas distintas; la señal fuerte es cuando todos apuntan al mismo lado.</div>
           </div>}
           <p style={{fontSize:8,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>CVD y agresión neta de Binance Futures (taker buy − sell). Coinbase Premium = precio en Coinbase vs Binance (compra institucional EE.UU.). Todo se actualiza solo. No es consejo financiero.</p>
@@ -5811,7 +5824,7 @@ function App(){
           const j=await fetchLS();
           out=((j&&j.coins)||[]).filter(x=>Number.isFinite(x.r)&&x.r>0).map(x=>({c:x.c,pl:x.r/(1+x.r),srcs:x.srcs||1,rp:x.rp,
             plPro:(Number.isFinite(x.rp)&&x.rp>0)?x.rp/(1+x.rp):null})); // pros (top traders) por moneda
-          if(alive&&j&&(j.mkt||(j.btc&&j.btc.taker)))setLsMkt({...(j.mkt||{}),taker:(j.btc&&j.btc.taker)||null});
+          if(alive&&j&&(j.mkt||(j.btc&&j.btc.taker)))setLsMkt({...(j.mkt||{}),taker:(j.btc&&j.btc.taker)||null,lsEx:(j.btc&&j.btc.lsEx)||null});
         }catch(_){}
         if(!out.length){ // respaldo: OKX directo (si algún día abre CORS)
           await Promise.all(FALLBACK_COINS.slice(0,10).map(async c2=>{try{
@@ -6148,6 +6161,18 @@ function App(){
                 <Tile v={(pro*100).toFixed(0)+'% LONG'} vc={'#8AA0FF'} sub={'🐋 PROS BTC · top traders (OKX+Binance)'}/>
                 <Tile v={((1-pro)*100).toFixed(0)+'% SHORT'} vc={'#B06A86'} sub={'🐋 PROS BTC · top traders'}/>
               </React.Fragment>}
+              {(()=>{ // 🔎 VERIFICACIÓN por exchange (dato oficial 1:1, como en Coinglass)
+                const ex=lsMkt&&lsMkt.lsEx; if(!ex)return null;
+                const f=r2=>Number.isFinite(r2)&&r2>0?(r2/(1+r2)*100).toFixed(0)+'%L':null;
+                const accs=Object.entries(ex.acc||{}).map(([k,v])=>[k,f(v)]).filter(x=>x[1]);
+                const pros3=Object.entries(ex.pro||{}).map(([k,v])=>[k,f(v)]).filter(x=>x[1]);
+                if(!accs.length&&!pros3.length)return null;
+                return(<div style={{gridColumn:'1 / -1',fontSize:8,color:'var(--dim)',lineHeight:1.6,padding:'6px 8px',borderRadius:7,background:'#0A0D14',border:'1px solid var(--line2)'}}>
+                  🔎 <b style={{color:'var(--txt)'}}>Verifícalo tú mismo</b> (dato oficial de cada exchange, el mismo que en Coinglass):
+                  {accs.length>0&&<span> cuentas → {accs.map(([k,v])=>k+' '+v).join(' · ')}.</span>}
+                  {pros3.length>0&&<span> top traders → {pros3.map(([k,v])=>k+' '+v).join(' · ')}.</span>}
+                  {' '}Los % de arriba son la media de esas fuentes (pros ponderados por OI).
+                </div>);})()}
               {/* ⭐ CONSENSO: un solo número que junta las 3 fuentes (pros pesan doble) —
                   el mismo criterio que muestran el Cuantitativo y el mapa de liquidez */}
               {(()=>{const parts=[];if(pro!=null)parts.push(pro,pro);if(masa!=null)parts.push(masa);

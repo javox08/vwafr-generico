@@ -23,10 +23,13 @@ module.exports = async (req, res) => {
     const vO = parseFloat(arr[0] && arr[0][1]);
     if (Number.isFinite(vO) && vO > 0) rs.push(vO);
     if (c === 'BTC') out.btc.hist = arr.slice(0, 72).map(x => parseFloat(x[1])).filter(Number.isFinite);
+    // desglose POR EXCHANGE de BTC: cada ratio tal cual lo publica su web oficial,
+    // para que el usuario pueda verificarlo 1:1 (en Coinglass o en el exchange).
+    if (c === 'BTC') { out.btc.lsEx = { acc: {}, pro: {} }; if (Number.isFinite(vO) && vO > 0) out.btc.lsEx.acc.OKX = +vO.toFixed(3); }
     const bl = bybit && bybit.result && bybit.result.list && bybit.result.list[0];
-    if (bl) { const b = parseFloat(bl.buyRatio), s = parseFloat(bl.sellRatio); if (b > 0 && s > 0) rs.push(b / s); }
+    if (bl) { const b = parseFloat(bl.buyRatio), s = parseFloat(bl.sellRatio); if (b > 0 && s > 0) { rs.push(b / s); if (c === 'BTC' && out.btc.lsEx) out.btc.lsEx.acc.Bybit = +(b / s).toFixed(3); } }
     const bn = Array.isArray(binance) && binance[0];
-    if (bn) { const v = parseFloat(bn.longShortRatio); if (v > 0) rs.push(v); }
+    if (bn) { const v = parseFloat(bn.longShortRatio); if (v > 0) { rs.push(v); if (c === 'BTC' && out.btc.lsEx) out.btc.lsEx.acc.Binance = +v.toFixed(3); } }
     // ratio de TOP TRADERS (pros) por moneda, de OKX (posiciones)
     let rp = null;
     const dp = okxPro && okxPro.data && okxPro.data[0];
@@ -61,7 +64,7 @@ module.exports = async (req, res) => {
       if (Number.isFinite(v) && v > 0) items.push({ ex: 'Binance', r: v, oi: (Number.isFinite(p) && Number.isFinite(oiB)) ? p * oiB / 1e9 : 1 });
     } catch (e) {}
     if (items.length) {
-      let wsum = 0, rsum = 0; for (const it of items) { wsum += it.oi; rsum += it.r * it.oi; }
+      let wsum = 0, rsum = 0; for (const it of items) { wsum += it.oi; rsum += it.r * it.oi; if (out.btc.lsEx) out.btc.lsEx.pro[it.ex] = +it.r.toFixed(4); }
       out.btc.pos = wsum > 0 ? rsum / wsum : items.reduce((a, x) => a + x.r, 0) / items.length;
       out.btc.posSrcs = items.length; out.btc.posEx = items.map(x => x.ex); out.btc.posW = items.length > 1;
       // COHERENCIA: la fila de BTC del top-10 usa el MISMO valor (pros multi-exchange)
