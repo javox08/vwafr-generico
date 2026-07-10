@@ -15,7 +15,8 @@ const jf = (u, ms = 4000) => { const c = new AbortController(); const t = setTim
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
-  const out = { t: Date.now(), ex: { Gate: {}, MEXC: {}, Binance: {}, Bybit: {}, Bitget: {} } };
+  const out = { t: Date.now(), ex: { Gate: {}, MEXC: {}, Binance: {}, Bybit: {}, Bitget: {},
+    Kraken: {}, HTX: {}, CoinEx: {}, Bitfinex: {}, dYdX: {}, WhiteBIT: {}, Phemex: {}, Deribit: {} } };
   for (const c of COINS) {
     try {
       const j = await fetch('https://api.gateio.ws/api/v4/futures/usdt/contracts/' + c + '_USDT').then(r => r.json());
@@ -66,6 +67,100 @@ module.exports = async (req, res) => {
       const f = parseFloat(t.fundingRate), oi = parseFloat(t.holdingAmount) * parseFloat(t.markPrice);
       if (Number.isFinite(f)) out.ex.Bitget[c] = { f: +(f * 100).toFixed(4), oi: Number.isFinite(oi) && oi > 0 ? +(oi / 1e9).toFixed(3) : 0 };
     }
+  } catch (e) {}
+  // Todo lo de abajo normaliza el funding a % POR PERIODO DE 8H (el formato de la web).
+  // ── Kraken Futures: bulk tickers. fundingRate es ABSOLUTO por hora → /precio ×8. ──
+  try {
+    const r = await jf('https://futures.kraken.com/derivatives/api/v3/tickers');
+    const m = {}; for (const t of ((r && r.tickers) || [])) m[t.symbol] = t;
+    for (const c of COINS) { const t = m['PF_' + (c === 'BTC' ? 'XBT' : c) + 'USD']; if (!t) continue;
+      const fr = parseFloat(t.fundingRate), px = parseFloat(t.markPrice), oiB = parseFloat(t.openInterest);
+      if (!(Number.isFinite(fr) && px > 0)) continue;
+      const oi = Number.isFinite(oiB) ? oiB * px : 0;
+      out.ex.Kraken[c] = { f: +(fr / px * 8 * 100).toFixed(4), oi: oi > 0 ? +(oi / 1e9).toFixed(3) : 0 };
+    }
+  } catch (e) {}
+  // ── HTX (Huobi): funding batch + OI batch (linear USDT). funding ya es por 8h. ──
+  try {
+    const [fj, oj] = await Promise.all([
+      jf('https://api.hbdm.com/linear-swap-api/v1/swap_batch_funding_rate'),
+      jf('https://api.hbdm.com/linear-swap-api/v1/swap_open_interest')
+    ]);
+    const fm = {}; for (const d of ((fj && fj.data) || [])) fm[d.contract_code] = parseFloat(d.funding_rate);
+    const om = {}; for (const d of ((oj && oj.data) || [])) om[d.contract_code] = parseFloat(d.value != null ? d.value : NaN);
+    for (const c of COINS) { const f = fm[c + '-USDT']; if (!Number.isFinite(f)) continue;
+      const oi = om[c + '-USDT'];
+      out.ex.HTX[c] = { f: +(f * 100).toFixed(4), oi: Number.isFinite(oi) && oi > 0 ? +(oi / 1e9).toFixed(3) : 0 };
+    }
+  } catch (e) {}
+  // ── CoinEx: funding bulk (sin market = todos) + OI del ticker. funding por 8h. ──
+  try {
+    const [fj, tj] = await Promise.all([
+      jf('https://api.coinex.com/v2/futures/funding-rate?market=' + COINS.map(c => c + 'USDT').join(',')),
+      jf('https://api.coinex.com/v2/futures/ticker?market=' + COINS.map(c => c + 'USDT').join(','))
+    ]);
+    const fm = {}; for (const d of ((fj && fj.data) || [])) fm[d.market] = parseFloat(d.latest_funding_rate);
+    const om = {}; for (const d of ((tj && tj.data) || [])) om[d.market] = parseFloat(d.open_interest_volume) * parseFloat(d.mark_price);
+    for (const c of COINS) { const f = fm[c + 'USDT']; if (!Number.isFinite(f)) continue;
+      const oi = om[c + 'USDT'];
+      out.ex.CoinEx[c] = { f: +(f * 100).toFixed(4), oi: Number.isFinite(oi) && oi > 0 ? +(oi / 1e9).toFixed(3) : 0 };
+    }
+  } catch (e) {}
+  // ── Bitfinex: status deriv bulk. CURRENT_FUNDING (idx 12) por 8h · OI (idx 18) en base. ──
+  try {
+    const keys = COINS.map(c => 't' + c + 'F0:USTF0').join(',');
+    const r = await jf('https://api-pub.bitfinex.com/v2/status/deriv?keys=' + encodeURIComponent(keys));
+    for (const row of (Array.isArray(r) ? r : [])) {
+      const mm = ('' + row[0]).match(/^t([A-Z]+)F0:USTF0$/); if (!mm || COINS.indexOf(mm[1]) < 0) continue;
+      const f = parseFloat(row[12]), px = parseFloat(row[15]), oiB = parseFloat(row[18]);
+      if (!Number.isFinite(f)) continue;
+      const oi = (Number.isFinite(oiB) && Number.isFinite(px)) ? oiB * px : 0;
+      out.ex.Bitfinex[mm[1]] = { f: +(f * 100).toFixed(4), oi: oi > 0 ? +(oi / 1e9).toFixed(3) : 0 };
+    }
+  } catch (e) {}
+  // ── dYdX v4 (indexer): bulk. nextFundingRate es POR HORA → ×8. OI en base × oráculo. ──
+  try {
+    const r = await jf('https://indexer.dydx.trade/v4/perpetualMarkets?limit=100');
+    const mk = (r && r.markets) || {};
+    for (const c of COINS) { const t = mk[c + '-USD']; if (!t) continue;
+      const f = parseFloat(t.nextFundingRate), px = parseFloat(t.oraclePrice), oiB = parseFloat(t.openInterest);
+      if (!Number.isFinite(f)) continue;
+      const oi = (Number.isFinite(oiB) && Number.isFinite(px)) ? oiB * px : 0;
+      out.ex.dYdX[c] = { f: +(f * 8 * 100).toFixed(4), oi: oi > 0 ? +(oi / 1e9).toFixed(3) : 0 };
+    }
+  } catch (e) {}
+  // ── WhiteBIT: bulk público. funding por 8h · OI en base × índice. ──
+  try {
+    const r = await jf('https://whitebit.com/api/v4/public/futures');
+    const list = (r && r.result) || (Array.isArray(r) ? r : []);
+    const m = {}; for (const t of list) m[t.ticker_id] = t;
+    for (const c of COINS) { const t = m[c + '_PERP']; if (!t) continue;
+      const f = parseFloat(t.funding_rate), px = parseFloat(t.index_price), oiB = parseFloat(t.open_interest);
+      if (!Number.isFinite(f)) continue;
+      const oi = (Number.isFinite(oiB) && Number.isFinite(px)) ? oiB * px : 0;
+      out.ex.WhiteBIT[c] = { f: +(f * 100).toFixed(4), oi: oi > 0 ? +(oi / 1e9).toFixed(3) : 0 };
+    }
+  } catch (e) {}
+  // ── Phemex: 1 llamada por moneda (paralelo). fundingRateRr por 8h · OI base × mark. ──
+  try {
+    await Promise.all(COINS.map(async c => {
+      const r = await jf('https://api.phemex.com/md/v3/ticker/24hr?symbol=' + c + 'USDT');
+      const t = r && r.result; if (!t) return;
+      const f = parseFloat(t.fundingRateRr), px = parseFloat(t.markRp), oiB = parseFloat(t.openInterestRv);
+      if (!Number.isFinite(f)) return;
+      const oi = (Number.isFinite(oiB) && Number.isFinite(px)) ? oiB * px : 0;
+      out.ex.Phemex[c] = { f: +(f * 100).toFixed(4), oi: oi > 0 ? +(oi / 1e9).toFixed(3) : 0 };
+    }));
+  } catch (e) {}
+  // ── Deribit: perpetuo inverso BTC/ETH (su mercado grande). funding_8h · OI ya en USD. ──
+  try {
+    await Promise.all(['BTC', 'ETH'].map(async c => {
+      const r = await jf('https://www.deribit.com/api/v2/public/ticker?instrument_name=' + c + '-PERPETUAL');
+      const t = r && r.result; if (!t) return;
+      const f = parseFloat(t.funding_8h), oi = parseFloat(t.open_interest);
+      if (!Number.isFinite(f)) return;
+      out.ex.Deribit[c] = { f: +(f * 100).toFixed(4), oi: Number.isFinite(oi) && oi > 0 ? +(oi / 1e9).toFixed(3) : 0 };
+    }));
   } catch (e) {}
   res.status(200).json(out);
 };

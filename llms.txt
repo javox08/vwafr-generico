@@ -4,7 +4,7 @@
 
 ## Secciones
 
-- **Funding (portada)**: VWAFR en vivo — funding rate de BTC, ETH y el top 10 en 8 exchanges (Binance, OKX, Bybit, MEXC, Hyperliquid, Bitget, KuCoin, BingX) ponderado por interés abierto, con veredicto alcista/bajista. Actualiza cada 60 s.
+- **Funding (portada)**: VWAFR en vivo — funding rate de BTC, ETH y el top 10 en 17 exchanges (Binance, OKX, Bybit, MEXC, Hyperliquid, Bitget, KuCoin, BingX, Gate, Kraken, HTX, CoinEx, Bitfinex, dYdX, WhiteBIT, Phemex y Deribit) ponderado por interés abierto, con veredicto alcista/bajista. Actualiza cada 60 s.
 - **Ciclo**: fase del ciclo de Bitcoin por halving (semana del ciclo, ruta proyectada con media de ciclos 2012/2016/2020, niveles clave de compra/venta, patrón semanal).
 - **Cuantitativo**: Análisis Velo automático multi-temporalidad (15m/1h/4h/1D) que explica cada subida o bajada con motivos reales (CVD spot y futuros, OI, funding, premium agregado, Coinbase premium, taker); Vista Velo con paneles apilados y líneas de tendencia; cono de probabilidad a 30 días (700 simulaciones con bandas conformales calibradas en 9 años); patrones de velas y figuras chartistas backtesteados en 3 temporalidades solo con velas cerradas; mapa de liquidaciones estimado con volumen real de velas 4h; flujo de dinero pro (long/short de masa vs top traders); detector de manipulación.
 - **Bots**: 40 estrategias backtesteadas sobre el mismo periodo (9 años, walk-forward, Deflated Sharpe), ranking por rentabilidad, consenso de bots rentables y track record real por bot.
@@ -20,7 +20,7 @@
 
 ## Detalles
 
-- Datos: APIs públicas de Binance, Deribit, CoinGecko, bitcoin-data.com, Banco Mundial y 8 exchanges de futuros. Sin claves ni registro.
+- Datos: APIs públicas de Binance, Deribit, CoinGecko, bitcoin-data.com, Banco Mundial y 17 exchanges de futuros. Sin claves ni registro.
 - Todo automático: cada análisis se recalcula solo (60 s – 2 min según panel).
 - Los porcentajes de acierto provienen de backtests reales reproducibles (9 años diarios, ~166 días en 4h, ~6 años semanal).
 - Solo informativo y educativo; no es consejo financiero.
