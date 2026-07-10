@@ -472,6 +472,10 @@ function Hero({vwafr,label,big}){
           <span style={{fontSize:9,color:'var(--faint)',letterSpacing:.5}}>NEUTRAL</span>
           <span style={{fontSize:9,color:'var(--upDim)',fontWeight:600,letterSpacing:.5}}>▲ LONGS</span>
         </div>
+        {big&&(()=>{ // ⏱ cuenta atrás al próximo pago (00/08/16 UTC, el estándar de 8h)
+          const ms=28800000-(Date.now()%28800000),h2=Math.floor(ms/3600000),m2=Math.floor(ms%3600000/60000);
+          return(<div className="mono" style={{textAlign:'center',marginTop:8,fontSize:9,color:'var(--dim)'}}>
+            ⏱ próximo pago de funding en <b style={{color:'var(--txt)'}}>{h2>0?h2+'h ':''}{m2}m</b></div>);})()}
       </div>
     </div>
   );
