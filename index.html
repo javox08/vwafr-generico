@@ -6019,6 +6019,15 @@ function App(){
             const sSpot=Math.abs(tb-0.5), sFut=Math.abs(pl2-0.5);
             if((sSpot+sFut)<=0.001)return null;
             const pctS=sSpot/(sSpot+sFut)*100, pctF=100-pctS;
+            // si un lado está prácticamente neutro, el 99%/1% parece un dato roto:
+            // mejor decirlo en texto ("casi todo el empuje viene de X")
+            if(Math.min(sSpot,sFut)<0.005){
+              const futWins=sFut>sSpot;
+              return(<div style={{marginTop:8,fontSize:8.5,lineHeight:1.5,color:'var(--dim)',background:'#0A0D14',border:'1px solid var(--line2)',borderRadius:8,padding:'7px 9px'}}>
+                ⚖️ El empuje actual viene casi todo de <b style={{color:'var(--txt)'}}>{futWins?'los FUTUROS':'el SPOT'}</b>{futWins
+                  ?(' ('+(pl2*100).toFixed(0)+'% long) — el spot está equilibrado ('+(tb*100).toFixed(0)+'% compras)')
+                  :(' ('+(tb*100).toFixed(0)+'% compras) — los futuros están equilibrados ('+(pl2*100).toFixed(0)+'% long)')}.
+              </div>);}
             return(<div style={{marginTop:8,display:'grid',gridTemplateColumns:'1fr 1fr',gap:7}}>
               <div style={{background:'#0A0D14',borderRadius:8,padding:'8px 9px',textAlign:'center'}}>
                 <div className="mono" style={{fontSize:13,fontWeight:800,color:pl2>=0.5?'var(--up)':'var(--down)'}}>{pctF.toFixed(0)}%</div>
