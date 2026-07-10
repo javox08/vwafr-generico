@@ -70,3 +70,26 @@ los mismos parámetros produce mejoras que NO sobreviven fuera de muestra = sobr
 (mejor en el histórico, peor en vivo). La mejora que quedaría es de otra naturaleza:
 la SKILL DIRECCIONAL (el centro/deriva del cono), limitada por el IC (~0.10-0.17), que
 ya se explota con las señales en vivo (tendencia, momentum, funding, patrones).
+
+## Bot "Análisis Velo" (precio + CVD spot diario) — velo_bot.cjs · 2026-07-10
+
+Datos: btc_cvd_daily.json (fetch_cvd_daily.cjs; klines 1d Binance con taker buy,
+3.250 velas desde 2017-08). Delta $ del día = 2·takerBuyQuote − quoteVol.
+Costes 0,09%/lado. Split OOS = 2023+.
+
+| estrategia | FULL cagr/sh/DD | OOS cagr/sh/DD |
+|---|---|---|
+| HOLD | +27,9% · 0,71 · 77% | +46,5% · 1,05 · 53% |
+| ⭐ Élite (referencia) | +42,6% · 1,12 · 46% | +37,9% · 1,12 · 22% |
+| V1 respaldo n=20 (p↑ y CVD↑) | +16,4% · 0,70 · 36% | +17,5% · 0,93 · 17% |
+| V2 n=20 + absorción | +20,3% · 0,75 · 44% | +17,5% · 0,93 · 17% |
+| V5 Élite + veto divergencia CVD | +22,2% · 0,82 · 45% | +26,0% · 0,96 · 25% |
+
+Conclusiones honestas:
+- La lectura Velo COMO BOT es positiva pero NO bate a la Élite ni al HOLD en CAGR.
+  Su virtud es el RIESGO: DD 36% full y 17% OOS, el más bajo de todo lo probado.
+- Añadir el veto de divergencia CVD a la Élite la EMPEORA (+22 vs +43): el veto
+  te saca de tendencias fuertes más veces de las que te salva. Descartado.
+- Integrado en la web como bot «📡 Velo (precio + CVD spot)» (long/flat, n=20),
+  con el CVD alineado por índice absoluto (veloCvdIdx) para los cortes IS/OOS
+  del walk-forward. Antes de 2017 no hay taker en Binance → el bot está fuera.

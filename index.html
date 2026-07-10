@@ -1688,6 +1688,26 @@ function revFilter(cl,j,s){if(!s)return 0;const up=cl[j-1]>maAt(cl,j,200);return
 function vsMom(cl,j,n){if(j<n+2)return 0;let m=0;for(let k=j-n;k<j;k++)m+=Math.log(cl[k]/cl[k-1]);m/=n;
   let s=0;for(let k=j-n;k<j;k++){const x=Math.log(cl[k]/cl[k-1])-m;s+=x*x;}const sd=Math.sqrt(s/n)*Math.sqrt(n);
   const mom=cl[j-1]/cl[j-1-n]-1;return sd>0?mom/sd:0;}
+// ── CVD SPOT DIARIO para el bot 📡 Velo: lo llena BotsView al bajar las velas (Binance
+//    publica taker buy por vela desde 2017). arr acumulado ALINEADO POR LA COLA con las
+//    velas descargadas; full/bcl permiten mapear índices de los cortes del walk-forward.
+let VELO_CVD=null; // {arr,full,bcl,lastClose}
+function regSlope(arr,i,n){ // pendiente de regresión normalizada (misma idea que veloTF)
+  if(!arr||i<n||i>=arr.length)return 0;
+  const seg=arr.slice(i-n+1,i+1),m=seg.length,xm=(m-1)/2;
+  let ym=0;for(const v of seg)ym+=v;ym/=m;
+  let num=0,den=0;for(let k=0;k<m;k++){num+=(k-xm)*(seg[k]-ym);den+=(k-xm)*(k-xm);}
+  const b=den>0?num/den:0;
+  let sd=0;for(const v of seg)sd+=(v-ym)*(v-ym);sd=Math.sqrt(sd/m)||1;
+  return b*m/(Math.abs(ym)>1e-9?Math.abs(ym):sd);}
+function veloCvdIdx(cl,j){ // índice del CVD para cl[j], tanto en cortes de cola como en el prefijo IS
+  if(!VELO_CVD||!VELO_CVD.arr||!cl||!cl.length)return null;
+  // detección por el PRIMER elemento (el último se muta con el precio en vivo): si cl
+  // empieza donde empieza bcl es bcl o su prefijo IS; si no, es un corte de cola (OOS).
+  const isPrefix=cl[0]===VELO_CVD.firstBcl;
+  const abs=isPrefix?(VELO_CVD.full-VELO_CVD.bcl+j):(VELO_CVD.full-cl.length+j);
+  const k=abs-(VELO_CVD.full-VELO_CVD.arr.length);
+  return (k>=0&&k<VELO_CVD.arr.length)?k:null;}
 // ── 40 BOTS diversificados (tendencia, momentum, reversión, osciladores, rupturas,
 //    volatilidad, ciclo/valoración y compuestos). Todos: señal solo con datos hasta j-1.
 const BOTS=[
@@ -1697,6 +1717,11 @@ const BOTS=[
    sig:(cl,j)=>{if(j<210)return 0;const px=cl[j-1];
      let hi=-1e18,lo=1e18;for(let m=j-100;m<j;m++){if(cl[m]>hi)hi=cl[m];if(cl[m]<lo)lo=cl[m];}
      return (px>maAt(cl,j,200)&&vsMom(cl,j,30)>0&&px>(hi+lo)/2)?1:0;}},
+  // ——— 📡 VELO · precio + CVD spot (la lectura del Análisis Velo hecha bot) ———
+  {id:'velocvd',name:'📡 Velo (precio + CVD spot)',tipo:'Flujo de órdenes',obj:'Solo subidas CON respaldo de compra real.',
+   hyp:'Automatiza la lectura del Análisis Velo: LARGO solo cuando el precio Y el CVD spot (compras−ventas agresivas reales, taker de Binance) suben a la vez en ~20 días — subida CON respaldo; fuera si la subida es "hueca" (sin CVD) o el flujo es vendedor. Backtest 2017-2026 con costes: ~+16%/año con caída máx ~36% (fuera de muestra 2023+: ~+17%/año con solo ~17% de caída, el PERFIL DE RIESGO más bajo probado). NO bate a la ⭐ Élite (~+43%/año): se probó también añadir el veto de divergencia CVD a la Élite y EMPEORA (+22%/año) — descartado con datos. El CVD solo existe desde 2017 (Binance): antes de eso este bot está fuera.',
+   sig:(cl,j)=>{const k=veloCvdIdx(cl,j);if(k==null||k<21||j<21)return 0;
+     return (regSlope(cl,j-1,20)>0&&regSlope(VELO_CVD.arr,k,20)>0)?1:0;}},
   // ——— TENDENCIA / MEDIAS MÓVILES ———
   {id:'tend',name:'Tendencia (MA + momentum)',tipo:'Tendencia',obj:'Dirección swing.',
    hyp:'El momentum persiste: BTC en tendencia (MA50>MA200) con impulso positivo a 21d tiende a continuar.',sig:botSignal},
@@ -5007,9 +5032,14 @@ function BotsView({gFunding}){
       return fetch(u,{signal:ac.signal}).then(r=>{if(!r.ok)throw 0;return r.json();}).finally(()=>clearTimeout(tt));};
     const load=async()=>{
       let closes=longRef.current;
-      if(!closes){try{let allc=[],end=Date.now(),firstTs=null;
+      if(!closes){try{let allc=[],deltas=[],end=Date.now(),firstTs=null;
         for(let pg=0;pg<5;pg++){const k=await jget('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=1000&endTime='+end);
-          if(!Array.isArray(k)||!k.length)break; allc=k.map(x=>parseFloat(x[4])).concat(allc); firstTs=k[0][0]; end=k[0][0]-864e5; if(k.length<1000)break;}
+          if(!Array.isArray(k)||!k.length)break; allc=k.map(x=>parseFloat(x[4])).concat(allc);
+          // delta $ agresivo del día (2·takerBuyQuote − quoteVol) para el bot 📡 Velo
+          deltas=k.map(x=>{const q=parseFloat(x[7]),tq=parseFloat(x[10]);return(Number.isFinite(q)&&Number.isFinite(tq))?2*tq-q:0;}).concat(deltas);
+          firstTs=k[0][0]; end=k[0][0]-864e5; if(k.length<1000)break;}
+        if(deltas.length>400){const cvdA=[];let s=0;for(const d of deltas){s+=d;cvdA.push(s);}
+          VELO_CVD={arr:cvdA,full:0,bcl:0,firstBcl:NaN};} // full/bcl/firstBcl se fijan abajo, con allc ya completo (Bitstamp incl.)
         // Binance solo llega a ago-2017: EXTENDER hacia atrás con Bitstamp (CORS
         // abierto, BTC/USD desde 2011) hasta ~9,6 años. Empalme encadenado con un
         // día de SOLAPE (el tramo viejo se escala al nivel de Binance) → sin saltos.
@@ -5020,7 +5050,9 @@ function BotsView({gFunding}){
           if(oc.length>30){const ratio=allc[0]/oc[oc.length-1];
             allc=oc.slice(0,-1).map(v=>v*ratio).concat(allc);}
         }catch(_){}}
-        if(allc.length>800){closes=allc;longRef.current=allc;}
+        if(allc.length>800){closes=allc;longRef.current=allc;
+          if(VELO_CVD){const bclN=Math.min(allc.length,210+9*365);
+            Object.assign(VELO_CVD,{full:allc.length,bcl:bclN,firstBcl:allc[allc.length-bclN]});}}
       }catch(_){}}
       // refresca las últimas velas (OHLC, para ATR) y el último cierre en vivo
       if(closes){try{const k=await jget('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=30',7000);

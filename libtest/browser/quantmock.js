@@ -12,7 +12,7 @@
       var r=(Math.random()-0.493)*0.02,o=px,c=px*(1+r);px=c;
       var h=Math.max(o,c)*(1+Math.random()*0.006),l=Math.min(o,c)*(1-Math.random()*0.006);
       var v=100+Math.random()*100,tb=v*(0.44+Math.random()*0.12);
-      rows.push([t-ms,''+o,''+h,''+l,''+c,''+v,t+(i===0?ms/2:0),'0','0',''+tb,'0','0']);}
+      rows.push([t-ms,''+o,''+h,''+l,''+c,''+v,t+(i===0?ms/2:0),''+(v*c).toFixed(0),'0',''+tb,''+(tb*c).toFixed(0),'0']);}
     return rows;
   }
   var oiH=[];for(var i2=0;i2<480;i2++)oiH.push(+(6+Math.sin(i2/40)*0.3+Math.random()*0.05).toFixed(3));
