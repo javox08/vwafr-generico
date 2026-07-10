@@ -5481,7 +5481,7 @@ function BotsView({gFunding}){
               <span className="mono" style={{fontSize:12,fontWeight:800,width:20,color:i===0?'var(--up)':'var(--faint)'}}>{i+1}º</span>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{...flx({gap:6})}}>
-                  <span style={{fontSize:12,fontWeight:700,color:'var(--txt)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{r.name}</span>
+                  <span style={{fontSize:12,fontWeight:700,color:'var(--txt)',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:'hidden',lineHeight:1.25}}>{r.name}</span>
                   <span className="mono" style={{fontSize:7.5,fontWeight:700,color:ver.c,padding:'1px 5px',borderRadius:7,background:'rgba(255,255,255,.04)',flexShrink:0}}>{ver.ic} {ver.t}</span>
                 </div>
                 <div style={{...flx({gap:6}),marginTop:2}}>
