@@ -3903,7 +3903,16 @@ function QuantView({gFunding}){
           const bull=good.filter(p=>p.sig>0).length,bear=good.filter(p=>p.sig<0).length;
           const tfs=[...new Set(good.map(p=>p.tf).filter(Boolean))];
           const confl=(bull+bear)>=3&&(bull>=2*bear||bear>=2*bull)?{up:bull>bear,n:bull>bear?bull:bear,vs:bull>bear?bear:bull}:null;
+          // RESUMEN de un vistazo: cuántos patrones ACTIVOS apuntan a cada lado (todos, no
+          // solo los "con ventaja" de la confluencia) + cuántos hay cancelados aún visibles.
+          const act=all.filter(p=>!p.cancelled), nUp=act.filter(p=>p.sig>0).length, nDn=act.filter(p=>p.sig<0).length, nCx=all.length-act.length;
           return(<React.Fragment>
+          {all.length>0&&<div style={{...flx({gap:6}),marginBottom:10,flexWrap:'wrap'}}>
+            <span className="mono" style={{fontSize:8.5,fontWeight:800,padding:'3px 8px',borderRadius:7,color:'var(--up)',background:'rgba(31,224,160,.1)',border:'1px solid rgba(31,224,160,.25)'}}>▲ {nUp} alcista{nUp===1?'':'s'}</span>
+            <span className="mono" style={{fontSize:8.5,fontWeight:800,padding:'3px 8px',borderRadius:7,color:'var(--down)',background:'rgba(255,84,112,.1)',border:'1px solid rgba(255,84,112,.25)'}}>▼ {nDn} bajista{nDn===1?'':'s'}</span>
+            {act.length-nUp-nDn>0&&<span className="mono" style={{fontSize:8.5,fontWeight:700,padding:'3px 8px',borderRadius:7,color:'var(--dim)',background:'rgba(255,255,255,.04)',border:'1px solid var(--line2)'}}>◆ {act.length-nUp-nDn} neutro{act.length-nUp-nDn===1?'':'s'}</span>}
+            {nCx>0&&<span className="mono" style={{fontSize:8.5,fontWeight:700,padding:'3px 8px',borderRadius:7,color:'var(--faint)',background:'rgba(255,255,255,.03)',border:'1px solid var(--line2)'}}>✗ {nCx} cancelado{nCx===1?'':'s'}</span>}
+          </div>}
           {confl&&<div style={{...flx({gap:8}),marginBottom:10,padding:'9px 11px',borderRadius:9,
             background:confl.up?'rgba(31,224,160,.08)':'rgba(255,84,112,.08)',border:`1px solid ${confl.up?'rgba(31,224,160,.3)':'rgba(255,84,112,.3)'}`}}>
             <span style={{fontSize:15}}>{confl.up?'📈':'📉'}</span>
