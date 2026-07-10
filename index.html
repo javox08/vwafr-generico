@@ -4172,6 +4172,12 @@ function QuantView({gFunding}){
               style={{flex:1,background:'#0A0D14',border:'1px solid var(--line2)',borderRadius:9,color:'var(--txt)',
                 fontSize:15,fontWeight:700,padding:'10px 12px',fontFamily:'JetBrains Mono,monospace',outline:'none',minWidth:0}}/>
           </div>
+          <div style={{...flx({gap:5}),marginTop:8,flexWrap:'wrap'}}>
+            {[5,10,-5,-10].map(pp=>{const v=Math.round(c.price*(1+pp/100));return(
+              <span key={pp} onClick={()=>setTgt(''+v)} className="mono" style={{fontSize:9,fontWeight:800,padding:'4px 9px',borderRadius:8,cursor:'pointer',
+                color:pp>0?'var(--up)':'var(--down)',background:pp>0?'rgba(31,224,160,.08)':'rgba(255,84,112,.08)',
+                border:'1px solid '+(pp>0?'rgba(31,224,160,.25)':'rgba(255,84,112,.25)')}}>{pp>0?'+':''}{pp}% · ${v.toLocaleString('es-ES')}</span>);})}
+          </div>
           {valid&&<div style={{textAlign:'center',marginTop:12}}>
             <div className="mono" style={{fontSize:30,fontWeight:800,lineHeight:1,color:up?'var(--up)':'var(--down)'}}>{touch.toFixed(0)}%</div>
             <div style={{fontSize:10,color:'var(--dim)',marginTop:5}}>probabilidad de {up?'SUBIR a':'CAER a'} {money(tv)} ({pct>=0?'+':''}{pct.toFixed(1)}%) en algún momento de los próximos 30 días</div>
