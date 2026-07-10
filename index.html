@@ -194,7 +194,7 @@
 <!-- ─────────── Contenido SEO/GEO rastreable (visible y sin depender de JS) ─────────── -->
 <section class="seo">
   <h1>Análisis cripto automático: funding, análisis Velo, cono de probabilidad y bots</h1>
-  <p>Herramienta gratuita de <strong>análisis cripto 100% automático en español</strong>. Mide el <strong>funding rate</strong> de los futuros perpetuos de <strong>Bitcoin (BTC)</strong>, <strong>Ethereum (ETH)</strong> y el top 10 de criptomonedas en 17 exchanges (el <strong>VWAFR</strong>, funding medio ponderado por interés abierto), y además explica <strong>por qué sube o baja Bitcoin</strong> con un análisis multi-temporalidad estilo Velo (CVD, interés abierto, funding, premium de futuros), mapa de liquidaciones con volumen real, patrones de velas y figuras backtesteados, un cono de probabilidad Monte Carlo a 30 días, la fase del ciclo por halving y 40 bots con backtest de 9 años. Los datos se actualizan automáticamente cada 60 segundos.</p>
+  <p>Herramienta gratuita de <strong>análisis cripto 100% automático en español</strong>. Mide el <strong>funding rate</strong> de los futuros perpetuos de <strong>Bitcoin (BTC)</strong>, <strong>Ethereum (ETH)</strong> y el top 10 de criptomonedas en 17 exchanges (el <strong>VWAFR</strong>, funding medio ponderado por interés abierto), y además explica <strong>por qué sube o baja Bitcoin</strong> con un análisis multi-temporalidad estilo Velo (CVD, interés abierto, funding, premium de futuros), mapa de liquidaciones con volumen real, patrones de velas y figuras backtesteados, un cono de probabilidad Monte Carlo a 30 días, la fase del ciclo por halving y más de 40 bots con backtest de 9 años. Los datos se actualizan automáticamente cada 60 segundos.</p>
 
   <h2>¿Por qué sube o baja Bitcoin?</h2>
   <p>La sección <strong>Cuantitativo</strong> incluye un <strong>Análisis Velo automático</strong> en 4 temporalidades (15m, 1h, 4h y 1D) que detecta cada subida o bajada rápida y lista sus motivos medibles: <strong>CVD spot y de futuros</strong> (compras/ventas agresivas reales en dólares y BTC), <strong>interés abierto</strong> (si entra dinero nuevo, se cierran cortos o se desapalanca), <strong>funding</strong>, <strong>premium agregado</strong> de futuros sobre spot y <strong>Coinbase premium</strong> (demanda institucional de EE. UU.). Con todo eso da un veredicto (subida con respaldo, subida hueca, absorción, distribución…) y el escenario más probable a continuación.</p>
@@ -5226,7 +5226,7 @@ function BotsView({gFunding}){
       {/* nota: backtest justo */}
       <div style={{...flx({gap:6}),marginBottom:14,padding:'8px 12px',borderRadius:9,background:'rgba(31,224,160,.06)',border:'1px solid rgba(31,224,160,.2)'}}>
         <span style={{fontSize:11,flexShrink:0}}>⚖️</span>
-        <span style={{fontSize:9,color:'var(--faint)',lineHeight:1.5}}><b style={{color:'var(--up)'}}>Backtest justo:</b> los 40 bots se prueban en el <b style={{color:'var(--txt)'}}>mismo periodo</b> ({yr} años, mismas fechas, mismo calentamiento y costes). El más rentable, arriba.</span>
+        <span style={{fontSize:9,color:'var(--faint)',lineHeight:1.5}}><b style={{color:'var(--up)'}}>Backtest justo:</b> todos los bots se prueban en el <b style={{color:'var(--txt)'}}>mismo periodo</b> ({yr} años, mismas fechas, mismo calentamiento y costes). El más rentable, arriba.</span>
       </div>
 
       {/* CONSENSO DE LOS BOTS RENTABLES · qué opinan los que aguantan fuera de muestra */}
