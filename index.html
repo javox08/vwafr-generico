@@ -3159,7 +3159,10 @@ function QuantView({gFunding}){
       const all=above.concat(below); if(!all.length)return null;
       const wmax=Math.max(...all.map(x=>x.w));
       for(const x of all)x.rel=x.w/wmax;
-      return {above:above.sort((a,b)=>b.p-a.p),below:below.sort((a,b)=>b.p-a.p),src:use4h?'4h':'1d'};
+      // TOTALES por lado (sobre TODOS los bins, no solo el top-6): cuánto dinero estimado
+      // espera ser liquidado arriba (cortos) vs abajo (largos) — para el resumen del mapa.
+      let totS=0,totL=0; for(const r of rows){if(r.p>price)totS+=r.short;if(r.p<price)totL+=r.long;}
+      return {above:above.sort((a,b)=>b.p-a.p),below:below.sort((a,b)=>b.p-a.p),totS,totL,src:use4h?'4h':'1d'};
     })();
     // ── IMÁN del cono: los clústeres REALES del mapa (si hay); respaldo teórico si no.
     const mags=[];
@@ -4351,8 +4354,14 @@ function QuantView({gFunding}){
           const pos=all2.map(k=>({k,y:Ym(k.p)})).sort((a,b)=>a.y-b.y);
           for(let i2=1;i2<pos.length;i2++)if(pos[i2].y<pos[i2-1].y+13)pos[i2].y=pos[i2-1].y+13;
           const yOf=new Map(pos.map(o=>[o.k,Math.min(Hm-8,o.y)]));
+          // REPARTO DEL DINERO: cuánto espera ser liquidado en cada lado (todos los bins)
+          const totS=c.liqmap.totS||0, totL=c.liqmap.totL||0, totAll=totS+totL;
+          const pS=totAll>0?totS/totAll*100:50, pL=100-pS;
+          const fm$=v=>{const a2=Math.abs(v);return a2>=1e9?'$'+(a2/1e9).toFixed(1)+'B':a2>=1e6?'$'+Math.round(a2/1e6)+'M':'$'+Math.round(a2/1e3)+'K';};
+          const moreShorts=totS>=totL;
           return(<React.Fragment>
-          <div style={{background:'#0A0D14',borderRadius:10,padding:'8px 6px'}}>
+          <div style={{display:'flex',gap:8,alignItems:'stretch'}}>
+          <div style={{flex:1,minWidth:0,background:'#0A0D14',borderRadius:10,padding:'8px 6px'}}>
             <svg viewBox={`0 0 ${W} ${Hm}`} width="100%" style={{display:'block'}}>
               <defs>
                 <linearGradient id="liqU" x1="0" x2="1"><stop offset="0" stopColor="#1FE0A0" stopOpacity="0.25"/><stop offset="1" stopColor="#1FE0A0"/></linearGradient>
@@ -4375,9 +4384,32 @@ function QuantView({gFunding}){
               <text x={PLm-33} y={Ym(c.price)+3} textAnchor="middle" fill="#07090E" fontSize="8.5" fontWeight="800" className="mono">{money(c.price)}</text>
             </svg>
           </div>
+          {/* COLUMNA DERECHA: dónde hay más dinero esperando liquidación (cortos vs largos) */}
+          <div style={{width:92,flexShrink:0,display:'flex',flexDirection:'column',gap:6}}>
+            <div style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'center',textAlign:'center',padding:'7px 5px',borderRadius:10,
+              background:'rgba(31,224,160,.08)',border:'1px solid '+(moreShorts?'rgba(31,224,160,.55)':'rgba(31,224,160,.2)')}}>
+              <div style={{fontSize:7,fontWeight:800,color:'var(--up)',letterSpacing:.4}}>🟢 CORTOS ↑{moreShorts?' ⚡':''}</div>
+              <div className="mono" style={{fontSize:14,fontWeight:800,color:'var(--up)',margin:'3px 0 1px'}}>{pS.toFixed(0)}%</div>
+              <div className="mono" style={{fontSize:8,color:'var(--dim)'}}>≈{fm$(totS)}</div>
+              <div style={{fontSize:6.5,color:'var(--faint)',marginTop:2,lineHeight:1.35}}>dinero por liquidar ARRIBA</div>
+            </div>
+            <div style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'center',textAlign:'center',padding:'7px 5px',borderRadius:10,
+              background:'rgba(255,84,112,.08)',border:'1px solid '+(!moreShorts?'rgba(255,84,112,.55)':'rgba(255,84,112,.2)')}}>
+              <div style={{fontSize:7,fontWeight:800,color:'var(--down)',letterSpacing:.4}}>🔴 LARGOS ↓{!moreShorts?' ⚡':''}</div>
+              <div className="mono" style={{fontSize:14,fontWeight:800,color:'var(--down)',margin:'3px 0 1px'}}>{pL.toFixed(0)}%</div>
+              <div className="mono" style={{fontSize:8,color:'var(--dim)'}}>≈{fm$(totL)}</div>
+              <div style={{fontSize:6.5,color:'var(--faint)',marginTop:2,lineHeight:1.35}}>dinero por liquidar ABAJO</div>
+            </div>
+          </div>
+          </div>
           <div style={{...flx({justifyContent:'space-between'}),marginTop:7,fontSize:7.5,color:'var(--faint)'}}>
             <span>🟢 liq. cortos (↑)</span><span>⚡ más fuerte</span><span>🔴 liq. largos (↓)</span>
           </div>
+          <div style={{marginTop:6,height:7,borderRadius:4,overflow:'hidden',display:'flex'}}>
+            <div style={{width:pS+'%',background:'linear-gradient(90deg,#1FE0A0,#1FE0A088)'}}/>
+            <div style={{width:pL+'%',background:'linear-gradient(90deg,#FF547088,#FF5470)'}}/>
+          </div>
+          <div style={{marginTop:5,fontSize:8.5,color:'var(--dim)',lineHeight:1.5}}>💰 Hay más dinero esperando liquidación en <b style={{color:moreShorts?'var(--up)':'var(--down)'}}>{moreShorts?'CORTOS (arriba, '+pS.toFixed(0)+'%)':'LARGOS (abajo, '+pL.toFixed(0)+'%)'}</b> — el precio tiende a ir donde más liquidez hay. $ = notional estimado del volumen real (no dato oficial).</div>
           <div style={{marginTop:8,padding:'8px 10px',borderRadius:9,background:strongest.side==='short'?'rgba(31,224,160,.07)':'rgba(255,84,112,.07)',
             border:`1px solid ${strongest.side==='short'?'rgba(31,224,160,.25)':'rgba(255,84,112,.25)'}`,fontSize:9,color:'var(--dim)',lineHeight:1.5}}>
             🧲 El imán más fuerte está <b style={{color:strongest.side==='short'?'var(--up)':'var(--down)'}}>{strongest.side==='short'?'ARRIBA':'ABAJO'} en {money(strongest.p)} ({(strongest.p/c.price-1)>=0?'+':''}{((strongest.p/c.price-1)*100).toFixed(1)}%)</b>: ahí se concentran las liquidaciones pendientes de {strongest.side==='short'?'cortos':'largos'} — el precio suele ir a buscar esa liquidez. Este imán <b>alimenta el cono</b>.
