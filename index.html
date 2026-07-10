@@ -539,6 +539,13 @@ function Calc({coin,data,source,sel}){
 
   const SC=vwafr>=0?'var(--up)':'var(--down)';
   const errCount=rows.filter(r=>r.mode==='auto'&&r.status==='error'&&r.on).length;
+  // con 17 exchanges, los que no tienen esa moneda ensucian la tabla: se ocultan
+  // tras un desplegable (siguen ahí por si quieres pasarlos a Manual). Solo se
+  // ocultan cuando YA llegaron datos de otros (si no, al cargar se vaciaría todo).
+  const [showErrRows,setShowErrRows]=useState(false);
+  const anyOk=rows.some(r=>r.status==='ok');
+  const hideableRow=r=>anyOk&&r.mode==='auto'&&r.status!=='ok';
+  const hiddenErr=rows.filter(hideableRow).length;
 
   return(
     <div style={{display:'block',padding:sel?'8px 10px':'0',margin:sel?'0 -10px 4px':'0',borderRadius:14,
@@ -565,7 +572,7 @@ function Calc({coin,data,source,sel}){
           <span/><span>Exchange</span><span>Fund%</span><span>OI $B</span>
           <span style={{textAlign:'right'}}>Peso</span><span style={{textAlign:'center'}}>Fuente</span>
         </div>
-        {rows.map((r,i)=>{
+        {(showErrRows?rows:rows.filter(r=>!hideableRow(r))).map((r,i)=>{
           const e=enr.find(x=>x.id===r.id);
           const wP=e?+(e.w*100).toFixed(1):0;
           const auto=r.mode==='auto';
@@ -625,7 +632,12 @@ function Calc({coin,data,source,sel}){
             </div>
           );
         })}
-        {errCount>0&&source==='server'&&(
+        {hiddenErr>0&&(
+          <div onClick={()=>setShowErrRows(v=>!v)} style={{textAlign:'center',padding:'8px 0 2px',cursor:'pointer',fontSize:10,fontWeight:700,color:'var(--accent)'}}>
+            {showErrRows?'▲ ocultar los sin datos':'▼ ver '+hiddenErr+' exchange'+(hiddenErr>1?'s':'')+' sin datos para '+coin}
+          </div>
+        )}
+        {errCount>0&&source==='server'&&showErrRows&&(
           <div style={{marginTop:12,padding:'9px 11px',borderRadius:9,
             background:'rgba(255,84,112,.06)',border:'1px solid rgba(255,84,112,.15)',
             fontSize:10.5,color:'var(--downDim)',lineHeight:1.5}}>
