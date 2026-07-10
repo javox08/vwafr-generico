@@ -2644,6 +2644,7 @@ function QuantView({gFunding}){
   const [infoSel,setInfoSel]=useState(null); // visor genérico (técnicos y manipulaciones)
   const [flowPro,setFlowPro]=useState(null); // panel PRO: Coinbase premium + long/short (masa/pros)
   const [veloTfSel,setVeloTfSel]=useState('4h'); // temporalidad de la Vista Velo (gráficos apilados)
+  const [veloCopied,setVeloCopied]=useState(false); // feedback del botón "copiar análisis"
   const [showAllPats,setShowAllPats]=useState(false); // ver todos los patrones (la lista se capa a 12)
   const [showAllFigs,setShowAllFigs]=useState(false); // ver todas las figuras (capa a 10)
   const longRef=React.useRef(null); // caché del histórico largo (no se re-pagina en cada refresco)
@@ -3437,11 +3438,18 @@ function QuantView({gFunding}){
         <div id="sec-velo" style={panel({marginBottom:14,padding:16})}>
           <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
             <span style={eyebrow}>📡 Análisis Velo · multi-temporalidad</span>
-            <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>precio + CVD · automático</span>
+            <span onClick={()=>{try{
+                const t1=(document.getElementById('velo-verdict')||{innerText:''}).innerText.replace(/\s+/g,' ').trim();
+                const t2=(document.getElementById('velo-why')||{innerText:''}).innerText.trim();
+                const txt='📡 Análisis Velo BTC · '+new Date().toLocaleString('es-ES',{dateStyle:'short',timeStyle:'short'})+'\n\n'+t1+'\n\n'+t2+'\n\n— vwafr-generico.pages.dev · no es consejo financiero';
+                (navigator.clipboard&&navigator.clipboard.writeText?navigator.clipboard.writeText(txt):Promise.reject()).then(()=>{setVeloCopied(true);setTimeout(()=>setVeloCopied(false),1800);}).catch(()=>{});
+              }catch(e){}}} className="mono" style={{fontSize:8.5,fontWeight:800,cursor:'pointer',padding:'3px 8px',borderRadius:8,
+              color:veloCopied?'var(--up)':'var(--accent)',background:veloCopied?'rgba(31,224,160,.1)':'rgba(110,139,255,.1)',
+              border:'1px solid '+(veloCopied?'rgba(31,224,160,.3)':'rgba(110,139,255,.3)')}}>{veloCopied?'✓ copiado':'📋 copiar'}</span>
           </div>
           <div style={{fontSize:9,color:'var(--faint)',marginBottom:9,lineHeight:1.5}}>Automatiza el análisis de líneas de tendencia sobre <b style={{color:'#F7931A'}}>precio</b> y <b style={{color:'#5B9BFF'}}>CVD</b> (dinero agresivo real) en cada temporalidad. Los dos de acuerdo = movimiento con respaldo; en desacuerdo = divergencia.</div>
           {/* veredicto global */}
-          <div style={{...flx({gap:9}),padding:'10px 12px',borderRadius:10,marginBottom:10,background:`${glob.c}12`,border:`1px solid ${glob.c}33`}}>
+          <div id="velo-verdict" style={{...flx({gap:9}),padding:'10px 12px',borderRadius:10,marginBottom:10,background:`${glob.c}12`,border:`1px solid ${glob.c}33`}}>
             <span style={{fontSize:20}}>{glob.e}</span>
             <div style={{fontSize:13,fontWeight:800,color:glob.c}}>{glob.t}</div>
           </div>
@@ -3557,7 +3565,7 @@ function QuantView({gFunding}){
                 else if(tk!=null&&tk<0.47)ms.push(['-','En 24h se abren más CORTOS que largos ('+((1-tk)*100).toFixed(0)+'%)']);
                 motivo={up:up3,pct:rr*100,horas,ms};
               }}
-            return(<div style={{marginTop:10,paddingTop:10,borderTop:'1px solid var(--line2)'}}>
+            return(<div id="velo-why" style={{marginTop:10,paddingTop:10,borderTop:'1px solid var(--line2)'}}>
               <div style={{fontSize:8,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.6,fontWeight:700,marginBottom:6}}>🗣️ Qué está pasando (automático)</div>
               <div style={{padding:'9px 11px',borderRadius:9,marginBottom:9,background:'#0A0D14',border:'1px solid var(--line2)'}}>
                 {motivo?(<React.Fragment>
