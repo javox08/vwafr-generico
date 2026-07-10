@@ -22,7 +22,7 @@
   var lsData={t:Date.now(),coins:[mk('BTC',1.5,1.17),mk('ETH',1.8,1.05),mk('SOL',2.1,0.9),mk('XRP',1.2,1.3),mk('BNB',1.4,1.1),
     mk('DOGE',2.5,0.8),mk('ADA',1.1,1.2),mk('AVAX',1.7,0.95),mk('LINK',1.3,1.15),mk('LTC',1.6,1.0)],
     btc:{pos:1.17,posSrcs:2,posEx:['OKX','Binance'],posW:true,taker:{b:52300,s:49100,pl:0.5158},prem:-0.038,
-      oiHist:oiH,premHist:pmH,fundHist:fdH,premHistD:pmH.slice(0,90),oiHistD:oiH.slice(0,30),
+      oiHist:oiH,premHist:pmH,cvdFut:oiH.map(function(v,i){return +(i*10-2000+Math.random()*50).toFixed(1);}),fundHist:fdH,premHistD:pmH.slice(0,90),oiHistD:oiH.slice(0,30),
       hist:Array.from({length:72},function(){return 1.5+Math.random()*0.1;})},
     mkt:{futVol:14.9,spotVol:1.2}};
   var J=function(o){return Promise.resolve(new Response(JSON.stringify(o),{status:200,headers:{'Content-Type':'application/json'}}));};
@@ -39,6 +39,23 @@
       if(u.indexOf('bitcoin-data.com/v1/nupl/last')>=0)return J({nupl:'0.16'});
       if(u.indexOf('bitcoin-data.com')>=0)return J({});
       if(u.indexOf('depth')>=0)return J({bids:[['60000','1']],asks:[['60010','1']]});
+      // Banco Mundial (vista Macro/PIB): formato [meta,[{value,date,countryiso3code,country},…]]
+      if(u.indexOf('api.worldbank.org')>=0){
+        var m=u.match(/country\/([^/]+)\/indicator\/([^?]+)/);
+        var cs=(m?m[1]:'USA').split(';'),code=m?m[2]:'';
+        var mrv=+((u.match(/mrv=(\d+)/)||[])[1]||6),rows2=[];
+        cs.forEach(function(c3,ci){
+          for(var y=0;y<mrv;y++){
+            var val=code==='NY.GDP.MKTP.CD'?(30-ci)*1e12:
+              code==='SL.UEM.TOTL.ZS'?4+Math.sin(y)*0.5+ci*0.05:
+              code==='FP.CPI.TOTL.ZG'?2.5+Math.cos(y)*0.8:
+              Math.sin((2025-y)/3+ci)*2+2;
+            rows2.push({value:+val,date:''+(2024-y),countryiso3code:c3,country:{id:c3.slice(0,2),value:c3}});
+          }
+        });
+        return J([{page:1,pages:1,per_page:rows2.length,total:rows2.length},rows2]);
+      }
+      if(u.indexOf('frankfurter')>=0){var rt={'2025-07-01':{EUR:0.90,JPY:152,GBP:0.78},'2026-07-01':{EUR:0.91,JPY:149,GBP:0.79}};return J({rates:rt});}
       return J({});
     }catch(e){return J({});}
   };
