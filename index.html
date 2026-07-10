@@ -3349,6 +3349,13 @@ function QuantView({gFunding}){
         {loadedAt>0&&<span className="mono" style={{fontSize:8,color:'var(--faint)',flexShrink:0,alignSelf:'flex-start'}}>● {new Date(loadedAt).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'})}</span>}
       </div>
 
+      {/* NAV RÁPIDA: la vista es muy larga — chips que saltan a cada sección */}
+      <div style={{display:'flex',gap:6,overflowX:'auto',paddingBottom:6,marginBottom:10,WebkitOverflowScrolling:'touch'}}>
+        {[['sec-velo','📡 Velo'],['sec-vista','📊 Gráficos'],['sec-cono','🔮 Cono'],['sec-patrones','🕯️ Patrones'],['sec-figuras','📐 Figuras'],['sec-liquidez','🧲 Liquidez'],['sec-flujo','💵 Flujo'],['sec-manip','🕵️ Manipulación']].map(([id2,lbl])=>(
+          <span key={id2} onClick={()=>{const el=document.getElementById(id2);if(el)el.scrollIntoView({behavior:'smooth',block:'start'});}}
+            style={{flexShrink:0,fontSize:10,fontWeight:700,color:'var(--dim)',padding:'6px 11px',borderRadius:9,background:'var(--panel2)',border:'1px solid var(--line2)',cursor:'pointer',whiteSpace:'nowrap'}}>{lbl}</span>))}
+      </div>
+
       {/* VEREDICTO DEL DÍA · resumen TL;DR de todo el análisis */}
       {(()=>{const dir=c.drift>0.0008?1:c.drift<-0.0008?-1:0;
         const col=dir>0?'var(--up)':dir<0?'var(--down)':'#F3BA2F';
@@ -3422,7 +3429,7 @@ function QuantView({gFunding}){
             <path d={path(pn)} fill="none" stroke="#F7931A" strokeWidth="1.6"/>
           </svg>);};
         return(
-        <div style={panel({marginBottom:14,padding:16})}>
+        <div id="sec-velo" style={panel({marginBottom:14,padding:16})}>
           <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
             <span style={eyebrow}>📡 Análisis Velo · multi-temporalidad</span>
             <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>precio + CVD · automático</span>
@@ -3650,7 +3657,7 @@ function QuantView({gFunding}){
             </div>
           </div>);};
         return(
-        <div style={panel({marginBottom:14,padding:16})}>
+        <div id="sec-vista" style={panel({marginBottom:14,padding:16})}>
           <div style={{...flx({justifyContent:'space-between'}),marginBottom:8}}>
             <span style={eyebrow}>📊 Vista Velo · BTC</span>
             <div style={{...flx({gap:4})}}>
@@ -3771,7 +3778,7 @@ function QuantView({gFunding}){
         const dp='M '+cvd.map((v,i)=>X(i).toFixed(1)+' '+Y(v).toFixed(1)).join(' L ');
         const col=rising?'var(--up)':'var(--down)';
         return(
-        <div style={panel({marginBottom:14,padding:16})}>
+        <div id="sec-flujo" style={panel({marginBottom:14,padding:16})}>
           <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
             <span style={eyebrow}>💵 Flujo de dinero · pro</span>
             <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>agresión real · estilo Velo</span>
@@ -3821,7 +3828,7 @@ function QuantView({gFunding}){
       })()}
 
       {/* DETECTOR DE MANIPULACIÓN: barridos, pump&dump, squeezes, divergencias */}
-      <div style={panel({marginBottom:14,padding:16})}>
+      <div id="sec-manip" style={panel({marginBottom:14,padding:16})}>
         <div style={{...flx({justifyContent:'space-between'}),marginBottom:10}}>
           <span style={eyebrow}>🕵️ Detector de manipulación</span>
           <span className="mono" style={{fontSize:9,fontWeight:700,color:(c.manip&&c.manip.length)?'#F3BA2F':'var(--up)'}}>{(c.manip&&c.manip.length)?c.manip.length+' evento(s) · toca':'✓ limpio ahora'}</span>
@@ -3844,7 +3851,7 @@ function QuantView({gFunding}){
       </div>
 
       {/* PATRONES CHARTISTAS (automático) */}
-      <div style={panel({marginBottom:14,padding:16})}>
+      <div id="sec-patrones" style={panel({marginBottom:14,padding:16})}>
         <div style={{...flx({justifyContent:'space-between'}),marginBottom:12}}>
           <span style={eyebrow}>Patrones detectados · auto</span>
           <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>4h · 1D · semanal · toca</span>
@@ -3910,7 +3917,7 @@ function QuantView({gFunding}){
       </div>
 
       {/* PATRONES GRÁFICOS (figuras clásicas estilo Binance, con estadística) */}
-      <div style={panel({marginBottom:14,padding:16})}>
+      <div id="sec-figuras" style={panel({marginBottom:14,padding:16})}>
         <div style={{...flx({justifyContent:'space-between'}),marginBottom:12}}>
           <span style={eyebrow}>Patrones gráficos · figuras</span>
           <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>4h · 1D · semanal</span>
@@ -3946,7 +3953,7 @@ function QuantView({gFunding}){
       </div>
 
       {/* MONTE CARLO · cono de probabilidad (grado institucional) */}
-      <div style={panel({marginBottom:14,padding:16,background:'radial-gradient(130% 80% at 50% 0%, rgba(110,139,255,.06) 0%, var(--panel) 55%)'})}>
+      <div id="sec-cono" style={panel({marginBottom:14,padding:16,background:'radial-gradient(130% 80% at 50% 0%, rgba(110,139,255,.06) 0%, var(--panel) 55%)'})}>
         <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
           <span style={eyebrow}>Cono de probabilidad · ruta 30d</span>
           <span className="mono" style={{fontSize:8.5,fontWeight:700,color:'var(--accent)',padding:'2px 7px',borderRadius:10,background:'rgba(110,139,255,.12)',border:'1px solid rgba(110,139,255,.3)'}}>700 sims · institucional</span>
@@ -4292,7 +4299,7 @@ function QuantView({gFunding}){
       })()}
 
       {/* MAPA DE LIQUIDEZ (clústeres REALES estimados del volumen histórico) */}
-      <div style={panel({marginBottom:14,padding:16})}>
+      <div id="sec-liquidez" style={panel({marginBottom:14,padding:16})}>
         <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
           <span style={eyebrow}>Mapa de liquidez</span>
           <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>{c.liqmap?(c.liqmap.src==='4h'?'volumen real · velas 4h · ~166 días':'volumen real · 90 días'):'estimado teórico'}</span>
