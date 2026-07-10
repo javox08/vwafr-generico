@@ -65,15 +65,22 @@ Conseguir el token: crea una app en https://www.linkedin.com/developers, pide el
 producto "Share on LinkedIn" y haz el OAuth para obtener el token (guía de
 LinkedIn). El URN de persona lo da el endpoint `/v2/userinfo` (campo `sub`).
 
-## Bot que TRADEA en Bitunix la señal de los 25 bots — opcional y avanzado
-Cuando cambia la ruta, el worker puede **abrir la operación en Bitunix Futures**
-(market + TP/SL) con la señal del consenso de los bots. **Por seguridad va en
-DRY-RUN**: no opera hasta que pongas `BITUNIX_TRADE = "live"`.
+## Bot que TRADEA en Bitunix — estrategia ⭐ Élite (opcional y avanzado)
+El worker gestiona la posición por SEÑAL en cada ejecución del cron (bxManage):
+- **Abre LARGO** cuando la estrategia Élite da señal (precio>MA200 + momentum
+  vol-ajustado>0 + Donchian-100) y no hay posición.
+- **CIERRA** automáticamente cuando la señal se apaga (sale por señal, deja correr
+  las tendencias). **Sin stop-loss ni take-profit fijo** — exactamente lo mismo que
+  el backtest (2018-2025 a 1,5×: ~60-70%/año, caída máx ~50%; no garantizado).
+- Nunca se pone corto. **Por seguridad va en DRY-RUN**: no opera hasta que pongas
+  `BITUNIX_TRADE = "live"`.
 
 ```bash
 wrangler secret put BITUNIX_API_KEY
 wrangler secret put BITUNIX_API_SECRET
-# en wrangler.toml: BITUNIX_SYMBOL, BITUNIX_QTY y BITUNIX_TRADE = "live"
+# en wrangler.toml / variables: BITUNIX_SYMBOL, BITUNIX_QTY=auto,
+#   BITUNIX_LEV=1.5 (caída máx ~50%; 1.1≈38% · 2≈60%),
+#   BITUNIX_STRATEGY=elite (o robmom/momaccel/consensus) y BITUNIX_TRADE="live"
 wrangler deploy
 ```
 
