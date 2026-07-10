@@ -23,7 +23,7 @@ self.addEventListener('fetch', e => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   // APIs de datos en vivo: siempre a la red, sin cachear (no servir datos viejos)
-  const liveAPI = /binance|deribit|coingecko|bitcoin-data|alternative\.me|worldbank|okx\.com|bitstamp|llama\.fi|frankfurter|bybit|bitget|telegram|bitunix|okex/.test(url.hostname)
+  const liveAPI = /binance|deribit|coingecko|bitcoin-data|alternative\.me|worldbank|okx\.com|bitstamp|llama\.fi|frankfurter|bybit|bitget|telegram|bitunix|okex|coinbase|gateio|mexc|vercel\.app/.test(url.hostname)
     || url.pathname.startsWith('/api/');
   if (liveAPI) return;
   // librerías CDN y fuentes: cache-first (inmutables → cargas repetidas instantáneas)
