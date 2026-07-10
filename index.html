@@ -164,6 +164,10 @@
     .tabs::-webkit-scrollbar{height:0}
     @keyframes breathe{0%,100%{opacity:.45;transform:scale(1)}50%{opacity:1;transform:scale(1.15)}}
     @keyframes spin{to{transform:rotate(360deg)}}
+    /* accesibilidad: sin animaciones para quien lo pide en su sistema */
+    @media (prefers-reduced-motion: reduce){
+      *,*::before,*::after{animation-duration:.01ms !important;animation-iteration-count:1 !important;transition-duration:.01ms !important;scroll-behavior:auto !important}
+    }
     @keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
     @keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
     .rise{animation:rise .5s ease both}
@@ -6014,7 +6018,7 @@ function App(){
         {[['home','Funding'],['cycle','Ciclo'],['quant','Cuantitativo'],['bots','Bots'],['pib','Macro']].map(([k,label])=>{
           const on=view===k;
           return(
-            <button key={k} onClick={()=>setView(k)} className={on?'nav-glow':''} style={{flex:1,padding:'9px 2px',borderRadius:10,
+            <button key={k} onClick={()=>setView(k)} className={on?'nav-glow':''} aria-label={'Ver sección '+label} aria-current={on?'page':undefined} style={{flex:1,padding:'9px 2px',borderRadius:10,
               fontSize:11,fontWeight:700,cursor:'pointer',transition:'all .18s',whiteSpace:'nowrap',letterSpacing:-.2,
               border:`1px solid ${on?'var(--accent)':'var(--line)'}`,
               background:on?'rgba(110,139,255,.12)':'transparent',color:on?'var(--txt)':'var(--dim)'}}>{label}</button>
