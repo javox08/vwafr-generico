@@ -3544,8 +3544,9 @@ function QuantView({gFunding}){
             else if(cb!=null&&cb>0.05)parts.push('y Coinbase en positivo (+'+cb.toFixed(2)+'%) → EE.UU. comprando');
             const porque=(mv?mv.expl+' En contexto: ':'')+parts.join('; ')+'.';
             // "¿Qué es lo más probable?": escenario DOBLE con niveles concretos, como un analista
-            const despues=combo?combo.d+(lo1&&hi1?' Niveles: soporte '+money(lo1)+' · resistencia '+money(hi1)+'.':''):
-              (pd<=0&&cd<0&&oi24<-0.3)?('Venta agresiva contra un mercado que se desapalanca: si '+(lo1?money(lo1):'el soporte')+' AGUANTA mientras la venta se agota → rebote/short squeeze probable; si lo PIERDE con el CVD aún cayendo → caída rápida (no hay compra agresiva que la frene).'):
+            const deleveraging=(pd<=0&&cd<0&&oi24<-0.3);
+            let despues=combo?combo.d+(lo1&&hi1?' Niveles: soporte '+money(lo1)+' · resistencia '+money(hi1)+'.':''):
+              deleveraging?('Venta agresiva contra un mercado que se desapalanca: si '+(lo1?money(lo1):'el soporte')+' AGUANTA mientras la venta se agota → rebote/short squeeze probable; si lo PIERDE con el CVD aún cayendo → caída rápida (no hay compra agresiva que la frene).'):
               sc>=2?('Lo más probable: CONTINUIDAD ALCISTA mientras CVD y OI acompañen'+(hi1?' — objetivo natural del tramo: '+money(hi1):'')+'. Se cancela si el CVD se gira o el funding se calienta (>0,02%/8h).'):
               sc<=-2?('PRESIÓN BAJISTA dominante'+(lo1?': perder '+money(lo1)+' abre caída rápida':'')+'. Se invierte cuando el CVD deje de caer o el funding se ponga negativo (los cortos empiezan a pagar).'):
               ('Sin ventaja clara: RANGO probable'+(lo1&&hi1?' entre '+money(lo1)+' y '+money(hi1):'')+'. La ruptura fiable llegará cuando precio, CVD y OI apunten al mismo lado; hasta entonces, los movimientos rápidos suelen ser barridas.');
@@ -3584,6 +3585,12 @@ function QuantView({gFunding}){
                 else if(tk!=null&&tk<0.47)ms.push(['-','En 24h se abren más CORTOS que largos ('+((1-tk)*100).toFixed(0)+'%)']);
                 motivo={up:up3,pct:rr*100,horas,ms};
               }}
+            // COHERENCIA: si la pierna ACTUAL va contra la lectura de derivados, el escenario
+            // lo dice como corrección/rebote (antes podía salir "BAJANDO" + "continuidad alcista").
+            if(motivo&&!combo&&!deleveraging){
+              if(sc>=2&&!motivo.up)despues='La bajada de ahora encaja como CORRECCIÓN: los derivados siguen alcistas (puntuación +'+sc.toFixed(1)+'). Mientras '+(lo1?money(lo1):'el soporte')+' aguante y el CVD no se gire, lo más probable es que el retroceso se COMPRE'+(hi1?' de vuelta hacia '+money(hi1):'')+'. Se cancela si el CVD se gira o el funding se calienta (>0,02%/8h).';
+              else if(sc<=-2&&motivo.up)despues='La subida de ahora encaja como REBOTE dentro de presión bajista de derivados (puntuación '+sc.toFixed(1)+'): si no recupera '+(hi1?money(hi1):'la resistencia')+' con compra agresiva real, lo normal es que el rebote se VENDA'+(lo1?' de vuelta a '+money(lo1):'')+'. Se invierte si el CVD deja de caer o el funding se pone negativo.';
+            }
             return(<div id="velo-why" style={{marginTop:10,paddingTop:10,borderTop:'1px solid var(--line2)'}}>
               <div style={{fontSize:8,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.6,fontWeight:700,marginBottom:6}}>🗣️ Qué está pasando (automático)</div>
               <div style={{padding:'9px 11px',borderRadius:9,marginBottom:9,background:'#0A0D14',border:'1px solid var(--line2)'}}>
