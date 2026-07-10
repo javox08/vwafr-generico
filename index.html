@@ -395,6 +395,17 @@ const flx=(ex={})=>({display:'flex',alignItems:'center',...ex});
 const fmt=(v,d=4)=>{const n=Number.isFinite(v)?v:0;return(n>=0?'+':'')+n.toFixed(d)+'%';};
 
 const BITUNIX='https://www.bitunix.com/register?inviteCode=ffcczq';
+// ── BACKTEST DE LOS VEREDICTOS VELO (libtest/velo_stats.cjs): tras cada veredicto
+// (clave = dir precio,dir CVD), % de veces que el precio estuvo MÁS ALTO 10 velas
+// después + retorno medio + nº de casos. Medido replicando la clasificación exacta
+// de la web sobre Binance: 15m=90 días · 1h=2 años · 4h y 1D=desde 2017. La mayoría
+// ronda el 50%: los veredictos describen QUIÉN mueve el precio, no predicen solos.
+const VELO_STATS={
+  '15m':{'1,1':{w:48,a:-0.02,n:1244},'1,-1':{w:53,a:0.07,n:422},'-1,-1':{w:48,a:-0.04,n:1410},'-1,1':{w:49,a:-0.11,n:176},'1,0':{w:45,a:0.04,n:91},'-1,0':{w:31,a:-0.20,n:94},'0,-1':{w:46,a:-0.04,n:419},'0,1':{w:58,a:0.10,n:544},'0,0':{w:64,a:0.09,n:47}},
+  '1h':{'1,1':{w:50,a:0.05,n:1442},'1,-1':{w:50,a:-0.03,n:2193},'-1,-1':{w:53,a:0.05,n:3473},'-1,1':{w:56,a:0.03,n:181},'1,0':{w:51,a:0.06,n:611},'-1,0':{w:45,a:-0.20,n:141},'0,-1':{w:51,a:-0.07,n:697},'0,1':{w:46,a:0.02,n:134},'0,0':{w:52,a:-0.24,n:63}},
+  '4h':{'1,1':{w:53,a:0.57,n:1698},'1,-1':{w:54,a:0.42,n:2652},'-1,-1':{w:52,a:0.09,n:3137},'-1,1':{w:52,a:0.15,n:738},'1,0':{w:49,a:-0.04,n:742},'-1,0':{w:52,a:-0.01,n:423},'0,-1':{w:46,a:-0.50,n:198},'0,1':{w:51,a:-0.71,n:51},'0,0':{w:51,a:-0.68,n:37}},
+  '1D':{'1,1':{w:51,a:0.82,n:191},'1,-1':{w:57,a:3.19,n:506},'-1,-1':{w:55,a:0.88,n:491},'-1,1':{w:46,a:-0.90,n:204},'1,0':{w:49,a:1.37,n:102},'-1,0':{w:54,a:-1.01,n:67}}
+};
 
 function verdict(v){
   return v>0.015 ?{t:'ALCISTA FUERTE',    s:'Longs pagan fuerte a shorts',     up:1}:
@@ -3605,6 +3616,12 @@ function QuantView({gFunding}){
                   <div style={{fontSize:9.5,color:'var(--txt)',lineHeight:1.55}}><b style={{color:'var(--dim)'}}>Sin movimiento fuerte ahora (lateral).</b> {porque}</div>
                 )}
                 <div style={{fontSize:9.5,color:'var(--txt)',lineHeight:1.55,marginTop:6,paddingTop:6,borderTop:'1px solid var(--line2)'}}><b style={{color:'var(--dim)'}}>¿Qué es lo más probable?</b> {despues}</div>
+                {(()=>{ // la misma pregunta, respondida con DATOS: backtest del veredicto actual (1h)
+                  const st=pc&&VELO_STATS[pc.tf]&&VELO_STATS[pc.tf][pc.dir+','+pc.mdir];
+                  if(!st)return null;
+                  const col=st.w>=55?'var(--up)':st.w<=45?'var(--down)':'var(--dim)';
+                  return(<div style={{fontSize:8.5,color:'var(--faint)',lineHeight:1.5,marginTop:5}}>
+                    📊 <b style={{color:'var(--dim)'}}>Según backtest</b> ({pc.tf}, n={st.n}): tras «{pc.verd.t}» el precio estuvo más alto 10 velas después el <b style={{color:col}}>{st.w}%</b> de las veces (media {st.a>=0?'+':''}{st.a}%). {st.w>45&&st.w<55?'≈50% = el veredicto explica el momento, la ventaja direccional la dan los combos y patrones.':''}</div>);})()}
               </div>
               <div style={{fontSize:8,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.6,fontWeight:700,marginBottom:6}}>🧩 Lectura combinada · todos los indicadores afectan</div>
               {combo&&<div style={{...flx({gap:8}),padding:'9px 11px',borderRadius:9,marginBottom:8,background:`${combo.c}10`,border:`1px solid ${combo.c}44`}}>
@@ -3655,13 +3672,19 @@ function QuantView({gFunding}){
                 <Spark p={r.spark.p} cv={r.spark.c}/>
               </div>
               {oi&&oi.read&&<div style={{fontSize:8.5,color:'var(--dim)',lineHeight:1.45,marginTop:4}}>🧾 OI: {oi.read}.</div>}
+              {(()=>{ // 📊 estadística REAL del veredicto: qué pasó las otras veces (backtest)
+                const st=VELO_STATS[r.tf]&&VELO_STATS[r.tf][r.dir+','+r.mdir];
+                if(!st)return null;
+                const col=st.w>=55?'var(--up)':st.w<=45?'var(--down)':'var(--txt)';
+                return(<div style={{fontSize:8.5,color:'var(--dim)',lineHeight:1.45,marginTop:4}}>
+                  📊 Backtest: tras este veredicto el precio estuvo más alto 10 velas después el <b style={{color:col}}>{st.w}%</b> de las veces (media {st.a>=0?'+':''}{st.a}% · n={st.n}){st.w>45&&st.w<55?' — sin ventaja clara: describe el presente, no predice solo':''}.</div>);})()}
               {r.move&&<div style={{fontSize:8.5,lineHeight:1.5,marginTop:4,padding:'6px 9px',borderRadius:8,
                 color:'var(--dim)',background:r.move.backed?'rgba(31,224,160,.06)':'rgba(243,186,47,.07)',
                 border:`1px solid ${r.move.backed?'rgba(31,224,160,.22)':'rgba(243,186,47,.28)'}`}}>
                 {r.move.backed?'💪':'🕳️'} {r.move.expl}</div>}
             </div>);})}
 
-          <p style={{fontSize:8,color:'var(--faint)',marginTop:8,lineHeight:1.5}}>Naranja = precio · azul = CVD (delta acumulado de compras−ventas agresivas, Binance spot) · OI = interés abierto REAL de Binance Futures (histórico horario). La lectura combinada puntúa TODOS los indicadores a la vez (OI, funding, aperturas taker 24h, CVD, Coinbase premium, retail vs pros) y detecta los combos clásicos (OI↑ + funding negativo = setup de short squeeze, etc.). Solo velas cerradas. Se actualiza solo cada 2 min. No es consejo financiero.</p>
+          <p style={{fontSize:8,color:'var(--faint)',marginTop:8,lineHeight:1.5}}>Naranja = precio · azul = CVD (delta acumulado de compras−ventas agresivas, Binance spot) · OI = interés abierto REAL de Binance Futures (histórico horario). La lectura combinada puntúa TODOS los indicadores a la vez (OI, funding, aperturas taker 24h, CVD, Coinbase premium, retail vs pros) y detecta los combos clásicos (OI↑ + funding negativo = setup de short squeeze, etc.). Los <b style={{color:'var(--txt)'}}>📊 Backtest</b> son estadística REAL de cada veredicto replicando esta misma clasificación sobre el histórico de Binance (15m: 90 días · 1h: 2 años · 4h y 1D: desde 2017 · horizonte 10 velas): la mayoría ronda el 50% — el veredicto te dice QUIÉN mueve el precio ahora; la ventaja direccional la dan los combos, patrones y el cono. Solo velas cerradas. Se actualiza solo cada 2 min. No es consejo financiero.</p>
         </div>);})()}
 
       {/* 📊 VISTA VELO: como una captura de velo.xyz — precio arriba y TODOS los
@@ -3875,7 +3898,7 @@ function QuantView({gFunding}){
                   <div style={{width:(v*100)+'%',background:'var(--up)',opacity:.8}}/><div style={{flex:1,background:'var(--down)',opacity:.8}}/>
                 </div>
               </div>))}
-            <div style={{fontSize:8,color:'var(--faint)',lineHeight:1.5,marginTop:3}}>% = qué parte de cada grupo está en cada lado (no es dinero: en futuros el $ largo = corto = OI). {masa!=null&&pros!=null&&Math.abs(masa-pros)>0.08?'⚠️ La masa está '+(masa>pros?'MÁS larga':'MÁS corta')+' que los pros: los top traders suelen tener razón.':''}</div>
+            <div style={{fontSize:8,color:'var(--faint)',lineHeight:1.5,marginTop:3}}>% = qué parte de cada grupo está en cada lado (no es dinero: en futuros el $ largo = corto = OI). {masa!=null&&pros!=null&&Math.abs(masa-pros)>0.08?'⚠️ La masa está '+(masa>pros?'MÁS larga':'MÁS corta')+' que los pros: los top traders suelen tener razón.':''} <b style={{color:'var(--dim)'}}>¿No cuadra con otros apartados?</b> Es normal: masa = CUENTAS · pros = POSICIONES de top traders · aperturas 24h = FLUJO taker · mapa de liquidez = dinero EN RIESGO de liquidación. Miden cosas distintas; la señal fuerte es cuando todos apuntan al mismo lado.</div>
           </div>}
           <p style={{fontSize:8,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>CVD y agresión neta de Binance Futures (taker buy − sell). Coinbase Premium = precio en Coinbase vs Binance (compra institucional EE.UU.). Todo se actualiza solo. No es consejo financiero.</p>
         </div>);
@@ -4452,7 +4475,7 @@ function QuantView({gFunding}){
             <div style={{width:pS+'%',background:'linear-gradient(90deg,#1FE0A0,#1FE0A088)'}}/>
             <div style={{width:pL+'%',background:'linear-gradient(90deg,#FF547088,#FF5470)'}}/>
           </div>
-          <div style={{marginTop:5,fontSize:8.5,color:'var(--dim)',lineHeight:1.5}}>💰 Hay más dinero esperando liquidación en <b style={{color:moreShorts?'var(--up)':'var(--down)'}}>{moreShorts?'CORTOS (arriba, '+pS.toFixed(0)+'%)':'LARGOS (abajo, '+pL.toFixed(0)+'%)'}</b> — el precio tiende a ir donde más liquidez hay. $ = notional estimado del volumen real (no dato oficial).</div>
+          <div style={{marginTop:5,fontSize:8.5,color:'var(--dim)',lineHeight:1.5}}>💰 Hay más dinero esperando liquidación en <b style={{color:moreShorts?'var(--up)':'var(--down)'}}>{moreShorts?'CORTOS (arriba, '+pS.toFixed(0)+'%)':'LARGOS (abajo, '+pL.toFixed(0)+'%)'}</b> — el precio tiende a ir donde más liquidez hay. $ = notional estimado del volumen real (no dato oficial).{(strongest.side==='short')!==moreShorts?' Ojo: el clúster SUELTO más fuerte ⚡ está en el otro lado — imán cercano puntual vs peso total del lado.':''} <b style={{color:'var(--dim)'}}>Esto NO es "cuántos longs/shorts hay"</b> (eso está en Flujo de dinero; en futuros el $ largo siempre = $ corto): es dónde LIQUIDARÍAN a los que ya están dentro.</div>
           <div style={{marginTop:8,padding:'8px 10px',borderRadius:9,background:strongest.side==='short'?'rgba(31,224,160,.07)':'rgba(255,84,112,.07)',
             border:`1px solid ${strongest.side==='short'?'rgba(31,224,160,.25)':'rgba(255,84,112,.25)'}`,fontSize:9,color:'var(--dim)',lineHeight:1.5}}>
             🧲 El imán más fuerte está <b style={{color:strongest.side==='short'?'var(--up)':'var(--down)'}}>{strongest.side==='short'?'ARRIBA':'ABAJO'} en {money(strongest.p)} ({(strongest.p/c.price-1)>=0?'+':''}{((strongest.p/c.price-1)*100).toFixed(1)}%)</b>: ahí se concentran las liquidaciones pendientes de {strongest.side==='short'?'cortos':'largos'} — el precio suele ir a buscar esa liquidez. Este imán <b>alimenta el cono</b>.
@@ -5861,15 +5884,8 @@ function App(){
           </div>
           <h1 style={{fontSize:21,fontWeight:800,letterSpacing:-.5,lineHeight:1}}>{TITLE[1]}</h1>
         </div>
-        {home&&(
-          <button onClick={fetchAll} disabled={busy}
-            style={{...flx({gap:6,justifyContent:'center'}),background:'var(--panel2)',
-              border:'1px solid var(--line2)',borderRadius:9,color:'var(--accent)',
-              fontSize:12,fontWeight:600,padding:'8px 13px',cursor:busy?'default':'pointer',opacity:busy?.5:1}}>
-            <span style={{display:'inline-block',animation:busy?'spin .8s linear infinite':'none',fontSize:13}}>↻</span>
-            {busy?'':'Actualizar'}
-          </button>
-        )}
+        {/* sin botón de "Actualizar": los datos se refrescan solos cada 60 s y el botón
+            confundía (parecía un aviso de actualización pendiente) */}
       </div>
 
       {/* PWA: ofrecer instalación de la app */}
@@ -6050,7 +6066,7 @@ function App(){
               </React.Fragment>}
               {/* dinero REAL (OI, mostrado una vez) + lectura de divergencia */}
               {masa!=null&&pro!=null&&<div style={{gridColumn:'1 / -1',fontSize:8.5,color:'var(--faint)',lineHeight:1.5,marginTop:1}}>
-                💰 <b style={{color:'var(--txt)'}}>Dinero real en juego (OI top {lsTop.length}): {fmtB(tot)}</b>. En futuros el $ largo = $ corto = OI siempre; los <b>%</b> de arriba son el <b>SESGO</b> de cada grupo (qué parte está en cada lado), no importes distintos. {Math.abs(masa-pro)>0.08?('⚠️ Divergencia: la masa (retail) está '+(masa>pro?'MÁS larga':'MÁS corta')+' que los pros ('+Math.abs((masa-pro)*100).toFixed(0)+' pts). Los top traders suelen tener razón — precaución al lado de la multitud.'):'Masa y pros alineados: sin divergencia relevante.'} Este sesgo <b>alimenta el cono</b> del Cuantitativo.</div>}
+                💰 <b style={{color:'var(--txt)'}}>Dinero real en juego (OI top {lsTop.length}): {fmtB(tot)}</b>. En futuros el $ largo = $ corto = OI siempre; los <b>%</b> de arriba son el <b>SESGO</b> de cada grupo (qué parte está en cada lado), no importes distintos. {Math.abs(masa-pro)>0.08?('⚠️ Divergencia: la masa (retail) está '+(masa>pro?'MÁS larga':'MÁS corta')+' que los pros ('+Math.abs((masa-pro)*100).toFixed(0)+' pts). Los top traders suelen tener razón — precaución al lado de la multitud.'):'Masa y pros alineados: sin divergencia relevante.'} Este sesgo <b>alimenta el cono</b> del Cuantitativo. <b style={{color:'var(--dim)'}}>¿No cuadran los % entre apartados?</b> Es normal: masa = CUENTAS · pros = POSICIONES · aperturas 24h = FLUJO taker · mapa de liquidez (Cuantitativo) = dinero EN RIESGO de liquidación — miden cosas distintas; la señal fuerte es cuando todos apuntan igual.</div>}
             </div>);})()}
           {cot&&(cot.levL+cot.levS)>0&&(()=>{const pl=cot.levL/(cot.levL+cot.levS), am=(cot.amL+cot.amS)>0?cot.amL/(cot.amL+cot.amS):null;
             return(<div style={{marginTop:10,paddingTop:9,borderTop:'1px solid var(--line2)'}}>

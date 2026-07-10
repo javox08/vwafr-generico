@@ -93,3 +93,19 @@ Conclusiones honestas:
 - Integrado en la web como bot «📡 Velo (precio + CVD spot)» (long/flat, n=20),
   con el CVD alineado por índice absoluto (veloCvdIdx) para los cortes IS/OOS
   del walk-forward. Antes de 2017 no hay taker en Binance → el bot está fuera.
+
+## Backtest de los VEREDICTOS del Análisis Velo — velo_stats.cjs · 2026-07-10
+
+Replica la clasificación exacta de la web (pendientes de regresión, umbrales
+±0,5% precio / ±0,4% CVD/vol, ventanas 96/120/120/90) y mide el precio 10 velas
+después. Datos: fetch_cvd_tf.cjs (15m 90d · 1h 2a · 4h y 1d desde 2017).
+
+Hallazgo principal (HONESTO): la mayoría de veredictos ronda el 50% → describen
+QUIÉN mueve el precio, no predicen solos. Desviaciones reales:
+- 15m «BAJA · dinero neutro»: solo 31% subió (n=94) → continuación bajista.
+- 15m «COMPRAN pero no sube»: 58% subió (n=544) → la distribución tarda.
+- 1D «SUBE SIN DINERO»: 57% subió +3,2% (n=506) → en diario la divergencia
+  NO frena al alcista (deriva estructural de BTC).
+- 1D «CAE PERO ABSORBEN»: 46% (n=204) → la absorción diaria NO marca suelo.
+Los números viven en VELO_STATS (index.html) y se muestran como chips 📊 en
+cada temporalidad y en la narrativa. Regenerar: fetch_cvd_tf.cjs + velo_stats.cjs.

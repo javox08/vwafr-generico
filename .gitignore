@@ -1,1 +1,5 @@
 libtest/btc_cvd_daily.json
+libtest/btc_cvd_4h.json
+libtest/btc_cvd_1h.json
+libtest/btc_cvd_15m.json
+libtest/btc_cvd_1d.json
