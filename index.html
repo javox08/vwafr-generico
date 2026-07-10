@@ -3252,15 +3252,22 @@ function QuantView({gFunding}){
           const qs=e*(1+1/L); if(qs>price&&maxAfter[i]<qs)add(qs,'short',base*tw/L*(1-bf)*2);
         }}
       const rows=[...B.values()];
-      const below=rows.filter(r=>r.long>0&&r.p<price).map(r=>({p:r.p,side:'long',w:r.long})).sort((a,b)=>b.w-a.w).slice(0,6);
-      const above=rows.filter(r=>r.short>0&&r.p>price).map(r=>({p:r.p,side:'short',w:r.short})).sort((a,b)=>b.w-a.w).slice(0,6);
+      // El MAPA se limita a ±18% del precio: los niveles heredados de tendencias pasadas
+      // (p.ej. cortos de +32% arriba tras una caída) estiraban el eje y inflaban un lado.
+      const ZMAP=0.18;
+      const below=rows.filter(r=>r.long>0&&r.p<price&&(1-r.p/price)<=ZMAP).map(r=>({p:r.p,side:'long',w:r.long})).sort((a,b)=>b.w-a.w).slice(0,6);
+      const above=rows.filter(r=>r.short>0&&r.p>price&&(r.p/price-1)<=ZMAP).map(r=>({p:r.p,side:'short',w:r.short})).sort((a,b)=>b.w-a.w).slice(0,6);
       const all=above.concat(below); if(!all.length)return null;
       const wmax=Math.max(...all.map(x=>x.w));
       for(const x of all)x.rel=x.w/wmax;
-      // TOTALES por lado (sobre TODOS los bins, no solo el top-6): cuánto dinero estimado
-      // espera ser liquidado arriba (cortos) vs abajo (largos) — para el resumen del mapa.
-      let totS=0,totL=0; for(const r of rows){if(r.p>price)totS+=r.short;if(r.p<price)totL+=r.long;}
-      return {above:above.sort((a,b)=>b.p-a.p),below:below.sort((a,b)=>b.p-a.p),totS,totL,posRef:plEff,src:use4h?'4h':'1d'};
+      // TOTALES por lado en la ZONA OPERATIVA (±12%): es lo comparable y accionable.
+      // Lo lejano (>12%, niveles legacy que nunca se barrieron) se reporta aparte para
+      // no inflar el reparto (antes salía 72/28 por cortos heredados de +32%).
+      const ZN=0.12; let totS=0,totL=0,farS=0,farL=0;
+      for(const r of rows){const d=r.p/price-1;
+        if(r.p>price){if(d<=ZN)totS+=r.short;else farS+=r.short;}
+        if(r.p<price){if(-d<=ZN)totL+=r.long;else farL+=r.long;}}
+      return {above:above.sort((a,b)=>b.p-a.p),below:below.sort((a,b)=>b.p-a.p),totS,totL,farS,farL,posRef:plEff,src:use4h?'4h':'1d'};
     })();
     // ── IMÁN del cono: los clústeres REALES del mapa (si hay); respaldo teórico si no.
     const mags=[];
@@ -4553,14 +4560,14 @@ function QuantView({gFunding}){
               <div style={{fontSize:7,fontWeight:800,color:'var(--up)',letterSpacing:.4}}>💥 RIESGO ARRIBA{moreShorts?' ⚡':''}</div>
               <div className="mono" style={{fontSize:14,fontWeight:800,color:'var(--up)',margin:'3px 0 1px'}}>{pS.toFixed(0)}%</div>
               <div className="mono" style={{fontSize:8,color:'var(--dim)'}}>≈{fm$(totS)}</div>
-              <div style={{fontSize:6.5,color:'var(--faint)',marginTop:2,lineHeight:1.35}}>cortos atrapados: los liquidarían SUBIENDO</div>
+              <div style={{fontSize:6.5,color:'var(--faint)',marginTop:2,lineHeight:1.35}}>cortos atrapados (zona ±12%): los liquidarían SUBIENDO</div>
             </div>
             <div style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'center',textAlign:'center',padding:'7px 5px',borderRadius:10,
               background:'rgba(255,84,112,.08)',border:'1px solid '+(!moreShorts?'rgba(255,84,112,.55)':'rgba(255,84,112,.2)')}}>
               <div style={{fontSize:7,fontWeight:800,color:'var(--down)',letterSpacing:.4}}>💥 RIESGO ABAJO{!moreShorts?' ⚡':''}</div>
               <div className="mono" style={{fontSize:14,fontWeight:800,color:'var(--down)',margin:'3px 0 1px'}}>{pL.toFixed(0)}%</div>
               <div className="mono" style={{fontSize:8,color:'var(--dim)'}}>≈{fm$(totL)}</div>
-              <div style={{fontSize:6.5,color:'var(--faint)',marginTop:2,lineHeight:1.35}}>largos atrapados: los liquidarían BAJANDO</div>
+              <div style={{fontSize:6.5,color:'var(--faint)',marginTop:2,lineHeight:1.35}}>largos atrapados (zona ±12%): los liquidarían BAJANDO</div>
             </div>
           </div>
           </div>
@@ -4571,7 +4578,7 @@ function QuantView({gFunding}){
             <div style={{width:pS+'%',background:'linear-gradient(90deg,#1FE0A0,#1FE0A088)'}}/>
             <div style={{width:pL+'%',background:'linear-gradient(90deg,#FF547088,#FF5470)'}}/>
           </div>
-          <div style={{marginTop:5,fontSize:8.5,color:'var(--dim)',lineHeight:1.5}}>💰 Hay más dinero esperando liquidación en <b style={{color:moreShorts?'var(--up)':'var(--down)'}}>{moreShorts?'CORTOS (arriba, '+pS.toFixed(0)+'%)':'LARGOS (abajo, '+pL.toFixed(0)+'%)'}</b> — el precio tiende a ir donde más liquidez hay. $ = notional estimado del volumen real (no dato oficial).{(strongest.side==='short')!==moreShorts?' Ojo: el clúster SUELTO más fuerte ⚡ está en el otro lado — imán cercano puntual vs peso total del lado.':''} Cada vela reparte su volumen entre largos y cortos según su <b style={{color:'var(--txt)'}}>taker buy/sell REAL</b> (Binance).{Number.isFinite(c.liqmap.posRef)?' Posicionamiento AHORA: '+(c.liqmap.posRef*100).toFixed(0)+'% long / '+((1-c.liqmap.posRef)*100).toFixed(0)+'% short (dinero top traders) — el mapa mide otra cosa: el riesgo ACUMULADO de los que ya entraron y dónde los liquidarían.':' Esto NO es "cuántos longs/shorts hay" (eso, en Flujo de dinero): es dónde LIQUIDARÍAN a los que ya están dentro.'}</div>
+          <div style={{marginTop:5,fontSize:8.5,color:'var(--dim)',lineHeight:1.5}}>💰 Hay más dinero esperando liquidación en <b style={{color:moreShorts?'var(--up)':'var(--down)'}}>{moreShorts?'CORTOS (arriba, '+pS.toFixed(0)+'%)':'LARGOS (abajo, '+pL.toFixed(0)+'%)'}</b> — el precio tiende a ir donde más liquidez hay. $ = notional estimado del volumen real (no dato oficial).{(strongest.side==='short')!==moreShorts?' Ojo: el clúster SUELTO más fuerte ⚡ está en el otro lado — imán cercano puntual vs peso total del lado.':''} Cada vela reparte su volumen entre largos y cortos según su <b style={{color:'var(--txt)'}}>taker buy/sell REAL</b> (Binance).{Number.isFinite(c.liqmap.posRef)?' Posicionamiento AHORA: '+(c.liqmap.posRef*100).toFixed(0)+'% long / '+((1-c.liqmap.posRef)*100).toFixed(0)+'% short (dinero top traders) — el mapa mide otra cosa: el riesgo ACUMULADO de los que ya entraron y dónde los liquidarían.':' Esto NO es "cuántos longs/shorts hay" (eso, en Flujo de dinero): es dónde LIQUIDARÍAN a los que ya están dentro.'}{(c.liqmap.farS>0||c.liqmap.farL>0)?' Fuera de la zona (>12%) quedan además ≈'+fm$(c.liqmap.farS)+' arriba y ≈'+fm$(c.liqmap.farL)+' abajo (niveles de tendencias pasadas: imanes de largo plazo, no inmediatos).':''}{(totS===0||totL===0)?' Un lado está a 0 porque el precio ya BARRIÓ todos sus niveles cercanos (±12%) — no es un error.':''}</div>
           <div style={{marginTop:8,padding:'8px 10px',borderRadius:9,background:strongest.side==='short'?'rgba(31,224,160,.07)':'rgba(255,84,112,.07)',
             border:`1px solid ${strongest.side==='short'?'rgba(31,224,160,.25)':'rgba(255,84,112,.25)'}`,fontSize:9,color:'var(--dim)',lineHeight:1.5}}>
             🧲 El imán más fuerte está <b style={{color:strongest.side==='short'?'var(--up)':'var(--down)'}}>{strongest.side==='short'?'ARRIBA':'ABAJO'} en {money(strongest.p)} ({(strongest.p/c.price-1)>=0?'+':''}{((strongest.p/c.price-1)*100).toFixed(1)}%)</b>: ahí se concentran las liquidaciones pendientes de {strongest.side==='short'?'cortos':'largos'} — el precio suele ir a buscar esa liquidez. Este imán <b>alimenta el cono</b>.
