@@ -6,7 +6,7 @@
 
   <!-- ─────────── SEO ─────────── -->
   <title>Funding Rate de Bitcoin y Cripto en Vivo · VWAFR Top 10 | Sentimiento del Mercado</title>
-  <meta name="description" content="Calculadora en vivo del funding rate de Bitcoin (BTC), Ethereum (ETH) y el top 10 de criptos en 8 exchanges: Binance, OKX, Bybit, MEXC, Hyperliquid, Bitget, KuCoin y BingX. VWAFR ponderado por interés abierto (OI) con veredicto alcista o bajista del mercado."/>
+  <meta name="description" content="Análisis cripto automático y gratis: funding rate en vivo de BTC y el top 10 en 8 exchanges (VWAFR), análisis estilo Velo multi-temporalidad (CVD, interés abierto, premium), mapa de liquidaciones, patrones de velas y figuras backtesteados, cono de probabilidad Monte Carlo y bots con backtest de 9 años. Te dice por qué sube o baja Bitcoin y qué es lo más probable."/>
   <meta name="keywords" content="funding rate bitcoin, funding rate cripto, VWAFR, sentimiento de mercado cripto, interés abierto, open interest, BTC funding, ETH funding, futuros perpetuos, funding Binance, funding Bybit, funding OKX, calculadora funding"/>
   <meta name="author" content="VWAFR Funding"/>
   <meta name="robots" content="index, follow, max-image-preview:large"/>
@@ -72,6 +72,11 @@
   <!-- ─────────── fin SEO ─────────── -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+  <link rel="preconnect" href="https://api.binance.com" crossorigin>
+  <link rel="preconnect" href="https://vwafr-generico.vercel.app" crossorigin>
+  <link rel="dns-prefetch" href="https://bitcoin-data.com">
+  <link rel="dns-prefetch" href="https://www.deribit.com">
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
@@ -3503,6 +3508,13 @@ function QuantView({gFunding}){
             if(fnd!=null){if(fnd>0.02)F(-1,'Funding ALTO ('+fmt(fnd,3)+'/8h): los longs pagan caro → riesgo de long squeeze');
               else if(fnd<0)F(1,'Funding NEGATIVO ('+fmt(fnd,3)+'): los cortos pagan → combustible para short squeeze');
               else F(0.5,'Funding contenido ('+fmt(fnd,3)+') → apalancamiento sano');}
+            // TENDENCIA del funding (últimos pagos de 8h): subiendo = calentándose
+            let fundUp=false,fundDn=false;
+            {const fH=flowPro&&flowPro.fundHist;
+              if(fH&&fH.length>8){const last=fH[fH.length-1],prev=fH.slice(-7,-1).reduce((a,x)=>a+x,0)/6;
+                fundUp=last>prev+0.003&&last>0.004; fundDn=last<prev-0.003;}}
+            if(fundUp)F(-0.5,'Funding SUBIENDO pago a pago → el apalancamiento largo se está calentando');
+            else if(fundDn)F(0.5,'Funding ENFRIÁNDOSE pago a pago → presión de apalancamiento cediendo');
             // taker 24h (el "Coinglass")
             if(tk!=null){if(tk>0.53)F(1,'Se ABREN más largos que cortos ('+(tk*100).toFixed(1)+'% · taker 24h)');
               else if(tk<0.47)F(-1,'Se ABREN más cortos / VENDEN ('+((1-tk)*100).toFixed(1)+'% short · taker 24h)');
@@ -3524,7 +3536,7 @@ function QuantView({gFunding}){
             let combo=null;
             if(oi24>0.5&&fnd!=null&&fnd<0&&pd<=0)combo={e:'🧨',c:'var(--up)',t:'SETUP DE SHORT SQUEEZE',d:'Entran cortos nuevos (OI↑) pagando funding negativo. Si el precio aguanta, su cierre forzado impulsa AL ALZA.'};
             else if(oi24>0.5&&fnd!=null&&fnd>0.02&&cd<0)combo={e:'🧨',c:'var(--down)',t:'SETUP DE LONG SQUEEZE',d:'Apalancamiento largo creciendo (OI↑) y pagando caro, SIN compra real detrás (CVD↓). Vulnerable a una barrida A LA BAJA.'};
-            else if(oi24<-0.5&&fnd!=null&&fnd>0.02)combo={e:'⚠️',c:'#F3BA2F',t:'MERCADO FRÁGIL',d:'El OI baja pero el funding sigue alto: los longs que quedan pagan caro → propenso a sacudidas.'};
+            else if(oi24<-0.5&&((fnd!=null&&fnd>0.02)||fundUp))combo={e:'⚠️',c:'#F3BA2F',t:'MERCADO FRÁGIL',d:'El OI baja pero el funding '+(fundUp?'SUBE':'sigue alto')+': los longs que quedan pagan cada vez más → propenso a sacudidas.'};
             const gl=sc>=2?{t:'DERIVADOS ALCISTAS',c:'var(--up)',e:'📈'}:sc<=-2?{t:'DERIVADOS BAJISTAS',c:'var(--down)',e:'📉'}:{t:'DERIVADOS MIXTOS',c:'#F3BA2F',e:'⚖️'};
             // 🗣️ NARRATIVA AUTOMÁTICA: responde solo a "¿por qué esta subida/bajada y qué
             // va a pasar?" — lo que antes se preguntaba pasando una captura.
