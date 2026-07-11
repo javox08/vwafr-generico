@@ -16,7 +16,7 @@ module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
   const out = { t: Date.now(), ex: { Gate: {}, MEXC: {}, Binance: {}, Bybit: {}, Bitget: {},
-    Kraken: {}, HTX: {}, CoinEx: {}, Bitfinex: {}, dYdX: {}, WhiteBIT: {}, Phemex: {}, Deribit: {} } };
+    Kraken: {}, HTX: {}, CoinEx: {}, Bitfinex: {}, dYdX: {}, WhiteBIT: {}, Phemex: {}, Deribit: {}, Hyperliquid: {} } };
   for (const c of COINS) {
     try {
       const j = await fetch('https://api.gateio.ws/api/v4/futures/usdt/contracts/' + c + '_USDT').then(r => r.json());
@@ -161,6 +161,21 @@ module.exports = async (req, res) => {
       if (!Number.isFinite(f)) return;
       out.ex.Deribit[c] = { f: +(f * 100).toFixed(4), oi: Number.isFinite(oi) && oi > 0 ? +(oi / 1e9).toFixed(3) : 0 };
     }));
+  } catch (e) {}
+  // ── Hyperliquid (DEX perp, sin CORS): metaAndAssetCtxs da funding (POR HORA → ×8),
+  //    OI (en base) y markPx en una sola llamada para las 200+ monedas. ──
+  try {
+    const r = await fetch('https://api.hyperliquid.xyz/info', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"type":"metaAndAssetCtxs"}' }).then(x => x.json());
+    const uni = r && r[0] && r[0].universe, ctx = r && r[1];
+    if (Array.isArray(uni) && Array.isArray(ctx)) {
+      const idx = {}; uni.forEach((m, i) => { idx[m.name] = i; });
+      for (const c of COINS) { const i = idx[c]; if (i == null || !ctx[i]) continue;
+        const f = parseFloat(ctx[i].funding), oiB = parseFloat(ctx[i].openInterest), px = parseFloat(ctx[i].markPx);
+        if (!Number.isFinite(f)) continue;
+        const oi = (Number.isFinite(oiB) && Number.isFinite(px)) ? oiB * px : 0;
+        out.ex.Hyperliquid[c] = { f: +(f * 8 * 100).toFixed(4), oi: oi > 0 ? +(oi / 1e9).toFixed(3) : 0 };
+      }
+    }
   } catch (e) {}
   res.status(200).json(out);
 };
