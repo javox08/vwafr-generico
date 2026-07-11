@@ -868,9 +868,14 @@ function PosView({gFunding,cot}){
       <div style={{fontSize:10,color:'var(--dim)',lineHeight:1.65}}>En derivados hay <b style={{color:'var(--txt)'}}>exactamente un long por cada short</b> (el notional largo = corto = OI, siempre): "cuántos longs hay" no existe como número. Lo que SÍ se puede medir es el <b style={{color:'var(--txt)'}}>sesgo por cohortes</b> — quién está en cada lado — y eso es lo que publica cada exchange. Aquí abajo, cada dato es el OFICIAL de su fuente, tal cual (el mismo que verás en Coinglass).</div>
       <div style={{fontSize:8.5,color:'var(--faint)',marginTop:7,lineHeight:1.6}}>Jerarquía de valor (documentada): <b style={{color:'var(--up)'}}>funding</b> (el termómetro más fiable) &gt; <b style={{color:'var(--up)'}}>skew de opciones</b> (sentimiento institucional) &gt; CVD en divergencias &gt; cuentas retail SOLO en extremos (contraindicador) &gt; COT (contexto, no timing) &gt; top-trader ratio (ruidoso).</div>
     </div>
+    <div style={{...flx({gap:6}),flexWrap:'wrap',marginBottom:14}}>
+      {[['ls-ratios','⚖️ L/S'],['ls-funding','💵 Funding·CVD'],['ls-mapa','🧲 Mapa liq.']].map(([id2,lbl])=>(
+        <span key={id2} onClick={()=>{try{const el=document.getElementById(id2);if(el)el.scrollIntoView({behavior:'smooth',block:'start'});}catch(_){}}}
+          className="mono" style={{fontSize:9,fontWeight:800,padding:'5px 10px',borderRadius:9,cursor:'pointer',color:'var(--accent)',background:'rgba(110,139,255,.08)',border:'1px solid rgba(110,139,255,.25)'}}>{lbl}</span>))}
+    </div>
 
     {/* L/S oficiales por exchange */}
-    <div style={panel({marginBottom:14,padding:16})}>
+    <div id="ls-ratios" style={{...panel({marginBottom:14,padding:16}),scrollMarginTop:10}}>
       <div style={{...flx({justifyContent:'space-between'}),marginBottom:10}}>
         <span style={eyebrow}>Long/Short oficiales · por exchange</span>
         <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>1H · auto</span>
@@ -915,7 +920,7 @@ function PosView({gFunding,cot}){
     </div>
 
     {/* funding + CVD spot vs perp */}
-    <div style={panel({marginBottom:14,padding:16})}>
+    <div id="ls-funding" style={{...panel({marginBottom:14,padding:16}),scrollMarginTop:10}}>
       <div style={{...flx({justifyContent:'space-between'}),marginBottom:8}}>
         <span style={eyebrow}>Funding y agresión (CVD)</span>
         <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>lo más fiable</span>
@@ -1005,7 +1010,7 @@ function PosView({gFunding,cot}){
       </div>);})()}
 
     {/* MAPA DE LIQUIDACIONES agregado (snapshot estimado) + honestidad + Coinglass/CoinAnk */}
-    <div style={panel({marginBottom:14,padding:16})}>
+    <div id="ls-mapa" style={{...panel({marginBottom:14,padding:16}),scrollMarginTop:10}}>
       <div style={{...flx({justifyContent:'space-between'}),marginBottom:6}}>
         <span style={eyebrow}>🧲 Mapa de liquidaciones · agregado</span>
         <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>{lm?'snapshot · '+lm.exN+' exchanges':'estimación'}</span>
