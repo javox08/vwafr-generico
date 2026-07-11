@@ -1558,6 +1558,43 @@ function CycleBTC(){
         </div>);
       })()}
 
+      {/* ESTACIONALIDAD · qué suele hacer BTC cada mes del año (histórico completo) */}
+      {hist&&Array.isArray(hist.cl)&&hist.cl.length>800&&Number.isFinite(hist.ts0)&&(()=>{
+        const cl=hist.cl, ts0=hist.ts0;
+        // rendimiento por (año,mes) reconstruyendo la fecha de cada cierre diario
+        const mret={}; // 'YYYY-M' → {first,last}
+        for(let i=0;i<cl.length;i++){const dt=new Date(ts0+i*864e5);const key=dt.getUTCFullYear()+'-'+dt.getUTCMonth();
+          if(!mret[key])mret[key]={m:dt.getUTCMonth(),first:cl[i],last:cl[i]};else mret[key].last=cl[i];}
+        const byM=Array.from({length:12},()=>[]);
+        for(const k in mret){const o=mret[k];if(o.first>0)byM[o.m].push(o.last/o.first-1);}
+        const stats=byM.map(a=>a.length?{avg:a.reduce((s,x)=>s+x,0)/a.length*100,win:a.filter(x=>x>0).length/a.length*100,n:a.length}:null);
+        const now=new Date(),curM=now.getUTCMonth();
+        const MN=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+        const vals=stats.filter(Boolean).map(s=>s.avg),mx=Math.max(...vals.map(Math.abs),1);
+        const cur=stats[curM];
+        return(<div style={panel({marginBottom:14,padding:16})}>
+          <div style={{...flx({justifyContent:'space-between'}),marginBottom:6}}>
+            <span style={eyebrow}>📅 Estacionalidad · por mes</span>
+            <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>{Math.round(cl.length/365)} años</span>
+          </div>
+          {cur&&<div style={{fontSize:9.5,color:'var(--dim)',marginBottom:9,lineHeight:1.5}}>Estás en <b style={{color:'var(--txt)'}}>{['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'][curM]}</b>: históricamente BTC hizo de media <b style={{color:cur.avg>=0?'var(--up)':'var(--down)'}}>{cur.avg>=0?'+':''}{cur.avg.toFixed(1)}%</b> este mes ({cur.win.toFixed(0)}% de los años en verde · n={cur.n}).</div>}
+          <div style={{display:'flex',flexDirection:'column',gap:3}}>
+            {stats.map((s,m)=>{if(!s)return null;const w=Math.abs(s.avg)/mx*100,pos=s.avg>=0,cm=m===curM;
+              return(<div key={m} style={{...flx({gap:6}),opacity:cm?1:.82}}>
+                <span className="mono" style={{fontSize:8.5,width:24,flexShrink:0,color:cm?'var(--accent)':'var(--faint)',fontWeight:cm?800:600}}>{MN[m]}</span>
+                <div style={{flex:1,height:12,background:'#0A0D14',borderRadius:3,position:'relative',overflow:'hidden'}}>
+                  <div style={{position:'absolute',left:'50%',top:0,bottom:0,width:1,background:'var(--line2)'}}/>
+                  <div style={{position:'absolute',top:1,bottom:1,borderRadius:2,background:pos?'var(--up)':'var(--down)',opacity:cm?.95:.6,
+                    left:pos?'50%':(50-w/2)+'%',width:(w/2)+'%'}}/>
+                </div>
+                <span className="mono" style={{fontSize:8.5,width:44,flexShrink:0,textAlign:'right',fontWeight:cm?800:600,color:pos?'var(--up)':'var(--down)'}}>{pos?'+':''}{s.avg.toFixed(1)}%</span>
+                <span className="mono" style={{fontSize:7.5,width:26,flexShrink:0,textAlign:'right',color:'var(--faint)'}}>{s.win.toFixed(0)}%</span>
+              </div>);})}
+          </div>
+          <p style={{fontSize:8,color:'var(--faint)',marginTop:8,lineHeight:1.5}}>Rendimiento MEDIO de cada mes natural sobre todo el histórico ({Math.round(cl.length/365)} años · verde = subió) y % de años en verde (columna derecha). Es un patrón DESCRIPTIVO con pocas muestras por mes (~{Math.round(cl.length/365)}): útil como contexto, NO como predicción. No es consejo financiero.</p>
+        </div>);
+      })()}
+
       {/* Niveles clave del modelo (compra/venta) */}
       <div style={panel({marginBottom:14,padding:16})}>
         <div style={{...flx({justifyContent:'space-between'}),marginBottom:12}}>
