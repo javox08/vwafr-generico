@@ -1018,12 +1018,12 @@ function PosView({gFunding,cot}){
           </svg>
         </div>
         <div style={{...flx({justifyContent:'space-between'}),marginTop:6,fontSize:7.5,color:'var(--faint)'}}>
-          <span>🟢 liq. cortos ↑ {fm$(lm.totS)}</span><span>⚡ imán</span><span>🔴 liq. largos ↓ {fm$(lm.totL)}</span>
+          <span>🟢 ARRIBA · liquida cortos {fm$(lm.totS)}</span><span>⚡ imán</span><span>🔴 ABAJO · liquida largos {fm$(lm.totL)}</span>
         </div>
         <div style={{marginTop:5,height:6,borderRadius:4,overflow:'hidden',display:'flex'}}>
           <div style={{width:pS+'%',background:'linear-gradient(90deg,#1FE0A0,#1FE0A088)'}}/><div style={{flex:1,background:'linear-gradient(90deg,#FF547088,#FF5470)'}}/>
         </div>
-        <div style={{fontSize:8.5,color:'var(--dim)',marginTop:6,lineHeight:1.55}}>Más masa de liquidaciones estimadas <b style={{color:pS>=50?'var(--up)':'var(--down)'}}>{pS>=50?'ARRIBA ('+pS.toFixed(0)+'%, cortos)':'ABAJO ('+(100-pS).toFixed(0)+'%, largos)'}</b> en ±12% · escalado al <b style={{color:'var(--txt)'}}>OI agregado de {lm.exN} exchanges</b> (≈{fm$(lm.oiAgg*1e9)}). El imán ⚡ es el clúster más fuerte; el precio tiende a buscar liquidez, pero <b>no es garantía</b>.</div>
+        <div style={{fontSize:8.5,color:'var(--dim)',marginTop:6,lineHeight:1.55}}>El <b style={{color:pS>=50?'var(--up)':'var(--down)'}}>{pS.toFixed(0)}% de la liquidez estimada está {pS>=50?'ARRIBA':'ABAJO'}</b> (±12%) → si el precio {pS>=50?'SUBE, revienta stops de CORTOS':'BAJA, revienta stops de LARGOS'} (imán ⚡ = clúster más fuerte). Escalado al OI agregado de {lm.exN} exchanges (≈{fm$(lm.oiAgg*1e9)}).{ex&&(()=>{const bp=pct(ex.acc&&ex.acc.Binance)||pct(ex.acc&&ex.acc.OKX);return bp!=null?(' ⚠️ OJO: esto NO es el posicionamiento de arriba ('+(bp*100).toFixed(0)+'% long). Ahí se mide QUIÉN está en cada lado; aquí, DÓNDE los liquidarían. Cosas distintas.'):'';})()} No es garantía.</div>
         </React.Fragment>);})():(
         <div style={{fontSize:10,color:'var(--faint)',textAlign:'center',padding:'14px 0'}}>Calculando el mapa agregado…</div>)}
       <div style={{fontSize:8.5,color:'var(--faint)',marginTop:9,paddingTop:9,borderTop:'1px solid var(--line2)',lineHeight:1.6}}>⚠️ Es una <b style={{color:'var(--txt)'}}>ESTIMACIÓN</b> (foto actual), como TODOS los heatmaps: nadie tiene las posiciones reales por cuenta — se reconstruye de OI + apalancamientos supuestos (10/25/50/100×) y por eso dos plataformas nunca coinciden. Para el heatmap HISTÓRICO completo (mejor herramienta), usa las de abajo — y trata los clústeres como <b style={{color:'var(--txt)'}}>zonas probables</b>, no niveles seguros.</div>
