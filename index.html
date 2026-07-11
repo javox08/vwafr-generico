@@ -808,6 +808,41 @@ function PosView({gFunding,cot}){
     const l60=kk.slice(-60);
     if(a)setK({cvd,price:+kk[kk.length-1][4],hi:Math.max(...l60.map(x=>+x[2])),lo:Math.min(...l60.map(x=>+x[3]))});
   }catch(_){}})();return()=>{a=false;};},[]);
+  // MAPA DE LIQUIDACIONES agregado (SNAPSHOT · estimación): niveles donde el volumen
+  // apalancado entró y sería liquidado (±1/apalancamiento), repartido long/short por el
+  // taker REAL de cada vela 4h, escalado por el OI AGREGADO de los 17 exchanges (relé fr).
+  // Es la foto actual, no el histórico acumulado (eso exige ingesta 24/7 → Coinglass).
+  const [lm,setLm]=useState(null);
+  useEffect(()=>{let a=true;(async()=>{try{
+    const [kk,fr]=await Promise.all([
+      fetch('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=4h&limit=500').then(r=>r.json()),
+      fetch(LS_RELAY.replace('/ls','/fr')).then(r=>r.json()).catch(()=>null)
+    ]);
+    if(!Array.isArray(kk)||kk.length<120)return;
+    // OI agregado de todos los exchanges del relé (para BTC), en $B → factor de escala
+    let oiAgg=0; if(fr&&fr.ex)for(const ex in fr.ex){const v=fr.ex[ex]&&fr.ex[ex].BTC; if(v&&v.oi>0)oiAgg+=v.oi;}
+    const rec=kk.map(x=>({h:+x[2],l:+x[3],c:+x[4],v:+x[5],tb:+x[9]}));
+    const price=rec[rec.length-1].c, n2=rec.length;
+    const minA=new Array(n2).fill(Infinity),maxA=new Array(n2).fill(-Infinity);
+    for(let i=n2-2;i>=0;i--){minA[i]=Math.min(minA[i+1],rec[i+1].l);maxA[i]=Math.max(maxA[i+1],rec[i+1].h);}
+    const tiers=[[10,0.7],[25,1],[50,0.9],[100,0.6]],bw=price*0.0075,B=new Map();
+    const add=(p,s,w)=>{const key=Math.round(p/bw);const o=B.get(key)||{p:key*bw,long:0,short:0};o[s]+=w;B.set(key,o);};
+    for(let i=0;i<n2;i++){const e=(rec[i].h+rec[i].l+rec[i].c)/3,base=(rec[i].v||0)*e*(0.4+0.6*i/n2);
+      if(!(base>0))continue;const bf=(rec[i].tb>0&&rec[i].v>0)?Math.max(0.2,Math.min(0.8,rec[i].tb/rec[i].v)):0.5;
+      for(const [L,tw] of tiers){const ql=e*(1-1/L);if(ql<price&&minA[i]>ql)add(ql,'long',base*tw/L*bf*2);
+        const qs=e*(1+1/L);if(qs>price&&maxA[i]<qs)add(qs,'short',base*tw/L*(1-bf)*2);}}
+    const rows=[...B.values()],Z=0.12;
+    const below=rows.filter(r=>r.long>0&&r.p<price&&(1-r.p/price)<=Z).map(r=>({p:r.p,side:'long',w:r.long})).sort((x,y)=>y.w-x.w).slice(0,7);
+    const above=rows.filter(r=>r.short>0&&r.p>price&&(r.p/price-1)<=Z).map(r=>({p:r.p,side:'short',w:r.short})).sort((x,y)=>y.w-x.w).slice(0,7);
+    const all=above.concat(below); if(!all.length)return;
+    const wmax=Math.max(...all.map(x=>x.w)); for(const x of all)x.rel=x.w/wmax;
+    let totS=0,totL=0;for(const r of rows){const dd=r.p/price-1;if(r.p>price&&dd<=Z)totS+=r.short;if(r.p<price&&-dd<=Z)totL+=r.long;}
+    // escala $ por el OI agregado real: la suma de pesos ~ notional relativo; lo anclamos
+    // al OI total (todo el OI está apalancado y es liquidable en algún nivel)
+    const sumW=totS+totL, scale=(oiAgg>0&&sumW>0)?(oiAgg*1e9)/sumW:1;
+    if(a)setLm({above:above.sort((x,y)=>y.p-x.p),below:below.sort((x,y)=>y.p-x.p),price,
+      totS:totS*scale,totL:totL*scale,oiAgg,exN:fr&&fr.ex?Object.keys(fr.ex).filter(e=>fr.ex[e]&&fr.ex[e].BTC).length:1});
+  }catch(_){}})();return()=>{a=false;};},[]);
   const pct=r=>Number.isFinite(r)&&r>0?r/(1+r):null;
   const Row=({icon,lbl,src,v,extreme})=>{if(v==null)return null;
     return(<div style={{marginBottom:8}}>
@@ -939,14 +974,64 @@ function PosView({gFunding,cot}){
         <div style={{fontSize:8.5,color:'var(--faint)',marginTop:6,lineHeight:1.6}}>⚠️ El net-short crónico de los hedge funds es sobre todo <b style={{color:'var(--txt)'}}>cash-and-carry</b> (arbitraje de base con los ETF), NO una apuesta bajista (CryptoQuant/CME). Además: foto del martes publicada el viernes (3 días de retraso) y SOLO futuros del CME. Contexto, no timing.</div>
       </div>);})()}
 
-    {/* mapas de liquidación: honestidad + niveles reales 60d */}
+    {/* MAPA DE LIQUIDACIONES agregado (snapshot estimado) + honestidad + Coinglass/CoinAnk */}
     <div style={panel({marginBottom:14,padding:16})}>
-      <div style={{...flx({justifyContent:'space-between'}),marginBottom:8}}>
-        <span style={eyebrow}>🧲 ¿Y el mapa de liquidaciones?</span>
-        <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>fuera estimaciones</span>
+      <div style={{...flx({justifyContent:'space-between'}),marginBottom:6}}>
+        <span style={eyebrow}>🧲 Mapa de liquidaciones · agregado</span>
+        <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>{lm?'snapshot · '+lm.exN+' exchanges':'estimación'}</span>
       </div>
-      <div style={{fontSize:9.5,color:'var(--dim)',lineHeight:1.65}}>Retiramos nuestro mapa propio: <b style={{color:'var(--txt)'}}>TODOS los heatmaps de liquidación son estimaciones</b> (Coinglass, Hyblock, Kingfisher…) — nadie tiene las posiciones reales por cuenta; reconstruyen sobre OI + apalancamientos supuestos, y por eso dos plataformas nunca coinciden. Para verlos, usa <a href="https://www.coinglass.com/pro/futures/LiquidationHeatMap" target="_blank" rel="noopener nofollow" style={{color:'var(--accent)'}}>Coinglass</a> (gratis BTC/ETH) con <a href="https://coinank.com/liqHeatMapChart" target="_blank" rel="noopener nofollow" style={{color:'var(--accent)'}}>CoinAnk</a> de segunda opinión, y trátalos como <b style={{color:'var(--txt)'}}>zonas probables de liquidez</b>, nunca como niveles garantizados. Las cifras de liquidaciones "en vivo" también van capadas en origen (Binance/OKX: máx. 1 por segundo; solo Bybit da el feed completo desde feb-2025).</div>
-      {k&&(<div style={{marginTop:9,paddingTop:9,borderTop:'1px solid var(--line2)'}}>
+      {lm?(()=>{
+        const A=lm.above,Bl=lm.below,all2=A.concat(Bl),price=lm.price;
+        if(!all2.length)return null;
+        const prices=all2.map(x=>x.p).concat([price]);
+        let phi=Math.max(...prices),plo=Math.min(...prices);const pad=((phi-plo)||price*0.02)*0.08;phi+=pad;plo-=pad;
+        const W=330,Hm=Math.max(180,30+all2.length*17),PL=60,PR=6;
+        const Ym=p=>10+(phi-p)/((phi-plo)||1)*(Hm-20), maxW=W-PL-PR-54;
+        const strong=all2.reduce((m,x)=>x.rel>m.rel?x:m,all2[0]);
+        const pY=Ym(price),sep=12,gp=10;
+        const pos=all2.map(o=>({o,y:Ym(o.p)})).sort((a2,b2)=>a2.y-b2.y);
+        const gU=pos.filter(o=>o.y<=pY),gD=pos.filter(o=>o.y>pY);
+        for(let i=1;i<gU.length;i++)if(gU[i].y<gU[i-1].y+sep)gU[i].y=gU[i-1].y+sep;
+        if(gU.length){if(gU[gU.length-1].y>pY-gp)gU[gU.length-1].y=pY-gp;for(let i=gU.length-2;i>=0;i--)if(gU[i].y>gU[i+1].y-sep)gU[i].y=gU[i+1].y-sep;}
+        for(let i=0;i<gD.length;i++){const mn=i?gD[i-1].y+sep:pY+gp;if(gD[i].y<mn)gD[i].y=mn;}
+        if(gD.length){if(gD[gD.length-1].y>Hm-8)gD[gD.length-1].y=Hm-8;for(let i=gD.length-2;i>=0;i--)if(gD[i].y>gD[i+1].y-sep)gD[i].y=gD[i+1].y-sep;if(gD[0].y<pY+gp)gD[0].y=pY+gp;}
+        const yOf=new Map(pos.map(o=>[o.o,o.y]));
+        const fm$=v=>{const a2=Math.abs(v);return a2>=1e9?'$'+(a2/1e9).toFixed(1)+'B':a2>=1e6?'$'+Math.round(a2/1e6)+'M':'$'+Math.round(a2/1e3)+'K';};
+        const tot=lm.totS+lm.totL,pS=tot>0?lm.totS/tot*100:50;
+        return(<React.Fragment>
+        <div style={{background:'#0A0D14',borderRadius:10,padding:'8px 6px'}}>
+          <svg viewBox={`0 0 ${W} ${Hm}`} width="100%" style={{display:'block'}}>
+            <defs>
+              <linearGradient id="lU" x1="0" x2="1"><stop offset="0" stopColor="#1FE0A0" stopOpacity="0.25"/><stop offset="1" stopColor="#1FE0A0"/></linearGradient>
+              <linearGradient id="lD" x1="0" x2="1"><stop offset="0" stopColor="#FF5470" stopOpacity="0.25"/><stop offset="1" stopColor="#FF5470"/></linearGradient>
+            </defs>
+            <line x1={PL-2} y1="6" x2={PL-2} y2={Hm-6} stroke="var(--line2)" strokeWidth="1"/>
+            {all2.map((kk,i)=>{const up=kk.side==='short',col=up?'#1FE0A0':'#FF5470',y=yOf.get(kk),w=8+kk.rel*(maxW-8),big=kk===strong;
+              return(<g key={i} opacity={big?1:0.8}>
+                <text x={PL-8} y={y+3} textAnchor="end" fill="var(--dim)" fontSize="8" fontWeight="600" className="mono">{money(kk.p)}</text>
+                <rect x={PL} y={y-5} width={w} height={10} rx="3" fill={up?'url(#lU)':'url(#lD)'} stroke={big?col:'none'} strokeWidth={big?1.1:0}/>
+                <text x={Math.min(PL+w+5,W-PR-36)} y={y+3} fill={col} fontSize="7.5" fontWeight={big?'800':'600'} className="mono">{(kk.p/price-1)>=0?'+':''}{((kk.p/price-1)*100).toFixed(1)}%{big?' ⚡':''}</text>
+              </g>);})}
+            <line x1={PL-54} y1={Ym(price)} x2={W-PR} y2={Ym(price)} stroke="#F7931A" strokeWidth="1.2" strokeDasharray="5 3" opacity=".95"/>
+            <rect x={PL-58} y={Ym(price)-7} width="52" height="14" rx="4" fill="#F7931A"/>
+            <text x={PL-32} y={Ym(price)+3} textAnchor="middle" fill="#07090E" fontSize="8" fontWeight="800" className="mono">{money(price)}</text>
+          </svg>
+        </div>
+        <div style={{...flx({justifyContent:'space-between'}),marginTop:6,fontSize:7.5,color:'var(--faint)'}}>
+          <span>🟢 liq. cortos ↑ {fm$(lm.totS)}</span><span>⚡ imán</span><span>🔴 liq. largos ↓ {fm$(lm.totL)}</span>
+        </div>
+        <div style={{marginTop:5,height:6,borderRadius:4,overflow:'hidden',display:'flex'}}>
+          <div style={{width:pS+'%',background:'linear-gradient(90deg,#1FE0A0,#1FE0A088)'}}/><div style={{flex:1,background:'linear-gradient(90deg,#FF547088,#FF5470)'}}/>
+        </div>
+        <div style={{fontSize:8.5,color:'var(--dim)',marginTop:6,lineHeight:1.55}}>Más masa de liquidaciones estimadas <b style={{color:pS>=50?'var(--up)':'var(--down)'}}>{pS>=50?'ARRIBA ('+pS.toFixed(0)+'%, cortos)':'ABAJO ('+(100-pS).toFixed(0)+'%, largos)'}</b> en ±12% · escalado al <b style={{color:'var(--txt)'}}>OI agregado de {lm.exN} exchanges</b> (≈{fm$(lm.oiAgg*1e9)}). El imán ⚡ es el clúster más fuerte; el precio tiende a buscar liquidez, pero <b>no es garantía</b>.</div>
+        </React.Fragment>);})():(
+        <div style={{fontSize:10,color:'var(--faint)',textAlign:'center',padding:'14px 0'}}>Calculando el mapa agregado…</div>)}
+      <div style={{fontSize:8.5,color:'var(--faint)',marginTop:9,paddingTop:9,borderTop:'1px solid var(--line2)',lineHeight:1.6}}>⚠️ Es una <b style={{color:'var(--txt)'}}>ESTIMACIÓN</b> (foto actual), como TODOS los heatmaps: nadie tiene las posiciones reales por cuenta — se reconstruye de OI + apalancamientos supuestos (10/25/50/100×) y por eso dos plataformas nunca coinciden. Para el heatmap HISTÓRICO completo (mejor herramienta), usa las de abajo — y trata los clústeres como <b style={{color:'var(--txt)'}}>zonas probables</b>, no niveles seguros.</div>
+      <div style={{...flx({gap:8}),marginTop:9}}>
+        <a href="https://www.coinglass.com/pro/futures/LiquidationHeatMap" target="_blank" rel="noopener nofollow" style={{flex:1,textDecoration:'none',textAlign:'center',padding:'9px 0',borderRadius:9,background:'rgba(110,139,255,.12)',border:'1px solid rgba(110,139,255,.35)',color:'var(--accent)',fontSize:11,fontWeight:800}}>🔥 Coinglass →</a>
+        <a href="https://coinank.com/liqHeatMapChart" target="_blank" rel="noopener nofollow" style={{flex:1,textDecoration:'none',textAlign:'center',padding:'9px 0',borderRadius:9,background:'rgba(31,224,160,.10)',border:'1px solid rgba(31,224,160,.3)',color:'var(--up)',fontSize:11,fontWeight:800}}>🧊 CoinAnk →</a>
+      </div>
+      {k&&(<div style={{marginTop:10,paddingTop:9,borderTop:'1px solid var(--line2)'}}>
         <div style={{fontSize:8,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.8,fontWeight:600,marginBottom:6}}>Liquidez REAL (sin estimar) · máx/mín 60 días</div>
         <div style={{...flx({justifyContent:'space-between'}),fontSize:11}} className="mono">
           <span style={{color:'var(--down)'}}>▲ {money(k.hi)} <span style={{color:'var(--faint)'}}>resistencia/stops de cortos</span></span>
