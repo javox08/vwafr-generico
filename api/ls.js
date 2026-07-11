@@ -126,6 +126,19 @@ module.exports = async (req, res) => {
     if (Array.isArray(oh2) && oh2.length > 10)
       out.btc.oiHist = oh2.map(x => +((+x.sumOpenInterestValue) / 1e9).toFixed(3));
   } catch (e) {}
+  // OI COIN-MARGINED vs STABLECOIN-MARGINED (Binance, oficial): la cuota coin-margined
+  // subiendo = euforia/apalancamiento compuesto (colateral en BTC); bajando = mercado
+  // más "lineal" y menos violento en caídas. dapi = COIN-M (contratos de $100).
+  try {
+    const [ci, li, px] = await Promise.all([
+      jf('https://dapi.binance.com/dapi/v1/openInterest?symbol=BTCUSD_PERP'),
+      jf('https://fapi.binance.com/fapi/v1/openInterest?symbol=BTCUSDT'),
+      jf('https://fapi.binance.com/fapi/v1/premiumIndex?symbol=BTCUSDT')
+    ]);
+    const coinM = parseFloat(ci && ci.openInterest) * 100; // contratos de $100 → USD
+    const p = parseFloat(px && px.markPrice), lin = parseFloat(li && li.openInterest) * (Number.isFinite(p) ? p : 0);
+    if (coinM > 0 && lin > 0) out.btc.oiSplit = { coinM: +(coinM / 1e9).toFixed(3), stableM: +(lin / 1e9).toFixed(3) };
+  } catch (e) {}
   // VOLUMEN 24h FUTUROS vs SPOT (mismo exchange = comparable): Binance BTC+ETH.
   // Futuros = derivados apalancados; spot = compra/venta real. Ratio del mercado.
   {
