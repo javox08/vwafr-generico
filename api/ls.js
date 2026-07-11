@@ -3,6 +3,9 @@
 // que api/bx.js) pide los ratios y los devuelve con CORS abierto y caché de
 // 5 minutos. No usa claves: todo son endpoints públicos.
 const COINS = ['BTC', 'ETH', 'SOL', 'XRP', 'BNB', 'DOGE', 'ADA', 'AVAX', 'LINK', 'LTC'];
+// fetch con timeout (para OI coin-M, skew de opciones… fuentes que pueden tardar)
+const jf = (u, ms = 4500) => { const c = new AbortController(); const t = setTimeout(() => c.abort(), ms);
+  return fetch(u, { signal: c.signal }).then(r => r.json()).catch(() => null).finally(() => clearTimeout(t)); };
 
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -138,6 +141,34 @@ module.exports = async (req, res) => {
     const coinM = parseFloat(ci && ci.openInterest) * 100; // contratos de $100 → USD
     const p = parseFloat(px && px.markPrice), lin = parseFloat(li && li.openInterest) * (Number.isFinite(p) ? p : 0);
     if (coinM > 0 && lin > 0) out.btc.oiSplit = { coinM: +(coinM / 1e9).toFixed(3), stableM: +(lin / 1e9).toFixed(3) };
+  } catch (e) {}
+  // SKEW DE OPCIONES (Deribit, oficial): risk reversal 25Δ aprox = IV(call OTM) −
+  // IV(put OTM) de la expiración ~30d. Positivo = demanda de calls (alcista);
+  // negativo = demanda de puts (cobertura/miedo). Proxy de "smart money"/hedgers.
+  try {
+    const r = await jf('https://www.deribit.com/api/v2/public/get_book_summary_by_currency?currency=BTC&kind=option', 6000);
+    const arr = (r && r.result) || [];
+    if (arr.length > 20) {
+      const now = Date.now(), MON = { JAN: 0, FEB: 1, MAR: 2, APR: 3, MAY: 4, JUN: 5, JUL: 6, AUG: 7, SEP: 8, OCT: 9, NOV: 10, DEC: 11 };
+      const toMs = s => { const m = s.match(/^(\d{1,2})([A-Z]{3})(\d{2})$/); if (!m) return NaN;
+        return Date.UTC(2000 + (+m[3]), MON[m[2]], +m[1], 8, 0, 0); };
+      const exps = {}; let sp = 0;
+      for (const it of arr) {
+        const m = ('' + it.instrument_name).match(/^BTC-(\d{1,2}[A-Z]{3}\d{2})-(\d+)-([CP])$/);
+        if (!m || !(it.mark_iv > 0)) continue;
+        if (it.underlying_price > 0) sp = it.underlying_price;
+        (exps[m[1]] = exps[m[1]] || []).push({ k: +m[2], t: m[3], iv: it.mark_iv });
+      }
+      const keys = Object.keys(exps).filter(k => toMs(k) > now + 5 * 864e5);
+      keys.sort((a, b) => Math.abs(toMs(a) - now - 30 * 864e5) - Math.abs(toMs(b) - now - 30 * 864e5));
+      const exp = keys[0], items = exp && exps[exp];
+      if (items && sp > 0) {
+        const near = (typ, tgt) => { let b = null; for (const o of items) if (o.t === typ) { if (!b || Math.abs(o.k - tgt) < Math.abs(b.k - tgt)) b = o; } return b; };
+        const c = near('C', sp * 1.1), pu = near('P', sp * 0.9), atm = near('C', sp);
+        if (c && pu) out.btc.skew = { rr: +(c.iv - pu.iv).toFixed(2), atmIv: atm ? +atm.iv.toFixed(1) : null,
+          days: +((toMs(exp) - now) / 864e5).toFixed(0) };
+      }
+    }
   } catch (e) {}
   // VOLUMEN 24h FUTUROS vs SPOT (mismo exchange = comparable): Binance BTC+ETH.
   // Futuros = derivados apalancados; spot = compra/venta real. Ratio del mercado.

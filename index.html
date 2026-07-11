@@ -797,7 +797,7 @@ function PosView({gFunding,cot}){
   const [d,setD]=useState(null);
   useEffect(()=>{let a=true;
     const load=async()=>{try{const j=await fetchLS();
-      if(a&&j&&j.btc)setD({lsEx:j.btc.lsEx||null,taker:j.btc.taker||null,hist:(j.btc.hist||[]),cvdFut:j.btc.cvdFut||null,oiSplit:j.btc.oiSplit||null});
+      if(a&&j&&j.btc)setD({lsEx:j.btc.lsEx||null,taker:j.btc.taker||null,hist:(j.btc.hist||[]),cvdFut:j.btc.cvdFut||null,oiSplit:j.btc.oiSplit||null,skew:j.btc.skew||null});
     }catch(_){}};
     load();const t=setInterval(load,120000);return()=>{a=false;clearInterval(t);};},[]);
   const [k,setK]=useState(null); // CVD spot diario (oficial: taker buy de las velas) + máx/mín 60d
@@ -831,7 +831,7 @@ function PosView({gFunding,cot}){
         <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>BTC · sin estimaciones</span>
       </div>
       <div style={{fontSize:10,color:'var(--dim)',lineHeight:1.65}}>En derivados hay <b style={{color:'var(--txt)'}}>exactamente un long por cada short</b> (el notional largo = corto = OI, siempre): "cuántos longs hay" no existe como número. Lo que SÍ se puede medir es el <b style={{color:'var(--txt)'}}>sesgo por cohortes</b> — quién está en cada lado — y eso es lo que publica cada exchange. Aquí abajo, cada dato es el OFICIAL de su fuente, tal cual (el mismo que verás en Coinglass).</div>
-      <div style={{fontSize:8.5,color:'var(--faint)',marginTop:7,lineHeight:1.6}}>Jerarquía de valor (documentada): <b style={{color:'var(--up)'}}>funding</b> (el termómetro más fiable) &gt; CVD en divergencias &gt; cuentas retail SOLO en extremos (contraindicador) &gt; COT (contexto, no timing) &gt; top-trader ratio (ruidoso).</div>
+      <div style={{fontSize:8.5,color:'var(--faint)',marginTop:7,lineHeight:1.6}}>Jerarquía de valor (documentada): <b style={{color:'var(--up)'}}>funding</b> (el termómetro más fiable) &gt; <b style={{color:'var(--up)'}}>skew de opciones</b> (sentimiento institucional) &gt; CVD en divergencias &gt; cuentas retail SOLO en extremos (contraindicador) &gt; COT (contexto, no timing) &gt; top-trader ratio (ruidoso).</div>
     </div>
 
     {/* L/S oficiales por exchange */}
@@ -885,6 +885,28 @@ function PosView({gFunding,cot}){
           <span style={{fontSize:8,color:'var(--faint)'}}> · el CVD mide AGRESIÓN (quién cruza el spread); su valor está en las divergencias, no aislado</span>
         </div>);})()}
     </div>
+
+    {/* SKEW de opciones (Deribit) — termómetro institucional, valor ALTO */}
+    {d&&d.skew&&Number.isFinite(d.skew.rr)&&(()=>{const rr=d.skew.rr,bull=rr>0.5,bear=rr<-0.5;
+      const col=bull?'var(--up)':bear?'var(--down)':'var(--dim)';
+      const pct=Math.max(0,Math.min(100,50+rr*3.3)); // −15..+15 pts → 0..100 en la barra
+      return(<div style={panel({marginBottom:14,padding:16})}>
+        <div style={{...flx({justifyContent:'space-between'}),marginBottom:8}}>
+          <span style={eyebrow}>Skew de opciones · 25Δ ~{d.skew.days}d</span>
+          <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>Deribit oficial</span>
+        </div>
+        <div style={{...flx({gap:10}),marginBottom:7}}>
+          <span className="mono" style={{fontSize:18,fontWeight:800,color:col}}>{rr>=0?'+':''}{rr.toFixed(1)}</span>
+          <span style={{fontSize:9.5,color:'var(--dim)',lineHeight:1.5}}><b style={{color:col}}>{bull?'Calls pujados → sesgo ALCISTA':bear?'Puts pujados → cobertura/MIEDO':'Skew plano · neutral'}</b> · risk reversal = IV(call OTM) − IV(put OTM){d.skew.atmIv?' · IV ATM '+d.skew.atmIv+'%':''}</span>
+        </div>
+        <div style={{position:'relative',height:8,borderRadius:5,background:'linear-gradient(90deg,var(--down),#2E3548 50%,var(--up))',opacity:.8}}>
+          <div style={{position:'absolute',left:'calc('+pct+'% - 2px)',top:-2,width:4,height:12,borderRadius:2,background:'var(--txt)',boxShadow:'0 0 6px rgba(0,0,0,.7)'}}/>
+        </div>
+        <div style={{...flx({justifyContent:'space-between'}),marginTop:3,fontSize:7,color:'var(--faint)'}}>
+          <span>miedo (puts)</span><span>neutral</span><span>euforia (calls)</span>
+        </div>
+        <div style={{fontSize:8.5,color:'var(--faint)',marginTop:6,lineHeight:1.55}}>Sentimiento de <b style={{color:'var(--txt)'}}>hedgers e institucionales</b> (no retail): negativo = pagan más por protección a la baja (típico en cripto). Lo informativo es el CAMBIO y los extremos, no el nivel absoluto. Proxy: call ~110% vs put ~90% de la expiración cercana a 30 días.</div>
+      </div>);})()}
 
     {/* OI coin-margined vs stablecoin */}
     {d&&d.oiSplit&&(()=>{const c2=d.oiSplit.coinM,s2=d.oiSplit.stableM,sh=c2/(c2+s2)*100;
