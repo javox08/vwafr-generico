@@ -4409,7 +4409,13 @@ function QuantView({gFunding,nav}){
               <div style={{fontSize:8.5,color:'var(--faint)',lineHeight:1.4}}>en {tfs.length>1?tfs.join(' + '):(tfs[0]||'1D')} · solo cuentan los de acierto &gt;52% · varias escalas de acuerdo = señal más fiable que cualquiera sola</div>
             </div>
           </div>}
-          {all.length?vis.map((pt,i)=>(
+          {all.length?vis.map((pt,i)=>{
+            // ACIERTO EN SU DIRECCIÓN: el win crudo es "% que subió"; para un patrón BAJISTA
+            // eso engaña (bajista bueno = subió poco). Mostramos P(se cumple en su dirección):
+            // alcista = win · bajista = 100−win · neutral = win.
+            const acc=pt.st?(pt.sig<0?100-pt.st.win:pt.st.win):null;
+            const accCol=acc==null?'var(--faint)':acc>=55?'var(--up)':acc<=45?'var(--down)':'#F3BA2F';
+            return(
           <div key={i} onClick={()=>{if(pt.vela&&CANDLE_ART[pt.t])setVelaSel(pt);else setInfoSel({...pt,kind:'tecnico'});}} style={{...flx({gap:9}),padding:'9px 0',borderTop:i?'1px solid #12151F':'none',cursor:'pointer'}}>
             <span style={{fontSize:15,color:pt.sig>0?'var(--up)':pt.sig<0?'var(--down)':'var(--faint)'}}>{pt.sig>0?'▲':pt.sig<0?'▼':'◆'}{pt.vela?'🕯️':''}</span>
             <div style={{flex:1,minWidth:0}}>
@@ -4422,15 +4428,15 @@ function QuantView({gFunding,nav}){
             </div>
             {pt.st?(
               <div style={{textAlign:'right',flexShrink:0}}>
-                <div className="mono" style={{fontSize:13,fontWeight:800,color:pt.st.win>=55?'var(--up)':pt.st.win<=45?'var(--down)':'#F3BA2F'}}>{pt.st.win}%{pt.st.ci!=null&&<span style={{fontSize:8,fontWeight:600,color:'var(--faint)'}}> ±{pt.st.ci}</span>}</div>
-                <div className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>{pt.st.avg>=0?'+':''}{pt.st.avg}% · n={pt.st.n}</div>
+                <div className="mono" style={{fontSize:13,fontWeight:800,color:accCol}}>{acc}%{pt.st.ci!=null&&<span style={{fontSize:8,fontWeight:600,color:'var(--faint)'}}> ±{pt.st.ci}</span>}</div>
+                <div className="mono" style={{fontSize:7.5,color:'var(--faint)'}}>{pt.sig<0?'que BAJE':pt.sig>0?'que SUBA':'acierto'} · n={pt.st.n}</div>
               </div>
             ):<div style={{fontSize:8.5,color:'var(--faint)',textAlign:'right',flexShrink:0,maxWidth:60}}>pocos casos</div>}
           </div>
-        )):<div style={{fontSize:11,color:'var(--faint)',textAlign:'center',padding:'8px 0'}}>Sin patrones claros ahora mismo en ninguna temporalidad.</div>}
+        );}):<div style={{fontSize:11,color:'var(--faint)',textAlign:'center',padding:'8px 0'}}>Sin patrones claros ahora mismo en ninguna temporalidad.</div>}
           {all.length>CAP&&<div onClick={()=>setShowAllPats(v=>!v)} style={{textAlign:'center',padding:'8px 0 2px',cursor:'pointer',fontSize:10,fontWeight:700,color:'var(--accent)'}}>{showAllPats?'▲ ver menos':'▼ ver los '+(all.length-CAP)+' patrones restantes'}</div>}
           </React.Fragment>);})()}
-        <p style={{fontSize:9,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Patrones detectados en <b>3 temporalidades</b>: <b style={{color:'#F3BA2F'}}>4h</b> (corto plazo, ~166 días de historia), <b>1D</b> (diario, ~8 años) y <b style={{color:'#8AA0FF'}}>SEMANAL</b> (~6 años). Cada uno se backtestea EN SU temporalidad: % = acierto a 10 velas de esa escala (10×4h ≈ 40h · 10 días · 10 semanas) · n = nº de veces que ocurrió. Los de 4h son más frecuentes pero más ruidosos; los semanales, raros pero de más peso. <b style={{color:'var(--txt)'}}>Ordenados del MÁS fiable al menos</b> (acierto en la dirección del patrón − medio margen de error; "pocos casos" al final). <b style={{color:'var(--txt)'}}>Solo velas CERRADAS</b>: la vela en curso no confirma un patrón hasta su cierre (puede des-formarse antes) — igual que el backtest, que siempre midió cierres. Solo el diario alimenta el cono (evita doble-contar).</p>
+        <p style={{fontSize:9,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Patrones detectados en <b>3 temporalidades</b>: <b style={{color:'#F3BA2F'}}>4h</b> (corto plazo, ~166 días de historia), <b>1D</b> (diario, ~8 años) y <b style={{color:'#8AA0FF'}}>SEMANAL</b> (~6 años). Cada uno se backtestea EN SU temporalidad: <b style={{color:'var(--txt)'}}>% = probabilidad de que se cumpla EN SU DIRECCIÓN</b> a 10 velas de esa escala (un patrón alcista mide cuántas veces SUBIÓ; uno bajista, cuántas veces BAJÓ — por eso ambos se leen igual: más alto = más fiable) · n = nº de veces que ocurrió. Los de 4h son más frecuentes pero más ruidosos; los semanales, raros pero de más peso. <b style={{color:'var(--txt)'}}>Ordenados del MÁS fiable al menos</b> (acierto en la dirección del patrón − medio margen de error; "pocos casos" al final). <b style={{color:'var(--txt)'}}>Solo velas CERRADAS</b>: la vela en curso no confirma un patrón hasta su cierre (puede des-formarse antes) — igual que el backtest, que siempre midió cierres. Solo el diario alimenta el cono (evita doble-contar).</p>
       </div>
 
       {/* PATRONES GRÁFICOS (figuras clásicas estilo Binance, con estadística) */}
@@ -4912,7 +4918,7 @@ function QuantView({gFunding,nav}){
             <div style={{fontSize:8.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.7,fontWeight:700,marginBottom:5}}>Cómo es el patrón</div>
             <div style={{background:'#0A0D14',borderRadius:10,padding:'10px 8px'}}><CandleArt t={pt.t}/></div>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:12}}>
-              {[['Acierto 10d',pt.st?pt.st.win+'%'+(pt.st.ci!=null?' ±'+pt.st.ci:''):'—',pt.st&&pt.st.win>=55?'var(--up)':'#F3BA2F'],
+              {[[pt.sig<0?'Acierto (que BAJE)':pt.sig>0?'Acierto (que SUBA)':'Acierto 10d',pt.st?(pt.sig<0?100-pt.st.win:pt.st.win)+'%'+(pt.st.ci!=null?' ±'+pt.st.ci:''):'—',pt.st?((pt.sig<0?100-pt.st.win:pt.st.win)>=55?'var(--up)':(pt.sig<0?100-pt.st.win:pt.st.win)<=45?'var(--down)':'#F3BA2F'):'var(--faint)'],
                 ['Retorno típico',pt.st?(pt.st.avg>=0?'+':'')+pt.st.avg+'%':'—',pt.st&&pt.st.avg>=0?'var(--up)':'var(--down)'],
                 ['Casos',pt.st?'n='+pt.st.n:'pocos','var(--txt)']].map((m,i)=>(
                 <div key={i} style={{background:'#0A0D14',borderRadius:8,padding:'8px 4px',textAlign:'center'}}>
