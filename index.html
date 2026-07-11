@@ -797,7 +797,12 @@ function PosView({gFunding,cot}){
   const [d,setD]=useState(null);
   useEffect(()=>{let a=true;
     const load=async()=>{try{const j=await fetchLS();
-      if(a&&j&&j.btc)setD({lsEx:j.btc.lsEx||null,taker:j.btc.taker||null,hist:(j.btc.hist||[]),cvdFut:j.btc.cvdFut||null,oiSplit:j.btc.oiSplit||null,skew:j.btc.skew||null,cvdAgg:j.btc.cvdAgg||null});
+      // masa/pros AGREGADOS (los mismos que usan portada y Cuantitativo): así el
+      // ⭐ consenso sale IDÉNTICO en las tres pantallas (misma fórmula, mismos inputs)
+      const bc=((j&&j.coins)||[]).find(x=>x.c==='BTC');
+      const masaAgg=(bc&&Number.isFinite(bc.r)&&bc.r>0)?bc.r/(1+bc.r):null;
+      const prosAgg=(j&&j.btc&&Number.isFinite(j.btc.pos)&&j.btc.pos>0)?j.btc.pos/(1+j.btc.pos):null;
+      if(a&&j&&j.btc)setD({lsEx:j.btc.lsEx||null,taker:j.btc.taker||null,hist:(j.btc.hist||[]),cvdFut:j.btc.cvdFut||null,oiSplit:j.btc.oiSplit||null,skew:j.btc.skew||null,cvdAgg:j.btc.cvdAgg||null,masaAgg,prosAgg});
     }catch(_){}};
     load();const t=setInterval(load,120000);return()=>{a=false;clearInterval(t);};},[]);
   const [k,setK]=useState(null); // CVD spot diario (oficial: taker buy de las velas) + máx/mín 60d
@@ -881,11 +886,11 @@ function PosView({gFunding,cot}){
         <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>1H · auto</span>
       </div>
       {ex?(<React.Fragment>
-        {(()=>{ // ⭐ UN SOLO número de referencia: consenso (retail + pros×2 + aperturas)
-          const parts=[];const ap=pct(ex.acc&&ex.acc.Binance),ao=pct(ex.acc&&ex.acc.OKX),ab=pct(ex.acc&&ex.acc.Bybit);
-          const pp=pct(ex.pro&&ex.pro.Binance),po=pct(ex.pro&&ex.pro.OKX),tk=d&&d.taker&&Number.isFinite(d.taker.pl)?d.taker.pl:null;
-          [ap,ao,ab].forEach(x=>{if(x!=null)parts.push(x);});
-          [pp,po].forEach(x=>{if(x!=null){parts.push(x);parts.push(x);}}); // pros pesan doble
+        {(()=>{ // ⭐ UN SOLO número: MISMA fórmula e inputs que portada y Cuantitativo
+          // (masa agregada + pros agregados ×2 + aperturas taker) → sale IDÉNTICO en las 3
+          const parts=[];const tk=d&&d.taker&&Number.isFinite(d.taker.pl)?d.taker.pl:null;
+          if(d&&d.masaAgg!=null)parts.push(d.masaAgg);
+          if(d&&d.prosAgg!=null){parts.push(d.prosAgg);parts.push(d.prosAgg);} // pros pesan doble
           if(tk!=null)parts.push(tk);
           if(parts.length<2)return null;const cons=parts.reduce((a,x)=>a+x,0)/parts.length;
           const bull=cons>0.52,bear=cons<0.48;
