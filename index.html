@@ -876,6 +876,28 @@ function PosView({gFunding,cot}){
         <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>1H · auto</span>
       </div>
       {ex?(<React.Fragment>
+        {(()=>{ // ⭐ UN SOLO número de referencia: consenso (retail + pros×2 + aperturas)
+          const parts=[];const ap=pct(ex.acc&&ex.acc.Binance),ao=pct(ex.acc&&ex.acc.OKX),ab=pct(ex.acc&&ex.acc.Bybit);
+          const pp=pct(ex.pro&&ex.pro.Binance),po=pct(ex.pro&&ex.pro.OKX),tk=d&&d.taker&&Number.isFinite(d.taker.pl)?d.taker.pl:null;
+          [ap,ao,ab].forEach(x=>{if(x!=null)parts.push(x);});
+          [pp,po].forEach(x=>{if(x!=null){parts.push(x);parts.push(x);}}); // pros pesan doble
+          if(tk!=null)parts.push(tk);
+          if(parts.length<2)return null;const cons=parts.reduce((a,x)=>a+x,0)/parts.length;
+          const bull=cons>0.52,bear=cons<0.48;
+          return(<div style={{marginBottom:12,padding:'11px 12px',borderRadius:11,background:bull?'rgba(31,224,160,.08)':bear?'rgba(255,84,112,.08)':'rgba(255,255,255,.04)',border:'1px solid '+(bull?'rgba(31,224,160,.35)':bear?'rgba(255,84,112,.35)':'var(--line2)')}}>
+            <div style={{...flx({justifyContent:'space-between'}),marginBottom:5}}>
+              <span style={{fontSize:8.5,fontWeight:800,color:'var(--accent)',letterSpacing:.4}}>⭐ SESGO BTC · CONSENSO</span>
+              <span style={{fontSize:7.5,color:'var(--faint)'}}>media de todas las fuentes (pros ×2)</span>
+            </div>
+            <div style={{...flx({justifyContent:'space-between'}),marginBottom:5}}>
+              <span className="mono" style={{fontSize:17,fontWeight:800,color:'var(--up)'}}>▲ {(cons*100).toFixed(0)}% LONG</span>
+              <span className="mono" style={{fontSize:17,fontWeight:800,color:'var(--down)'}}>{((1-cons)*100).toFixed(0)}% SHORT ▼</span>
+            </div>
+            <div style={{display:'flex',height:8,borderRadius:5,overflow:'hidden'}}>
+              <div style={{width:(cons*100)+'%',background:'var(--up)',opacity:.85}}/><div style={{flex:1,background:'var(--down)',opacity:.85}}/>
+            </div>
+            <div style={{fontSize:8,color:'var(--faint)',marginTop:5,lineHeight:1.5}}>Este es el número de referencia. Debajo, cada fuente por separado (verás valores algo distintos: cada exchange y cada cohorte —retail, pros, flujo— mide su propio grupo; por eso <b style={{color:'var(--txt)'}}>nunca coinciden al 100%</b>, y no es un error).</div>
+          </div>);})()}
         <div style={{fontSize:8,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.6,fontWeight:700,marginBottom:6}}>👥 Cuentas (retail) — % de CUENTAS en cada lado</div>
         <Row icon="🟡" lbl="Binance" src="globalLongShortAccountRatio" v={pct(ex.acc&&ex.acc.Binance)}/>
         <Row icon="⚪" lbl="OKX" src="rubik account-ratio" v={pct(ex.acc&&ex.acc.OKX)} extreme={z!=null&&Math.abs(z)>=1.5}/>
@@ -1023,7 +1045,7 @@ function PosView({gFunding,cot}){
         <div style={{marginTop:5,height:6,borderRadius:4,overflow:'hidden',display:'flex'}}>
           <div style={{width:pS+'%',background:'linear-gradient(90deg,#1FE0A0,#1FE0A088)'}}/><div style={{flex:1,background:'linear-gradient(90deg,#FF547088,#FF5470)'}}/>
         </div>
-        <div style={{fontSize:8.5,color:'var(--dim)',marginTop:6,lineHeight:1.55}}>El <b style={{color:pS>=50?'var(--up)':'var(--down)'}}>{pS.toFixed(0)}% de la liquidez estimada está {pS>=50?'ARRIBA':'ABAJO'}</b> (±12%) → si el precio {pS>=50?'SUBE, revienta stops de CORTOS':'BAJA, revienta stops de LARGOS'} (imán ⚡ = clúster más fuerte). Escalado al OI agregado de {lm.exN} exchanges (≈{fm$(lm.oiAgg*1e9)}).{ex&&(()=>{const bp=pct(ex.acc&&ex.acc.Binance)||pct(ex.acc&&ex.acc.OKX);return bp!=null?(' ⚠️ OJO: esto NO es el posicionamiento de arriba ('+(bp*100).toFixed(0)+'% long). Ahí se mide QUIÉN está en cada lado; aquí, DÓNDE los liquidarían. Cosas distintas.'):'';})()} No es garantía.</div>
+        <div style={{fontSize:8.5,color:'var(--dim)',marginTop:6,lineHeight:1.55}}>🧲 Imán principal <b style={{color:pS>=50?'var(--up)':'var(--down)'}}>{pS>=50?'ARRIBA':'ABAJO'}</b>: hay ≈<b style={{color:'var(--up)'}}>{fm$(lm.totS)}</b> en liquidaciones de cortos por encima vs ≈<b style={{color:'var(--down)'}}>{fm$(lm.totL)}</b> de largos por debajo (±12%). Si el precio {pS>=50?'SUBE revienta más stops':'BAJA revienta más stops'} (imán ⚡ = clúster más fuerte). <b style={{color:'#F3BA2F'}}>Esto NO son long/short</b>: son ZONAS donde saltarían stops (dónde LIQUIDARÍAN a los que ya están dentro), no cuánta gente está en cada lado. El posicionamiento está arriba (⭐ consenso). No es garantía.</div>
         </React.Fragment>);})():(
         <div style={{fontSize:10,color:'var(--faint)',textAlign:'center',padding:'14px 0'}}>Calculando el mapa agregado…</div>)}
       <div style={{fontSize:8.5,color:'var(--faint)',marginTop:9,paddingTop:9,borderTop:'1px solid var(--line2)',lineHeight:1.6}}>⚠️ Es una <b style={{color:'var(--txt)'}}>ESTIMACIÓN</b> (foto actual), como TODOS los heatmaps: nadie tiene las posiciones reales por cuenta — se reconstruye de OI + apalancamientos supuestos (10/25/50/100×) y por eso dos plataformas nunca coinciden. Para el heatmap HISTÓRICO completo (mejor herramienta), usa las de abajo — y trata los clústeres como <b style={{color:'var(--txt)'}}>zonas probables</b>, no niveles seguros.</div>
