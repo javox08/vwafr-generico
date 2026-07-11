@@ -90,6 +90,29 @@ module.exports = async (req, res) => {
       out.btc.cvdFut = cv; // CVD de FUTUROS acumulado (BTC, taker buy−sell), 1h × ~480 ≈ 20 días
     }
   } catch (e) {}
+  // CVD PERP AGREGADO (informe: "CVD agregado Binance/OKX para divergencias"): flujo taker
+  // de los últimos 7d en USD, de BINANCE (buy−sell BTC × precio) + OKX (taker-volume, ya en
+  // USD). Un mismo signo en las dos bolsas = presión de derivados coherente; signos opuestos
+  // = ruido/arbitraje entre venues. OKX taker-volume: [ts, sellVol, buyVol] (USD).
+  try {
+    const [tk, ok, px] = await Promise.all([
+      fetch('https://fapi.binance.com/futures/data/takerlongshortRatio?symbol=BTCUSDT&period=1h&limit=168').then(r => r.json()).catch(() => null),
+      fetch('https://www.okx.com/api/v5/rubik/stat/taker-volume?ccy=BTC&instType=CONTRACTS&period=1H').then(r => r.json()).catch(() => null),
+      fetch('https://fapi.binance.com/fapi/v1/premiumIndex?symbol=BTCUSDT').then(r => r.json()).catch(() => null)
+    ]);
+    const p = parseFloat(px && px.markPrice) || 0;
+    let binUsd = null, okxUsd = null;
+    if (Array.isArray(tk) && tk.length && p > 0) {
+      let d = 0; for (const r of tk) { const bv = parseFloat(r.buyVol), sv = parseFloat(r.sellVol); if (Number.isFinite(bv) && Number.isFinite(sv)) d += bv - sv; }
+      binUsd = d * p;
+    }
+    const od = ok && ok.data;
+    if (Array.isArray(od) && od.length) {
+      let d = 0; for (const r of od) { const sell = parseFloat(r[1]), buy = parseFloat(r[2]); if (Number.isFinite(buy) && Number.isFinite(sell)) d += buy - sell; }
+      okxUsd = d;
+    }
+    if (binUsd != null || okxUsd != null) out.btc.cvdAgg = { binUsd: binUsd != null ? +binUsd.toFixed(0) : null, okxUsd: okxUsd != null ? +okxUsd.toFixed(0) : null };
+  } catch (e) {}
   // PREMIUM AGREGADO (el "Aggregated Premium" de Velo): prima del perpetuo sobre su
   // índice spot, media de Binance y Bybit. >0 = futuros pagan sobre spot (apalancamiento
   // alcista); <0 = descuento (miedo). En %.

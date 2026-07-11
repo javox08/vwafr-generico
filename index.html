@@ -797,7 +797,7 @@ function PosView({gFunding,cot}){
   const [d,setD]=useState(null);
   useEffect(()=>{let a=true;
     const load=async()=>{try{const j=await fetchLS();
-      if(a&&j&&j.btc)setD({lsEx:j.btc.lsEx||null,taker:j.btc.taker||null,hist:(j.btc.hist||[]),cvdFut:j.btc.cvdFut||null,oiSplit:j.btc.oiSplit||null,skew:j.btc.skew||null});
+      if(a&&j&&j.btc)setD({lsEx:j.btc.lsEx||null,taker:j.btc.taker||null,hist:(j.btc.hist||[]),cvdFut:j.btc.cvdFut||null,oiSplit:j.btc.oiSplit||null,skew:j.btc.skew||null,cvdAgg:j.btc.cvdAgg||null});
     }catch(_){}};
     load();const t=setInterval(load,120000);return()=>{a=false;clearInterval(t);};},[]);
   const [k,setK]=useState(null); // CVD spot diario (oficial: taker buy de las velas) + máx/mín 60d
@@ -939,6 +939,14 @@ function PosView({gFunding,cot}){
         return(<div style={{fontSize:9.5,color:'var(--dim)',lineHeight:1.6,padding:'8px 10px',borderRadius:9,background:'#0A0D14',border:'1px solid var(--line2)'}}>
           {t[0]} <b style={{color:t[2]}}>{t[1]}</b><br/>
           <span className="mono" style={{fontSize:8.5}}>CVD spot 7d: {fmt$(dS)} · CVD perp 7d: {(dF>=0?'+':'−')+Math.round(Math.abs(dF)).toLocaleString('es-ES')} BTC</span>
+          {(()=>{ // CVD PERP AGREGADO Binance+OKX (informe): ¿confirman las dos bolsas?
+            const ag=d&&d.cvdAgg; if(!ag||(ag.binUsd==null&&ag.okxUsd==null))return null;
+            const parts=[]; if(ag.binUsd!=null)parts.push('Binance '+fmt$(ag.binUsd)); if(ag.okxUsd!=null)parts.push('OKX '+fmt$(ag.okxUsd));
+            const both=ag.binUsd!=null&&ag.okxUsd!=null, agree=both&&((ag.binUsd>0)===(ag.okxUsd>0));
+            return(<React.Fragment><br/>
+              <span className="mono" style={{fontSize:8.5,color:'var(--dim)'}}>Perp agregado 7d ({parts.join(' · ')})</span>
+              {both&&<span style={{fontSize:8,color:agree?'var(--up)':'#F3BA2F',fontWeight:700}}> · {agree?'las 2 bolsas coinciden → presión coherente':'signos opuestos → ruido/arbitraje entre venues'}</span>}
+            </React.Fragment>);})()}
           <span style={{fontSize:8,color:'var(--faint)'}}> · el CVD mide AGRESIÓN (quién cruza el spread); su valor está en las divergencias, no aislado</span>
         </div>);})()}
     </div>
