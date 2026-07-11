@@ -2966,7 +2966,7 @@ function TVChart({series,color='var(--accent)',H=120,area=false,band=null,bands=
     </div>
   );
 }
-function QuantView({gFunding}){
+function QuantView({gFunding,nav}){
   const [q,setQ]=useState(null);
   const [loadedAt,setLoadedAt]=useState(0); // frescura de datos
   const [showBias,setShowBias]=useState(false);
@@ -4248,6 +4248,12 @@ function QuantView({gFunding}){
               </div>);})()}
             <div style={{fontSize:8,color:'var(--faint)',lineHeight:1.5,marginTop:3}}>% = qué parte de cada grupo está en cada lado (no es dinero: en futuros el $ largo = corto = OI). {masa!=null&&pros!=null&&Math.abs(masa-pros)>0.08?'⚠️ La masa está '+(masa>pros?'MÁS larga':'MÁS corta')+' que los pros: los top traders suelen tener razón.':''} <b style={{color:'var(--dim)'}}>¿No cuadra con otros apartados?</b> Es normal: masa = CUENTAS · pros = POSICIONES de top traders · aperturas 24h = FLUJO taker — miden cosas distintas; la señal fuerte es cuando todos apuntan al mismo lado.</div>
           </div>}
+          <div onClick={()=>{if(nav)nav('pos');}}
+            style={{...flx({gap:8,justifyContent:'center'}),marginTop:10,padding:'9px 12px',borderRadius:9,cursor:'pointer',
+              background:'rgba(110,139,255,.08)',border:'1px dashed rgba(110,139,255,.35)'}}>
+            <span style={{fontSize:13}}>⚖️</span>
+            <span style={{fontSize:10,fontWeight:700,color:'var(--accent)'}}>Posicionamiento COMPLETO (oficial por exchange · skew · COT · mapa de liquidaciones) →</span>
+          </div>
           <p style={{fontSize:8,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>CVD y agresión neta de Binance Futures (taker buy − sell). Coinbase Premium = precio en Coinbase vs Binance (compra institucional EE.UU.). Todo se actualiza solo. No es consejo financiero.</p>
         </div>);
       })()}
@@ -6163,7 +6169,7 @@ function App(){
       </div>
 
       {view==='cycle'&&<CycleBTC/>}
-      {view==='quant'&&<QuantView gFunding={g.vwafr}/>}
+      {view==='quant'&&<QuantView gFunding={g.vwafr} nav={setView}/>}
       {view==='pos'&&<PosView gFunding={g.vwafr} cot={cot}/>}
       {view==='bots'&&<BotsView gFunding={g.vwafr}/>}
       {view==='pib'&&<PIBView/>}
