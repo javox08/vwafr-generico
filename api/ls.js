@@ -215,6 +215,13 @@ module.exports = async (req, res) => {
         if (ms.length >= 3) { const em = ms.reduce((p, x) => p + x, 0) / ms.length;
           out.cpi.estMom = +(em * 100).toFixed(2);
           if (v(11) > 0) out.cpi.estYoy = +(((last * (1 + em)) / v(11) - 1) * 100).toFixed(1); }
+        // PREVISIÓN para el ÚLTIMO dato ya publicado, calculada SOLO con datos anteriores a él
+        // (excluye el propio mes) → permite comparar Actual vs Previsión al estilo Investing sin
+        // circularidad, y decir si "salió por encima/por debajo de lo previsto".
+        const ms2 = []; for (let i = 1; i < 7 && i + 1 < s.length; i++) { const a = v(i), b = v(i + 1); if (a > 0 && b > 0) ms2.push(a / b - 1); }
+        if (ms2.length >= 3 && v(12) > 0) { const em2 = ms2.reduce((p, x) => p + x, 0) / ms2.length;
+          out.cpi.estLastMom = +(em2 * 100).toFixed(2);
+          out.cpi.estLastYoy = +(((prev * (1 + em2)) / v(12) - 1) * 100).toFixed(1); }
       }
     }
   } catch (e) {}
@@ -232,6 +239,9 @@ module.exports = async (req, res) => {
       const ms = []; for (let i = 0; i < 6 && n - 2 - i >= 0; i++) { const a = +rows[n - 1 - i][1], b = +rows[n - 2 - i][1]; if (a > 0 && b > 0) ms.push(a / b - 1); }
       if (ms.length >= 3 && n - 12 >= 0) { const em = ms.reduce((p, x) => p + x, 0) / ms.length;
         out.cpi.estMom = +(em * 100).toFixed(2); out.cpi.estYoy = +(((+last[1] * (1 + em)) / +rows[n - 12][1] - 1) * 100).toFixed(1); }
+      const ms2 = []; for (let i = 1; i < 7 && n - 2 - i >= 0; i++) { const a = +rows[n - 1 - i][1], b = +rows[n - 2 - i][1]; if (a > 0 && b > 0) ms2.push(a / b - 1); }
+      if (ms2.length >= 3 && n - 13 >= 0) { const em2 = ms2.reduce((p, x) => p + x, 0) / ms2.length;
+        out.cpi.estLastMom = +(em2 * 100).toFixed(2); out.cpi.estLastYoy = +(((+prev[1] * (1 + em2)) / +rows[n - 13][1] - 1) * 100).toFixed(1); }
     }
   } catch (e) {}
   // VOLUMEN 24h FUTUROS vs SPOT (mismo exchange = comparable): Binance BTC+ETH.

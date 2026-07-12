@@ -4931,11 +4931,17 @@ function QuantView({gFunding,nav}){
             :e.t==='FOMC'
             ?{hi:'Tono DURO / sube o mantiene tipos altos (hawkish)',hiA:['🔴','🔴','🟢'],lo:'Tono BLANDO / recorte o señal dovish',loA:['🟢','🟢','🔴']}
             :null;
-          // CPI más reciente ya PUBLICADO (el último pasado) y PRÓXIMO CPI (el primero futuro):
-          // en uno mostramos el número que SALIÓ, en el otro el ESPERADO (estimación por tendencia).
+          // Estilo "calendario de Investing": ANTERIOR · PREVISIÓN · ACTUAL para el IPC, con el
+          // añadido de que aquí SÍ te decimos si el resultado es negativo o positivo para cripto.
+          // isLastCpi = el IPC más reciente ya publicado (ventana 5d); isNextCpi = el próximo.
           const isLastCpi=e.t==='CPI'&&past&&cpiReal&&!evNext.some((x,j)=>j>i&&x.t==='CPI'&&Math.ceil((x.d-now)/D)<0);
-          const isNextCpi=e.t==='CPI'&&!past&&cpiReal&&cpiReal.estMom!=null&&!evNext.some((x,j)=>j<i&&x.t==='CPI'&&Math.ceil((x.d-now)/D)>=0);
-          const numBox={fontSize:9,color:'var(--dim)',marginTop:5,marginLeft:2,padding:'5px 8px',borderRadius:7,background:'#0A0D14',border:'1px solid var(--line2)'};
+          const isNextCpi=e.t==='CPI'&&!past&&cpiReal&&!evNext.some((x,j)=>j<i&&x.t==='CPI'&&Math.ceil((x.d-now)/D)>=0);
+          let cpiBox=null;
+          if(isLastCpi||isNextCpi){const rel=isLastCpi;
+            cpiBox={rel,
+              ant: rel?cpiReal.prevYoy:cpiReal.yoy,     antM: rel?cpiReal.prevMom:cpiReal.mom,
+              prev:rel?cpiReal.estLastYoy:cpiReal.estYoy, prevM:rel?cpiReal.estLastMom:cpiReal.estMom,
+              act: rel?cpiReal.yoy:null,                actM: rel?cpiReal.mom:null};}
           return(
             <div key={i} style={{padding:'9px 0',borderTop:i?'1px solid #12151F':'none',opacity:past?.9:1}}>
               <div style={{...flx({justifyContent:'space-between'})}}>
@@ -4948,18 +4954,36 @@ function QuantView({gFunding,nav}){
                   {past?'hace '+(-days)+'d ✓':days<=0?'HOY':'en '+days+'d'}
                 </span>
               </div>
-              {/* PRÓXIMO IPC: número esperado (estimación) + real pendiente */}
-              {isNextCpi&&<div style={numBox} className="mono">
-                🔮 <b style={{color:'var(--txt)'}}>Esperado</b>: ~{cpiReal.estMom>=0?'+':''}{cpiReal.estMom}% mensual{cpiReal.estYoy!=null?' · ~'+cpiReal.estYoy+'% interanual':''} · <b style={{color:'#F3BA2F'}}>Real: pendiente</b>
-                <div style={{fontSize:7.5,color:'var(--faint)',marginTop:2}}>estimación por tendencia (media de 6 meses), NO es el consenso oficial · último real publicado: {cpiReal.yoy}% interanual</div>
-              </div>}
-              {/* IPC ya publicado: número que SALIÓ (real BLS) vs el previo → sorpresa y reacción real */}
-              {isLastCpi&&(()=>{const surY=cpiReal.prevYoy!=null?+(cpiReal.yoy-cpiReal.prevYoy).toFixed(1):null;const hot=surY!=null&&surY>0;
-                return(<div style={numBox} className="mono">
-                  ✅ <b style={{color:'var(--txt)'}}>Salió</b> (real BLS): <b style={{color:cpiReal.yoy>=3?'var(--down)':'var(--up)'}}>{cpiReal.yoy}%</b> interanual · {cpiReal.mom>=0?'+':''}{cpiReal.mom}% mensual{cpiReal.prevYoy!=null?' · previo '+cpiReal.prevYoy+'%':''} <span style={{color:'var(--faint)'}}>({cpiReal.month})</span>
-                  {surY!=null&&<div style={{fontSize:8,marginTop:2,color:hot?'var(--down)':'var(--up)'}}>{surY===0?'= igual que el previo':(hot?'↑ subió ':'↓ bajó ')+Math.abs(surY)+'pp vs previo'} → {hot?'inflación al alza → 🔴 cripto·bolsa · 🟢 dólar':surY<0?'inflación cede → 🟢 cripto·bolsa · 🔴 dólar':'sin sorpresa → impacto neutro'}</div>}
+              {/* Rejilla estilo Investing: ANTERIOR · PREVISIÓN · ACTUAL + veredicto para cripto */}
+              {cpiBox&&(()=>{const cb=cpiBox;
+                const surp=(cb.act!=null&&cb.prev!=null)?+(cb.act-cb.prev).toFixed(1):null;
+                const hot=surp!=null&&surp>0.05, cool=surp!=null&&surp<-0.05;
+                const actCol=cb.act==null?'var(--txt)':hot?'var(--down)':cool?'var(--up)':'#F3BA2F';
+                let vc,vt,vd;
+                if(cb.act!=null){
+                  if(hot){vc='var(--down)';vt='🔴 NEGATIVO para cripto';vd='salió POR ENCIMA de lo previsto (+'+surp+'pp) → inflación más alta de lo esperado → Fed más dura · 🔴 cripto y bolsa · 🟢 dólar';}
+                  else if(cool){vc='var(--up)';vt='🟢 POSITIVO para cripto';vd='salió POR DEBAJO de lo previsto ('+surp+'pp) → inflación cede → Fed más blanda · 🟢 cripto y bolsa · 🔴 dólar';}
+                  else{vc='#F3BA2F';vt='🟡 En línea con lo previsto';vd='sin apenas sorpresa → impacto limitado; manda la reacción propia del mercado';}
+                }else{vc='var(--accent)';vt='📊 Cuando salga el dato:';vd=(cb.prev!=null?'si sale POR ENCIMA de ~'+cb.prev+'% → 🔴 cripto y bolsa / 🟢 dólar · si queda POR DEBAJO → 🟢 cripto y bolsa / 🔴 dólar':'IPC más alto de lo previsto → 🔴 cripto · más bajo → 🟢 cripto');}
+                const cell=(lbl,y,m,col,big,nl)=>(<div style={{flex:1,textAlign:'center',padding:'5px 2px'}}>
+                  <div style={{fontSize:6.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.4,marginBottom:2}}>{lbl}</div>
+                  {y==null?<div className="mono" style={{fontSize:big?10:9,fontWeight:800,color:big?'#F3BA2F':'var(--faint)'}}>{nl||'—'}</div>:
+                    <div className="mono"><span style={{fontSize:big?13:12,fontWeight:800,color:col||'var(--dim)'}}>{y}%</span>
+                    {m!=null&&<div style={{fontSize:6.5,color:'var(--faint)'}}>{(m>=0?'+':'')+m}% m.</div>}</div>}
+                </div>);
+                return(<div style={{marginTop:6,marginLeft:2}}>
+                  <div style={{display:'flex',borderRadius:8,overflow:'hidden',background:'#0A0D14',border:'1px solid var(--line2)'}}>
+                    {cell('Anterior',cb.ant,cb.antM)}
+                    <div style={{width:1,background:'var(--line2)'}}/>
+                    {cell('Previsión',cb.prev,cb.prevM)}
+                    <div style={{width:1,background:'var(--line2)'}}/>
+                    {cell('Actual',cb.act,cb.actM,actCol,true,'pendiente')}
+                  </div>
+                  <div style={{fontSize:8.5,fontWeight:800,color:vc,marginTop:5}}>{vt}</div>
+                  <div style={{fontSize:8,color:'var(--faint)',lineHeight:1.5,marginTop:1}}>{vd}</div>
+                  <div style={{fontSize:6.5,color:'var(--faint)',marginTop:3}}>Previsión = estimación propia por tendencia (media 6m), no el consenso de mercado (sin API pública gratis). Actual = BLS oficial.</div>
                 </div>);})()}
-              {imp&&!isLastCpi&&<div style={{marginTop:5,marginLeft:2,fontSize:8,color:'var(--faint)',lineHeight:1.7}}>
+              {imp&&!isNextCpi&&!isLastCpi&&<div style={{marginTop:5,marginLeft:2,fontSize:8,color:'var(--faint)',lineHeight:1.7}}>
                 <div>{imp.hiA[0]} cripto · {imp.hiA[1]} bolsa · {imp.hiA[2]} dólar — si {imp.hi}</div>
                 <div>{imp.loA[0]} cripto · {imp.loA[1]} bolsa · {imp.loA[2]} dólar — si {imp.lo}</div>
               </div>}
