@@ -1591,7 +1591,23 @@ function CycleBTC(){
                 <span className="mono" style={{fontSize:7.5,width:26,flexShrink:0,textAlign:'right',color:'var(--faint)'}}>{s.win.toFixed(0)}%</span>
               </div>);})}
           </div>
-          <p style={{fontSize:8,color:'var(--faint)',marginTop:8,lineHeight:1.5}}>Rendimiento MEDIO de cada mes natural sobre todo el histórico ({Math.round(cl.length/365)} años · verde = subió) y % de años en verde (columna derecha). Es un patrón DESCRIPTIVO con pocas muestras por mes (~{Math.round(cl.length/365)}): útil como contexto, NO como predicción. No es consejo financiero.</p>
+          {(()=>{ // rendimiento por DÍA DE LA SEMANA (mismo histórico reconstruido)
+            const DN=['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'],byD=Array.from({length:7},()=>[]);
+            for(let i=1;i<cl.length;i++){if(cl[i-1]>0){const dt=new Date(ts0+i*864e5),dow=(dt.getUTCDay()+6)%7;byD[dow].push(cl[i]/cl[i-1]-1);}}
+            const ds=byD.map(a=>a.length?a.reduce((s,x)=>s+x,0)/a.length*100:0);
+            const dmx=Math.max(...ds.map(Math.abs),0.05),curD=(now.getUTCDay()+6)%7;
+            return(<div style={{marginTop:10,paddingTop:10,borderTop:'1px solid var(--line2)'}}>
+              <div style={{fontSize:8,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.6,fontWeight:700,marginBottom:7}}>Por día de la semana (media diaria)</div>
+              <div style={{...flx({gap:4,alignItems:'flex-end'}),height:48}}>
+                {ds.map((v,i)=>{const h=Math.abs(v)/dmx*38,pos=v>=0,cd=i===curD;
+                  return(<div key={i} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'flex-end',height:'100%'}}>
+                    <span className="mono" style={{fontSize:7,color:pos?'var(--up)':'var(--down)',marginBottom:2,fontWeight:cd?800:600}}>{pos?'+':''}{v.toFixed(2)}</span>
+                    <div style={{width:'70%',height:Math.max(2,h),borderRadius:2,background:pos?'var(--up)':'var(--down)',opacity:cd?1:.55}}/>
+                    <span className="mono" style={{fontSize:7.5,marginTop:3,color:cd?'var(--accent)':'var(--faint)',fontWeight:cd?800:600}}>{DN[i]}</span>
+                  </div>);})}
+              </div>
+            </div>);})()}
+          <p style={{fontSize:8,color:'var(--faint)',marginTop:8,lineHeight:1.5}}>Rendimiento MEDIO de cada mes natural sobre todo el histórico ({Math.round(cl.length/365)} años · verde = subió) y % de años en verde (columna derecha); abajo, la media por día de la semana. Patrón DESCRIPTIVO con pocas muestras por mes (~{Math.round(cl.length/365)}): útil como contexto, NO como predicción. No es consejo financiero.</p>
         </div>);
       })()}
 
