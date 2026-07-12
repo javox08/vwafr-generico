@@ -6007,6 +6007,53 @@ function BotsView({gFunding}){
   );
 }
 
+// ── CONTEXTO DE MERCADO CRIPTO: dominancia BTC (¿altseason?) + oferta de stablecoins
+//    (liquidez = "pólvora seca"). Datos oficiales: CoinGecko global + DefiLlama. ──
+function MarketCtx(){
+  const [d,setD]=useState(null);
+  useEffect(()=>{let a=true;
+    const load=async()=>{const o={};
+      try{const j=await fetch('https://api.coingecko.com/api/v3/global').then(r=>r.json());
+        const g=j&&j.data;if(g){o.btcD=g.market_cap_percentage&&g.market_cap_percentage.btc;
+          o.ethD=g.market_cap_percentage&&g.market_cap_percentage.eth;
+          o.mcap=g.total_market_cap&&g.total_market_cap.usd;o.chg=g.market_cap_change_percentage_24h_usd;}
+      }catch(_){}
+      try{const j=await fetch('https://stablecoins.llama.fi/stablecoins?includePrices=false').then(r=>r.json());
+        const arr=(j&&j.peggedAssets)||[];let t=0;for(const x of arr){const c=x.circulating&&x.circulating.peggedUSD;if(Number.isFinite(c))t+=c;}
+        if(t>0)o.stbl=t;}catch(_){}
+      if(a&&(o.btcD||o.stbl))setD(o);};
+    load();const t=setInterval(load,300000);return()=>{a=false;clearInterval(t);};},[]);
+  if(!d)return null;
+  const fmB=v=>v>=1e12?'$'+(v/1e12).toFixed(2)+'T':'$'+Math.round(v/1e9)+'B';
+  const btcD=d.btcD,alt=btcD!=null&&btcD<52; // <52% dominancia ≈ tono altseason
+  return(<div style={panel({marginBottom:16,padding:'12px 14px'})}>
+    <div style={{...flx({justifyContent:'space-between'}),marginBottom:8}}>
+      <span style={eyebrow}>🌐 Contexto de mercado cripto</span>
+      <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>CoinGecko · DefiLlama</span>
+    </div>
+    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:7}}>
+      {btcD!=null&&<div style={{background:'#0A0D14',borderRadius:9,padding:'9px 10px'}}>
+        <div className="mono" style={{fontSize:15,fontWeight:800,color:'#F7931A'}}>{btcD.toFixed(1)}%</div>
+        <div style={{fontSize:7.5,color:'var(--dim)',marginTop:2,lineHeight:1.35}}>Dominancia BTC{d.ethD!=null?' · ETH '+d.ethD.toFixed(1)+'%':''}</div>
+        <div style={{marginTop:5,height:5,borderRadius:3,background:'#12151F',overflow:'hidden'}}>
+          <div style={{height:'100%',width:Math.min(100,btcD)+'%',background:'#F7931A',opacity:.85}}/></div>
+      </div>}
+      {d.mcap!=null&&<div style={{background:'#0A0D14',borderRadius:9,padding:'9px 10px'}}>
+        <div className="mono" style={{fontSize:15,fontWeight:800,color:'var(--txt)'}}>{fmB(d.mcap)}</div>
+        <div style={{fontSize:7.5,color:'var(--dim)',marginTop:2,lineHeight:1.35}}>Cap. total cripto{Number.isFinite(d.chg)?' · ':''}{Number.isFinite(d.chg)?<span style={{color:d.chg>=0?'var(--up)':'var(--down)'}}>{d.chg>=0?'+':''}{d.chg.toFixed(1)}% 24h</span>:''}</div>
+      </div>}
+      {d.stbl!=null&&<div style={{gridColumn:'1 / -1',background:'#0A0D14',borderRadius:9,padding:'9px 10px'}}>
+        <div style={{...flx({justifyContent:'space-between'})}}>
+          <span className="mono" style={{fontSize:14,fontWeight:800,color:'#26A17B'}}>{fmB(d.stbl)}</span>
+          <span style={{fontSize:8,color:'var(--faint)'}}>oferta de stablecoins (USDT+USDC+…)</span>
+        </div>
+        <div style={{fontSize:7.5,color:'var(--dim)',marginTop:3,lineHeight:1.4}}>Es la <b style={{color:'var(--txt)'}}>pólvora seca</b>: dinero listo para comprar. Subiendo = liquidez entrando (combustible alcista); bajando = capital saliendo del cripto.</div>
+      </div>}
+    </div>
+    <div style={{fontSize:8,color:'var(--faint)',marginTop:7,lineHeight:1.5}}>{alt?'🔥 Dominancia BTC baja: contexto de posible ALTSEASON (el dinero rota a alts).':btcD>=58?'🛡️ Dominancia BTC alta: el dinero se refugia en BTC (risk-off dentro del cripto).':'Dominancia BTC en zona media.'} Contexto, no señal de entrada.</div>
+  </div>);
+}
+
 function App(){
   const [payload,setPayload]=useState(null);
   const [source,setSource]=useState(null);
@@ -6482,6 +6529,8 @@ function App(){
         </div>
       )}
 
+
+      <MarketCtx/>
 
       {/* ── RESUMEN · todas las monedas (formato lista, estilo boceto) ── */}
       <div style={panel({marginBottom:16,padding:'12px 14px 6px'})}>
