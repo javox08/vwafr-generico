@@ -4079,6 +4079,18 @@ function QuantView({gFunding,nav}){
                   <div style={{fontSize:9.5,color:'var(--txt)',lineHeight:1.55}}><b style={{color:'var(--dim)'}}>Sin movimiento fuerte ahora (lateral).</b> {porque}</div>
                 )}
                 <div style={{fontSize:9.5,color:'var(--txt)',lineHeight:1.55,marginTop:6,paddingTop:6,borderTop:'1px solid var(--line2)'}}><b style={{color:'var(--dim)'}}>¿Qué es lo más probable?</b> {despues}</div>
+                {(()=>{ // dirección ACTUAL de lo que giraría el veredicto (CVD y funding): así se ve si ese giro
+                  // está cerca o lejos — con la palabra subiendo/bajando de cada uno, en pequeño.
+                  const cTxt=cd>0?'↑ subiendo':cd<0?'↓ bajando':'→ plano', cCol=cd>0?'var(--up)':cd<0?'var(--down)':'var(--dim)';
+                  const fDn=fnd!=null&&fnd<0;
+                  const fTxt=fnd==null?'s/d':fDn?'↓ negativo (los cortos pagan)':fundUp?'↑ subiendo (calentándose)':fundDn?'↓ bajando (enfriándose)':'→ estable';
+                  const fCol=fDn?'var(--up)':fundUp?'var(--down)':fundDn?'var(--up)':'var(--dim)';
+                  const chip={fontSize:8,fontWeight:800,padding:'2px 7px',borderRadius:7,background:'rgba(255,255,255,.04)',border:'1px solid var(--line2)'};
+                  return(<div style={{...flx({gap:6}),flexWrap:'wrap',marginTop:6}}>
+                    <span style={{fontSize:8,color:'var(--faint)',alignSelf:'center'}}>Ahora mismo →</span>
+                    <span style={{...chip,color:cCol}}>CVD {cTxt}</span>
+                    <span style={{...chip,color:fCol}}>Funding{fnd!=null?' '+fmt(fnd,3):''} {fTxt}</span>
+                  </div>);})()}
                 {(()=>{ // la misma pregunta, respondida con DATOS: backtest del veredicto actual (1h)
                   const st=pc&&VELO_STATS[pc.tf]&&VELO_STATS[pc.tf][pc.dir+','+pc.mdir];
                   if(!st)return null;
