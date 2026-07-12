@@ -840,6 +840,27 @@ function PosView({gFunding,cot}){
     const l60=kk.slice(-60);
     if(a)setK({cvd,price:+kk[kk.length-1][4],hi:Math.max(...l60.map(x=>+x[2])),lo:Math.min(...l60.map(x=>+x[3]))});
   }catch(_){}})();return()=>{a=false;};},[]);
+  // AUTO-AUDITORÍA del veredicto ⭐: guarda el sesgo del día + precio en el navegador (1/día)
+  // y, con las señales que ya tienen ≥5 días de recorrido, mide si la DIRECCIÓN acertó.
+  // Muestra el acierto REAL de la web en TU experiencia (privado, sin servidor).
+  const [track,setTrack]=useState(null);
+  useEffect(()=>{if(!d||!k||!Number.isFinite(k.price))return;
+    const parts=[];const tk=d.taker&&Number.isFinite(d.taker.pl)?d.taker.pl:null;
+    if(d.masaAgg!=null)parts.push(d.masaAgg);
+    if(d.prosAgg!=null){parts.push(d.prosAgg);parts.push(d.prosAgg);}
+    if(tk!=null)parts.push(tk);
+    if(parts.length<2)return;
+    const cons=parts.reduce((a,x)=>a+x,0)/parts.length, sig=cons>0.52?1:cons<0.48?-1:0;
+    try{let h=JSON.parse(localStorage.getItem('vwafr_track')||'[]');
+      const today=Math.floor(Date.now()/864e5);
+      if(!h.length||h[h.length-1].d!==today){h.push({d:today,sig,px:+(+k.price).toFixed(0)});while(h.length>140)h.shift();localStorage.setItem('vwafr_track',JSON.stringify(h));}
+      let hit=0,tot=0;
+      for(let i=0;i<h.length;i++){const e=h[i];if(!e.sig)continue;
+        let f=null;for(let j=i+1;j<h.length;j++){if(h[j].d-e.d>=5){f=h[j];break;}}
+        if(!f)continue;tot++;if((e.sig>0&&f.px>e.px)||(e.sig<0&&f.px<e.px))hit++;}
+      setTrack({tot,hit,n:h.length});
+    }catch(_){}
+  },[d,k]);
   // MAPA DE LIQUIDACIONES agregado (SNAPSHOT · estimación): niveles donde el volumen
   // apalancado entró y sería liquidado (±1/apalancamiento), repartido long/short por el
   // taker REAL de cada vela 4h, escalado por el OI AGREGADO de los 17 exchanges (relé fr).
@@ -970,6 +991,23 @@ function PosView({gFunding,cot}){
       </React.Fragment>):(
         <div style={{fontSize:10,color:'var(--faint)',textAlign:'center',padding:'10px 0'}}>Cargando los ratios oficiales…</div>)}
     </div>
+
+    {/* AUTO-AUDITORÍA del veredicto ⭐ (acierto REAL de dirección, medido en tu navegador) */}
+    {track&&(()=>{const {tot,hit,n}=track,wr=tot>0?Math.round(hit/tot*100):null;
+      const col=wr==null?'var(--faint)':wr>=55?'var(--up)':wr<=45?'var(--down)':'#F3BA2F';
+      return(<div style={panel({marginBottom:14,padding:16})}>
+        <div style={{...flx({justifyContent:'space-between'}),marginBottom:9}}>
+          <span style={eyebrow}>Auto-auditoría del veredicto ⭐</span>
+          <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>local · privado</span>
+        </div>
+        {tot>0?(<div style={{...flx({gap:13})}}>
+          <div className="mono" style={{fontSize:27,fontWeight:800,color:col,lineHeight:1}}>{wr}%</div>
+          <div style={{fontSize:10,color:'var(--dim)',lineHeight:1.5}}>de <b style={{color:'var(--txt)'}}>{tot}</b> señal{tot===1?'':'es'} con ≥5 días de recorrido, la <b style={{color:'var(--txt)'}}>dirección del ⭐ sesgo acertó</b>. Se registra 1 vez al día en tu navegador (historial de {n} día{n===1?'':'s'}); las señales neutras no cuentan.</div>
+        </div>):(
+          <div style={{fontSize:10,color:'var(--faint)',lineHeight:1.55}}>Reuniendo datos: el sesgo de hoy queda guardado. En ~5 días empezarás a ver el <b style={{color:'var(--dim)'}}>acierto real de dirección</b> de la web en TU experiencia. Se guarda solo en tu navegador (privado, sin servidor).</div>
+        )}
+        <div style={{fontSize:8,color:'var(--faint)',marginTop:8,lineHeight:1.5}}>Honestidad: muestra pequeña y local (no un backtest de 9 años como el de patrones). Mide si el sesgo agregado ⭐ anticipó la dirección a ~5 días. No es consejo financiero.</div>
+      </div>);})()}
 
     {/* funding + CVD spot vs perp */}
     <div id="ls-funding" style={{...panel({marginBottom:14,padding:16}),scrollMarginTop:10}}>
