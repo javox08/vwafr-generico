@@ -193,6 +193,16 @@ module.exports = async (req, res) => {
       }
     }
   } catch (e) {}
+  // CPI REAL de EE.UU. (Fed/FRED, oficial, sin clave): último IPC + variación interanual
+  // y mensual, para el calendario económico. FRED no da CORS al navegador → va por el relé.
+  try {
+    const txt = await fetch('https://fred.stlouisfed.org/graph/fredgraph.csv?id=CPIAUCSL&cosd=2023-01-01').then(r => r.text());
+    const rows = txt.trim().split('\n').slice(1).map(l => l.split(',')).filter(x => x[1] && x[1] !== '.' && Number.isFinite(+x[1]));
+    if (rows.length >= 13) {
+      const last = rows[rows.length - 1], prev = rows[rows.length - 2], y = rows[rows.length - 13];
+      out.cpi = { yoy: +((+last[1] / +y[1] - 1) * 100).toFixed(1), mom: +((+last[1] / +prev[1] - 1) * 100).toFixed(2), month: last[0] };
+    }
+  } catch (e) {}
   // VOLUMEN 24h FUTUROS vs SPOT (mismo exchange = comparable): Binance BTC+ETH.
   // Futuros = derivados apalancados; spot = compra/venta real. Ratio del mercado.
   {

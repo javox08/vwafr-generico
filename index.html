@@ -3068,16 +3068,11 @@ function QuantView({gFunding,nav}){
   const [velaSel,setVelaSel]=useState(null); // visor de patrón de velas (modal)
   const [infoSel,setInfoSel]=useState(null); // visor genérico (técnicos y manipulaciones)
   const [flowPro,setFlowPro]=useState(null); // panel PRO: Coinbase premium + long/short (masa/pros)
-  // CPI REAL (dato oficial de la Fed vía FRED, sin clave): último IPC y su variación
-  // interanual y mensual — para mostrar el "dato real" en el calendario económico.
+  // CPI REAL (dato oficial de la Fed/FRED) para el calendario — vía el relé (FRED no da
+  // CORS al navegador). Se muestra el "dato real" del IPC junto a su guía de impacto.
   const [cpiReal,setCpiReal]=useState(null);
   useEffect(()=>{let a=true;(async()=>{try{
-    const txt=await fetch('https://fred.stlouisfed.org/graph/fredgraph.csv?id=CPIAUCSL&cosd=2023-01-01').then(r=>r.text());
-    const rows=txt.trim().split('\n').slice(1).map(l=>l.split(',')).filter(x=>x[1]&&x[1]!=='.'&&Number.isFinite(+x[1]));
-    if(rows.length<13)return;
-    const last=rows[rows.length-1],prev=rows[rows.length-2],y=rows[rows.length-13];
-    const yoy=(+last[1]/+y[1]-1)*100, mom=(+last[1]/+prev[1]-1)*100;
-    if(a)setCpiReal({yoy:+yoy.toFixed(1),mom:+mom.toFixed(2),month:last[0]});
+    const j=await fetchLS();if(a&&j&&j.cpi&&Number.isFinite(j.cpi.yoy))setCpiReal(j.cpi);
   }catch(_){}})();return()=>{a=false;};},[]);
   const [veloTfSel,setVeloTfSel]=useState('4h'); // temporalidad de la Vista Velo (gráficos apilados)
   const [veloCopied,setVeloCopied]=useState(false); // feedback del botón "copiar análisis"
@@ -4877,6 +4872,7 @@ function QuantView({gFunding,nav}){
           <span style={eyebrow}>Calendario económico</span>
           {macroWindow&&<span className="mono" style={{fontSize:9,fontWeight:700,color:'var(--down)'}}>⚠ ventana de riesgo</span>}
         </div>
+        {cpiReal&&<div style={{fontSize:9,color:'var(--dim)',marginBottom:10,marginTop:-6,padding:'6px 9px',borderRadius:8,background:'#0A0D14',border:'1px solid var(--line2)'}} className="mono">📊 Último IPC EE.UU. REAL (Fed/FRED): <b style={{color:cpiReal.yoy>=3?'var(--down)':'var(--up)'}}>{cpiReal.yoy}% interanual</b> · {cpiReal.mom>=0?'+':''}{cpiReal.mom}% mensual <span style={{color:'var(--faint)'}}>({cpiReal.month})</span> {cpiReal.yoy>=3?'· inflación aún alta → presión para tipos altos (🔴 cripto)':'· inflación contenida → margen para bajar tipos (🟢 cripto)'}</div>}
         {evNext.map((e,i)=>{
           const days=Math.ceil((e.d-now)/D), past=days<0;
           // GUÍA DE IMPACTO según el resultado, para cripto/dólar/acciones (🟢 bueno · 🔴 malo).
