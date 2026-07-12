@@ -6021,7 +6021,12 @@ function MarketCtx(){
       try{const j=await fetch('https://stablecoins.llama.fi/stablecoins?includePrices=false').then(r=>r.json());
         const arr=(j&&j.peggedAssets)||[];let t=0;for(const x of arr){const c=x.circulating&&x.circulating.peggedUSD;if(Number.isFinite(c))t+=c;}
         if(t>0)o.stbl=t;}catch(_){}
-      if(a&&(o.btcD||o.stbl))setD(o);};
+      // tesorerías corporativas de BTC (proxy de adopción institucional; los flujos de
+      // ETF spot no tienen API pública gratuita fiable, esto es lo más cercano y oficial)
+      try{const j=await fetch('https://api.coingecko.com/api/v3/companies/public_treasury/bitcoin').then(r=>r.json());
+        if(j&&Number.isFinite(j.total_holdings)&&j.total_holdings>0){o.corpBtc=j.total_holdings;o.corpUsd=j.total_value_usd;o.corpTop=(j.companies&&j.companies[0]&&j.companies[0].name)||null;o.corpTopBtc=(j.companies&&j.companies[0]&&j.companies[0].total_holdings)||null;}
+      }catch(_){}
+      if(a&&(o.btcD||o.stbl||o.corpBtc))setD(o);};
     load();const t=setInterval(load,300000);return()=>{a=false;clearInterval(t);};},[]);
   if(!d)return null;
   const fmB=v=>v>=1e12?'$'+(v/1e12).toFixed(2)+'T':'$'+Math.round(v/1e9)+'B';
@@ -6048,6 +6053,13 @@ function MarketCtx(){
           <span style={{fontSize:8,color:'var(--faint)'}}>oferta de stablecoins (USDT+USDC+…)</span>
         </div>
         <div style={{fontSize:7.5,color:'var(--dim)',marginTop:3,lineHeight:1.4}}>Es la <b style={{color:'var(--txt)'}}>pólvora seca</b>: dinero listo para comprar. Subiendo = liquidez entrando (combustible alcista); bajando = capital saliendo del cripto.</div>
+      </div>}
+      {d.corpBtc!=null&&<div style={{gridColumn:'1 / -1',background:'#0A0D14',borderRadius:9,padding:'9px 10px'}}>
+        <div style={{...flx({justifyContent:'space-between'})}}>
+          <span className="mono" style={{fontSize:13,fontWeight:800,color:'#F7931A'}}>{Math.round(d.corpBtc).toLocaleString('es-ES')} BTC{d.corpUsd?' · '+fmB(d.corpUsd):''}</span>
+          <span style={{fontSize:8,color:'var(--faint)'}}>🏦 tesorerías corporativas</span>
+        </div>
+        <div style={{fontSize:7.5,color:'var(--dim)',marginTop:3,lineHeight:1.4}}>BTC en balance de empresas cotizadas{d.corpTop&&d.corpTopBtc?(' (líder '+d.corpTop+' con '+Math.round(d.corpTopBtc).toLocaleString('es-ES')+' BTC)'):''} — proxy de adopción institucional. Los flujos de ETF spot no tienen API pública gratis fiable; esto es lo más cercano y oficial.</div>
       </div>}
     </div>
     <div style={{fontSize:8,color:'var(--faint)',marginTop:7,lineHeight:1.5}}>{alt?'🔥 Dominancia BTC baja: contexto de posible ALTSEASON (el dinero rota a alts).':btcD>=58?'🛡️ Dominancia BTC alta: el dinero se refugia en BTC (risk-off dentro del cripto).':'Dominancia BTC en zona media.'} Contexto, no señal de entrada.</div>
