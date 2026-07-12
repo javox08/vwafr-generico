@@ -4931,7 +4931,11 @@ function QuantView({gFunding,nav}){
             :e.t==='FOMC'
             ?{hi:'Tono DURO / sube o mantiene tipos altos (hawkish)',hiA:['🔴','🔴','🟢'],lo:'Tono BLANDO / recorte o señal dovish',loA:['🟢','🟢','🔴']}
             :null;
-          const isCpiLast=e.t==='CPI'&&past&&cpiReal;
+          // CPI más reciente ya PUBLICADO (el último pasado) y PRÓXIMO CPI (el primero futuro):
+          // en uno mostramos el número que SALIÓ, en el otro el ESPERADO (estimación por tendencia).
+          const isLastCpi=e.t==='CPI'&&past&&cpiReal&&!evNext.some((x,j)=>j>i&&x.t==='CPI'&&Math.ceil((x.d-now)/D)<0);
+          const isNextCpi=e.t==='CPI'&&!past&&cpiReal&&cpiReal.estMom!=null&&!evNext.some((x,j)=>j<i&&x.t==='CPI'&&Math.ceil((x.d-now)/D)>=0);
+          const numBox={fontSize:9,color:'var(--dim)',marginTop:5,marginLeft:2,padding:'5px 8px',borderRadius:7,background:'#0A0D14',border:'1px solid var(--line2)'};
           return(
             <div key={i} style={{padding:'9px 0',borderTop:i?'1px solid #12151F':'none',opacity:past?.9:1}}>
               <div style={{...flx({justifyContent:'space-between'})}}>
@@ -4944,8 +4948,18 @@ function QuantView({gFunding,nav}){
                   {past?'hace '+(-days)+'d ✓':days<=0?'HOY':'en '+days+'d'}
                 </span>
               </div>
-              {isCpiLast&&<div style={{fontSize:9,color:'var(--dim)',marginTop:4,marginLeft:2}} className="mono">📊 Último dato REAL (BLS): <b style={{color:cpiReal.yoy>=3?'var(--down)':'var(--up)'}}>{cpiReal.yoy}% interanual</b> · {cpiReal.mom>=0?'+':''}{cpiReal.mom}% mensual <span style={{color:'var(--faint)'}}>({cpiReal.month})</span></div>}
-              {imp&&<div style={{marginTop:5,marginLeft:2,fontSize:8,color:'var(--faint)',lineHeight:1.7}}>
+              {/* PRÓXIMO IPC: número esperado (estimación) + real pendiente */}
+              {isNextCpi&&<div style={numBox} className="mono">
+                🔮 <b style={{color:'var(--txt)'}}>Esperado</b>: ~{cpiReal.estMom>=0?'+':''}{cpiReal.estMom}% mensual{cpiReal.estYoy!=null?' · ~'+cpiReal.estYoy+'% interanual':''} · <b style={{color:'#F3BA2F'}}>Real: pendiente</b>
+                <div style={{fontSize:7.5,color:'var(--faint)',marginTop:2}}>estimación por tendencia (media de 6 meses), NO es el consenso oficial · último real publicado: {cpiReal.yoy}% interanual</div>
+              </div>}
+              {/* IPC ya publicado: número que SALIÓ (real BLS) vs el previo → sorpresa y reacción real */}
+              {isLastCpi&&(()=>{const surY=cpiReal.prevYoy!=null?+(cpiReal.yoy-cpiReal.prevYoy).toFixed(1):null;const hot=surY!=null&&surY>0;
+                return(<div style={numBox} className="mono">
+                  ✅ <b style={{color:'var(--txt)'}}>Salió</b> (real BLS): <b style={{color:cpiReal.yoy>=3?'var(--down)':'var(--up)'}}>{cpiReal.yoy}%</b> interanual · {cpiReal.mom>=0?'+':''}{cpiReal.mom}% mensual{cpiReal.prevYoy!=null?' · previo '+cpiReal.prevYoy+'%':''} <span style={{color:'var(--faint)'}}>({cpiReal.month})</span>
+                  {surY!=null&&<div style={{fontSize:8,marginTop:2,color:hot?'var(--down)':'var(--up)'}}>{surY===0?'= igual que el previo':(hot?'↑ subió ':'↓ bajó ')+Math.abs(surY)+'pp vs previo'} → {hot?'inflación al alza → 🔴 cripto·bolsa · 🟢 dólar':surY<0?'inflación cede → 🟢 cripto·bolsa · 🔴 dólar':'sin sorpresa → impacto neutro'}</div>}
+                </div>);})()}
+              {imp&&!isLastCpi&&<div style={{marginTop:5,marginLeft:2,fontSize:8,color:'var(--faint)',lineHeight:1.7}}>
                 <div>{imp.hiA[0]} cripto · {imp.hiA[1]} bolsa · {imp.hiA[2]} dólar — si {imp.hi}</div>
                 <div>{imp.loA[0]} cripto · {imp.loA[1]} bolsa · {imp.loA[2]} dólar — si {imp.lo}</div>
               </div>}
@@ -4965,7 +4979,7 @@ function QuantView({gFunding,nav}){
             </span>
           </div>);})()}
         <p style={{fontSize:9.5,color:'var(--faint)',lineHeight:1.5,marginTop:10}}>
-          <b style={{color:'var(--txt)'}}>🟢 = bueno · 🔴 = malo</b> para cada activo según el resultado (el mercado reacciona a la SORPRESA: dato real vs esperado). Ej.: IPC más alto de lo esperado → la Fed sube/mantiene tipos → malo para cripto y bolsa, bueno para el dólar. El <b>dato real</b> del IPC es oficial (Fed/FRED); el "esperado" (consenso) no tiene API pública gratis, por eso se muestran los dos escenarios. Se mantienen 5 días tras el evento para ver el resultado. En las 48h alrededor la volatilidad se dispara: el modelo fuerza <b style={{color:'var(--down)'}}>NO-GO</b>. Los <b>cierres de gobierno</b> de EE.UU. retrasan datos macro.
+          <b style={{color:'var(--txt)'}}>🟢 = bueno · 🔴 = malo</b> para cada activo según el resultado (el mercado reacciona a la SORPRESA: dato real vs lo previo/esperado). Ej.: IPC más alto de lo esperado → la Fed sube/mantiene tipos → malo para cripto y bolsa, bueno para el dólar. El <b>número que salió</b> del IPC es oficial (BLS); el <b>esperado</b> es una estimación por tendencia (media de 6 meses) — <b>no</b> el consenso de mercado, que no tiene API pública gratis. Se mantienen 5 días tras el evento para ver el resultado. En las 48h alrededor la volatilidad se dispara: el modelo fuerza <b style={{color:'var(--down)'}}>NO-GO</b>. Los <b>cierres de gobierno</b> de EE.UU. retrasan datos macro.
         </p>
       </div>
 

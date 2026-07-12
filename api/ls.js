@@ -204,7 +204,18 @@ module.exports = async (req, res) => {
       const v = i => parseFloat(s[i].value);
       const last = v(0), prev = v(1), yr = v(12);
       const mn = { M01: '01', M02: '02', M03: '03', M04: '04', M05: '05', M06: '06', M07: '07', M08: '08', M09: '09', M10: '10', M11: '11', M12: '12' }[s[0].period] || '01';
-      if (last > 0 && yr > 0) out.cpi = { yoy: +((last / yr - 1) * 100).toFixed(1), mom: +((last / prev - 1) * 100).toFixed(2), month: s[0].year + '-' + mn + '-01' };
+      if (last > 0 && yr > 0) {
+        out.cpi = { yoy: +((last / yr - 1) * 100).toFixed(1), mom: +((last / prev - 1) * 100).toFixed(2), month: s[0].year + '-' + mn + '-01' };
+        // dato PREVIO (el anterior publicado, la referencia con la que el mercado compara)
+        if (s.length >= 14) { const prev2 = v(2), yr2 = v(13);
+          if (prev > 0 && prev2 > 0 && yr2 > 0) { out.cpi.prevYoy = +((prev / yr2 - 1) * 100).toFixed(1); out.cpi.prevMom = +((prev / prev2 - 1) * 100).toFixed(2); } }
+        // ESTIMACIÓN para el PRÓXIMO dato: media de las últimas ~6 variaciones mensuales (run-rate).
+        // NO es el consenso de mercado (sin API pública gratis), es una proyección por tendencia.
+        const ms = []; for (let i = 0; i < 6 && i + 1 < s.length; i++) { const a = v(i), b = v(i + 1); if (a > 0 && b > 0) ms.push(a / b - 1); }
+        if (ms.length >= 3) { const em = ms.reduce((p, x) => p + x, 0) / ms.length;
+          out.cpi.estMom = +(em * 100).toFixed(2);
+          if (v(11) > 0) out.cpi.estYoy = +(((last * (1 + em)) / v(11) - 1) * 100).toFixed(1); }
+      }
     }
   } catch (e) {}
   // respaldo: FRED (CSV, sin clave) si BLS no respondió
@@ -214,8 +225,13 @@ module.exports = async (req, res) => {
     }).then(r => r.text());
     const rows = txt.trim().split('\n').slice(1).map(l => l.split(',')).filter(x => x[1] && x[1] !== '.' && Number.isFinite(+x[1]));
     if (rows.length >= 13) {
-      const last = rows[rows.length - 1], prev = rows[rows.length - 2], y = rows[rows.length - 13];
+      const n = rows.length, last = rows[n - 1], prev = rows[n - 2], y = rows[n - 13];
       out.cpi = { yoy: +((+last[1] / +y[1] - 1) * 100).toFixed(1), mom: +((+last[1] / +prev[1] - 1) * 100).toFixed(2), month: last[0] };
+      if (n >= 14) { const prev2 = rows[n - 3], y2 = rows[n - 14];
+        out.cpi.prevYoy = +((+prev[1] / +y2[1] - 1) * 100).toFixed(1); out.cpi.prevMom = +((+prev[1] / +prev2[1] - 1) * 100).toFixed(2); }
+      const ms = []; for (let i = 0; i < 6 && n - 2 - i >= 0; i++) { const a = +rows[n - 1 - i][1], b = +rows[n - 2 - i][1]; if (a > 0 && b > 0) ms.push(a / b - 1); }
+      if (ms.length >= 3 && n - 12 >= 0) { const em = ms.reduce((p, x) => p + x, 0) / ms.length;
+        out.cpi.estMom = +(em * 100).toFixed(2); out.cpi.estYoy = +(((+last[1] * (1 + em)) / +rows[n - 12][1] - 1) * 100).toFixed(1); }
     }
   } catch (e) {}
   // VOLUMEN 24h FUTUROS vs SPOT (mismo exchange = comparable): Binance BTC+ETH.
