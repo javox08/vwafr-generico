@@ -107,10 +107,20 @@
     html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
     html,body{overflow-x:hidden;max-width:100%}
     img,svg,canvas{max-width:100%}
-    /* ajuste automático al dispositivo: en tablet/escritorio se ESCALA todo el
-       contenido (texto, paneles y gráficos crecen a la vez, no se ve chiquito) */
-    @media(min-width:700px) and (max-width:1099px){body{zoom:1.28}}
-    @media(min-width:1100px){body{zoom:1.5}}
+    /* Contenedor principal. Móvil: una columna cómoda. Tablet en vertical: se escala
+       un poco. Tablet apaisada y escritorio: DOS columnas para aprovechar el ancho y
+       no dejar huecos vacíos a los lados (los paneles fluyen; cabecera, navegación y
+       pie ocupan el ancho completo). */
+    .mainwrap{max-width:540px;margin-inline:auto;padding-inline:16px}
+    @media(min-width:700px) and (max-width:819px){body{zoom:1.15}}
+    /* A partir de ~820px de ancho, los paneles fluyen en tantas columnas como quepan
+       (~360px cada una): 2 en tablet, 3 en escritorio, 4 en pantallas grandes. Se ajusta
+       solo al ancho real, sin dejar huecos. Cabecera, navegación y pie ocupan todo el ancho. */
+    @media(min-width:820px){
+      .mainwrap{max-width:1500px;column-width:360px;column-gap:28px}
+      .mainwrap>.span-all{column-span:all}
+      .mainwrap>*{break-inside:avoid}
+    }
     input,button,textarea{font-family:inherit}
     body{background:var(--bg);font-family:'Sora',system-ui,sans-serif;color:var(--txt);
       -webkit-font-smoothing:antialiased;padding-bottom:70px}
@@ -6531,10 +6541,10 @@ function App(){
 
   return(
     <>
-    <div style={{...wrap,paddingBottom:8}}>
+    <div className="mainwrap" style={{paddingBottom:8}}>
 
       {/* TOPBAR */}
-      <div style={{...flx({justifyContent:'space-between'}),padding:'4px 2px 12px'}}>
+      <div className="span-all" style={{...flx({justifyContent:'space-between'}),padding:'4px 2px 12px'}}>
         <div>
           <div style={{...flx({gap:7}),marginBottom:5}}>
             <div style={{width:7,height:7,borderRadius:2,background:'var(--accent)',
@@ -6549,14 +6559,14 @@ function App(){
 
       {/* PWA: ofrecer instalación de la app */}
       {installEvt&&(
-        <div onClick={doInstall} style={{...flx({justifyContent:'center',gap:8}),marginBottom:12,padding:'10px 14px',borderRadius:11,cursor:'pointer',
+        <div onClick={doInstall} className="span-all" style={{...flx({justifyContent:'center',gap:8}),marginBottom:12,padding:'10px 14px',borderRadius:11,cursor:'pointer',
           background:'rgba(31,224,160,.10)',border:'1px solid rgba(31,224,160,.35)'}}>
           <span style={{fontSize:15}}>📲</span>
           <span style={{fontSize:12,fontWeight:700,color:'var(--txt)'}}>Instalar la app</span>
           <span style={{fontSize:9.5,color:'var(--faint)'}}>· acceso directo, offline y más rápida</span>
         </div>)}
       {iosHint&&!installEvt&&(
-        <div style={{...flx({gap:8}),marginBottom:12,padding:'10px 14px',borderRadius:11,
+        <div className="span-all" style={{...flx({gap:8}),marginBottom:12,padding:'10px 14px',borderRadius:11,
           background:'rgba(110,139,255,.08)',border:'1px solid rgba(110,139,255,.25)'}}>
           <span style={{fontSize:15,flexShrink:0}}>📲</span>
           <span style={{fontSize:10,color:'var(--faint)',lineHeight:1.5,flex:1}}>Instálala: toca <b style={{color:'var(--txt)'}}>Compartir</b> y luego <b style={{color:'var(--txt)'}}>"Añadir a pantalla de inicio"</b>.</span>
@@ -6564,7 +6574,7 @@ function App(){
         </div>)}
 
       {/* NAV apartados */}
-      <div style={{...flx({gap:7}),marginBottom:16}}>
+      <div className="span-all" style={{...flx({gap:7}),marginBottom:16}}>
         {[['home','Funding'],['cycle','Ciclo'],['quant','Cuantitativo'],['pos','L/S'],['bots','Bots'],['pib','Macro']].map(([k,label])=>{
           const on=view===k;
           return(
@@ -6909,7 +6919,7 @@ function App(){
       </>}
 
       {/* PIE DE PÁGINA (todas las vistas) */}
-      <div className="ftr">
+      <div className="ftr span-all">
         <div style={{fontWeight:800,color:'var(--txt)',fontSize:12.5,letterSpacing:-.2}}>VWAFR · Cripto Quant</div>
         <div style={{marginTop:4}}>Funding · Ciclo BTC · Cuantitativo · Macro · 100% automático</div>
         <div className="links">
