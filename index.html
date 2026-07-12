@@ -4579,7 +4579,7 @@ function QuantView({gFunding,nav}){
                 <span style={{fontSize:12.5,fontWeight:700,color:pt.dud?'var(--faint)':pt.sig>0?'var(--up)':pt.sig<0?'var(--down)':'var(--txt)'}}>{pt.t}</span>
                 {pt.tf&&pt.tf!=='1D'&&<span className="mono" style={{fontSize:7.5,fontWeight:800,flexShrink:0,padding:'1px 5px',borderRadius:6,color:tfCol[pt.tf]||'var(--dim)',background:'rgba(255,255,255,.05)',border:'1px solid var(--line2)'}}>{pt.tf==='1S'?'SEMANAL':pt.tf}</span>}
                 <span className="mono" style={{fontSize:7.5,fontWeight:700,flexShrink:0,padding:'1px 5px',borderRadius:7,
-                  color:pt.dud?'var(--down)':pt.fake?'var(--down)':pt.forming?'#F3BA2F':'var(--up)',background:'rgba(255,255,255,.04)'}}>{pt.dud?'⚠ no rentable':pt.fake?'✗ cancelada (fake)':pt.forming?'⏳ en formación':'✓ confirmada'}</span>
+                  color:pt.dud?'var(--down)':pt.fake?'var(--down)':pt.forming?'#F3BA2F':'var(--up)',background:'rgba(255,255,255,.04)'}}>{pt.dud?'⚠ no rentable':pt.fake?'✗ cancelada (fake)':pt.forming?'⏳ en formación':'✓ confirmada'}{!pt.dud&&!pt.fake&&pt.win!=null?' · '+pt.win+'%'+(pt.forming?' si confirma':' prob.'):''}</span>
               </div>
               <div style={{fontSize:9.5,color:'var(--faint)'}}>{pt.d}</div>
               {pt.dud
