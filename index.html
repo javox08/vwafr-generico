@@ -3829,15 +3829,19 @@ function QuantView({gFunding,nav}){
 
       {/* SEÑAL DE ALTA PROBABILIDAD (selectiva, con acierto real backtesteado) */}
       {c.hiConf&&(()=>{const a=c.hiConf.active, ref=c.hiConf.ref;
-        if(a){const up=a.dir>0,col=up?'var(--up)':'var(--down)';
+        // ACIERTO CONSERVADOR: un 100% con n=34 engaña (muestras pequeñas dan extremos por
+        // azar). Encogemos hacia un previo del 55% con fuerza 12 (estimación bayesiana):
+        // nunca prometemos 100% y el número baja solo con las muestras chicas.
+        const shr=(h,n)=>Math.round((h*n+55*12)/((n||0)+12));
+        if(a){const up=a.dir>0,col=up?'var(--up)':'var(--down)',ah=shr(a.hit,a.n);
           return(
           <div style={panel({marginBottom:14,padding:16,background:`radial-gradient(120% 90% at 50% 0%, ${col}18 0%, var(--panel) 60%)`,borderColor:`${col}45`})}>
             <div style={{...flx({justifyContent:'space-between'}),marginBottom:8}}>
               <span style={eyebrow}>🎯 Señal de alta probabilidad</span>
-              <span className="mono" style={{fontSize:9.5,fontWeight:800,color:col,padding:'2px 8px',borderRadius:10,background:`${col}1F`,border:`1px solid ${col}55`}}>{a.hit}% acierto histórico</span>
+              <span className="mono" style={{fontSize:9.5,fontWeight:800,color:col,padding:'2px 8px',borderRadius:10,background:`${col}1F`,border:`1px solid ${col}55`}}>~{ah}% acierto histórico</span>
             </div>
             <div style={{fontSize:15,fontWeight:800,color:col,marginBottom:4}}>{up?'▲ COMPRA':'▼ VENTA'} · {a.t}</div>
-            <div style={{fontSize:10.5,color:'var(--dim)',marginBottom:10}}>Solo salta en los setups más fiables (backtest de {a.n} casos en 9 años). No es garantía: acierta ~{a.hit} de cada 100 veces.</div>
+            <div style={{fontSize:10.5,color:'var(--dim)',marginBottom:10}}>Solo salta en los setups más fiables (backtest de {a.n} casos en 9 años · estimación conservadora, no el % crudo). No es garantía: acierta ~{ah} de cada 100 veces.</div>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
               {[['Entrada',money(a.entry),'var(--txt)'],['🎯 Objetivo',money(a.tp),'var(--up)'],['🛑 Stop',money(a.sl),'var(--down)']].map((m,i)=>(
                 <div key={i} style={{background:'#0A0D14',borderRadius:9,padding:'9px 6px',textAlign:'center'}}>
@@ -3854,7 +3858,7 @@ function QuantView({gFunding,nav}){
             <span style={eyebrow}>🎯 Señal de alta probabilidad</span>
             <span className="mono" style={{fontSize:9,fontWeight:700,color:'var(--faint)'}}>en espera</span>
           </div>
-          <div style={{fontSize:10.5,color:'var(--dim)',lineHeight:1.5}}>Sin señal de alta fiabilidad ahora mismo. El sistema <b>solo avisa cuando se alinea un setup de acierto alto</b> (no todos los días — así se mantiene la precisión).{ref&&ref.hit!=null?' El más fiable ('+ref.t+') acierta el '+ref.hit+'% cuando aparece (n='+ref.n+').':''}</div>
+          <div style={{fontSize:10.5,color:'var(--dim)',lineHeight:1.5}}>Sin señal de alta fiabilidad ahora mismo. El sistema <b>solo avisa cuando se alinea un setup de acierto alto</b> (no todos los días — así se mantiene la precisión).{ref&&ref.hit!=null?' El más fiable ('+ref.t+') acierta ~'+shr(ref.hit,ref.n)+'% cuando aparece (estimación conservadora · n='+ref.n+').':''}</div>
         </div>);
       })()}
 
