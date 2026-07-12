@@ -195,8 +195,23 @@ module.exports = async (req, res) => {
   } catch (e) {}
   // CPI REAL de EE.UU. (Fed/FRED, oficial, sin clave): último IPC + variación interanual
   // y mensual, para el calendario económico. FRED no da CORS al navegador → va por el relé.
+  // 1º BLS (Oficina de Estadísticas Laborales, responde bien desde datacenter); series
+  // CUUR0000SA0 = IPC-U todos los ítems. Devuelve lo más reciente primero.
   try {
-    const txt = await fetch('https://fred.stlouisfed.org/graph/fredgraph.csv?id=CPIAUCSL&cosd=2023-01-01').then(r => r.text());
+    const j = await fetch('https://api.bls.gov/publicAPI/v2/timeseries/data/CUUR0000SA0?startyear=' + (new Date().getUTCFullYear() - 1) + '&endyear=' + new Date().getUTCFullYear()).then(r => r.json());
+    const s = j && j.Results && j.Results.series && j.Results.series[0] && j.Results.series[0].data;
+    if (Array.isArray(s) && s.length >= 13) {
+      const v = i => parseFloat(s[i].value);
+      const last = v(0), prev = v(1), yr = v(12);
+      const mn = { M01: '01', M02: '02', M03: '03', M04: '04', M05: '05', M06: '06', M07: '07', M08: '08', M09: '09', M10: '10', M11: '11', M12: '12' }[s[0].period] || '01';
+      if (last > 0 && yr > 0) out.cpi = { yoy: +((last / yr - 1) * 100).toFixed(1), mom: +((last / prev - 1) * 100).toFixed(2), month: s[0].year + '-' + mn + '-01' };
+    }
+  } catch (e) {}
+  // respaldo: FRED (CSV, sin clave) si BLS no respondió
+  if (!out.cpi) try {
+    const txt = await fetch('https://fred.stlouisfed.org/graph/fredgraph.csv?id=CPIAUCSL&cosd=2023-01-01', {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; VWAFR/1.0)', 'Accept': 'text/csv,*/*' }
+    }).then(r => r.text());
     const rows = txt.trim().split('\n').slice(1).map(l => l.split(',')).filter(x => x[1] && x[1] !== '.' && Number.isFinite(+x[1]));
     if (rows.length >= 13) {
       const last = rows[rows.length - 1], prev = rows[rows.length - 2], y = rows[rows.length - 13];
