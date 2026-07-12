@@ -3068,6 +3068,17 @@ function QuantView({gFunding,nav}){
   const [velaSel,setVelaSel]=useState(null); // visor de patrón de velas (modal)
   const [infoSel,setInfoSel]=useState(null); // visor genérico (técnicos y manipulaciones)
   const [flowPro,setFlowPro]=useState(null); // panel PRO: Coinbase premium + long/short (masa/pros)
+  // CPI REAL (dato oficial de la Fed vía FRED, sin clave): último IPC y su variación
+  // interanual y mensual — para mostrar el "dato real" en el calendario económico.
+  const [cpiReal,setCpiReal]=useState(null);
+  useEffect(()=>{let a=true;(async()=>{try{
+    const txt=await fetch('https://fred.stlouisfed.org/graph/fredgraph.csv?id=CPIAUCSL&cosd=2023-01-01').then(r=>r.text());
+    const rows=txt.trim().split('\n').slice(1).map(l=>l.split(',')).filter(x=>x[1]&&x[1]!=='.'&&Number.isFinite(+x[1]));
+    if(rows.length<13)return;
+    const last=rows[rows.length-1],prev=rows[rows.length-2],y=rows[rows.length-13];
+    const yoy=(+last[1]/+y[1]-1)*100, mom=(+last[1]/+prev[1]-1)*100;
+    if(a)setCpiReal({yoy:+yoy.toFixed(1),mom:+mom.toFixed(2),month:last[0]});
+  }catch(_){}})();return()=>{a=false;};},[]);
   const [veloTfSel,setVeloTfSel]=useState('4h'); // temporalidad de la Vista Velo (gráficos apilados)
   const [veloCopied,setVeloCopied]=useState(false); // feedback del botón "copiar análisis"
   const [showAllPats,setShowAllPats]=useState(false); // ver todos los patrones (la lista se capa a 12)
@@ -3764,7 +3775,8 @@ function QuantView({gFunding,nav}){
   },[q,gFunding]);
 
   const D=86400000, now=Date.now();
-  const evNext=ECON.map(e=>({d:new Date(e[0]+'T13:00:00Z').getTime(),t:e[1],n:e[2]})).filter(e=>e.d>now-D).sort((a,b)=>a.d-b.d).slice(0,4);
+  // ventana: 5 días hacia atrás (para ver el resultado ya publicado) + los próximos
+  const evNext=ECON.map(e=>({d:new Date(e[0]+'T13:00:00Z').getTime(),t:e[1],n:e[2]})).filter(e=>e.d>now-5*D).sort((a,b)=>a.d-b.d).slice(0,6);
   const macroWindow=evNext.length&&Math.abs(evNext[0].d-now)<2*D;
   const money=v=>(v==null||!Number.isFinite(v))?'—':'$'+Math.round(v).toLocaleString('es-ES');
 
@@ -4866,17 +4878,32 @@ function QuantView({gFunding,nav}){
           {macroWindow&&<span className="mono" style={{fontSize:9,fontWeight:700,color:'var(--down)'}}>⚠ ventana de riesgo</span>}
         </div>
         {evNext.map((e,i)=>{
-          const days=Math.ceil((e.d-now)/D);
+          const days=Math.ceil((e.d-now)/D), past=days<0;
+          // GUÍA DE IMPACTO según el resultado, para cripto/dólar/acciones (🟢 bueno · 🔴 malo).
+          // El mercado reacciona a la SORPRESA (real vs esperado): estas son las reglas típicas.
+          const imp=e.t==='CPI'
+            ?{hi:'IPC por ENCIMA de lo esperado (inflación alta → Fed más dura)',hiA:['🔴','🔴','🟢'],lo:'IPC por DEBAJO (inflación cede → Fed más blanda)',loA:['🟢','🟢','🔴']}
+            :e.t==='FOMC'
+            ?{hi:'Tono DURO / sube o mantiene tipos altos (hawkish)',hiA:['🔴','🔴','🟢'],lo:'Tono BLANDO / recorte o señal dovish',loA:['🟢','🟢','🔴']}
+            :null;
+          const isCpiLast=e.t==='CPI'&&past&&cpiReal;
           return(
-            <div key={i} style={{...flx({justifyContent:'space-between'}),padding:'8px 0',borderTop:i?'1px solid #12151F':'none'}}>
-              <div style={{...flx({gap:8})}}>
-                <span style={{fontSize:9,fontWeight:800,color:'#07090E',background:e.t==='FOMC'?'#F3BA2F':'#6E8BFF',
-                  borderRadius:5,padding:'2px 6px'}}>{e.t}</span>
-                <span style={{fontSize:11.5,color:'var(--dim)'}}>{e.n}</span>
+            <div key={i} style={{padding:'9px 0',borderTop:i?'1px solid #12151F':'none',opacity:past?.9:1}}>
+              <div style={{...flx({justifyContent:'space-between'})}}>
+                <div style={{...flx({gap:8})}}>
+                  <span style={{fontSize:9,fontWeight:800,color:'#07090E',background:e.t==='FOMC'?'#F3BA2F':'#6E8BFF',
+                    borderRadius:5,padding:'2px 6px'}}>{e.t}</span>
+                  <span style={{fontSize:11.5,color:'var(--dim)'}}>{e.n}</span>
+                </div>
+                <span className="mono" style={{fontSize:10.5,color:past?'var(--faint)':days<=2?'var(--down)':'var(--faint)',fontWeight:days<=2&&!past?700:400}}>
+                  {past?'hace '+(-days)+'d ✓':days<=0?'HOY':'en '+days+'d'}
+                </span>
               </div>
-              <span className="mono" style={{fontSize:10.5,color:days<=2?'var(--down)':'var(--faint)',fontWeight:days<=2?700:400}}>
-                {days<=0?'hoy':'en '+days+'d'}
-              </span>
+              {isCpiLast&&<div style={{fontSize:9,color:'var(--dim)',marginTop:4,marginLeft:2}} className="mono">📊 Último dato REAL: <b style={{color:cpiReal.yoy>=3?'var(--down)':'var(--up)'}}>{cpiReal.yoy}% interanual</b> · {cpiReal.mom>=0?'+':''}{cpiReal.mom}% mensual <span style={{color:'var(--faint)'}}>({cpiReal.month})</span></div>}
+              {imp&&<div style={{marginTop:5,marginLeft:2,fontSize:8,color:'var(--faint)',lineHeight:1.7}}>
+                <div>{imp.hiA[0]} cripto · {imp.hiA[1]} bolsa · {imp.hiA[2]} dólar — si {imp.hi}</div>
+                <div>{imp.loA[0]} cripto · {imp.loA[1]} bolsa · {imp.loA[2]} dólar — si {imp.lo}</div>
+              </div>}
             </div>
           );
         })}
@@ -4893,7 +4920,7 @@ function QuantView({gFunding,nav}){
             </span>
           </div>);})()}
         <p style={{fontSize:9.5,color:'var(--faint)',lineHeight:1.5,marginTop:10}}>
-          En las 48h alrededor de estos eventos la volatilidad se dispara. El modelo fuerza <b style={{color:'var(--down)'}}>NO-GO</b> en esa ventana. Los <b>cierres de gobierno</b> de EE.UU. añaden incertidumbre y retrasan datos macro.
+          <b style={{color:'var(--txt)'}}>🟢 = bueno · 🔴 = malo</b> para cada activo según el resultado (el mercado reacciona a la SORPRESA: dato real vs esperado). Ej.: IPC más alto de lo esperado → la Fed sube/mantiene tipos → malo para cripto y bolsa, bueno para el dólar. El <b>dato real</b> del IPC es oficial (Fed/FRED); el "esperado" (consenso) no tiene API pública gratis, por eso se muestran los dos escenarios. Se mantienen 5 días tras el evento para ver el resultado. En las 48h alrededor la volatilidad se dispara: el modelo fuerza <b style={{color:'var(--down)'}}>NO-GO</b>. Los <b>cierres de gobierno</b> de EE.UU. retrasan datos macro.
         </p>
       </div>
 
