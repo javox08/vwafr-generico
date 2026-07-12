@@ -24,7 +24,7 @@
     cpi:{yoy:3.1,mom:0.24,month:'2026-05-01',prevYoy:3.4,prevMom:0.18,estMom:0.22,estYoy:3.0,estLastMom:0.16,estLastYoy:2.8},
     jobs:{month:'2026-06-01',nfp:{act:57,prev:129,est:92,estLast:80},unemp:{act:4.2,prev:4.3}},
     btc:{pos:1.17,posSrcs:2,posEx:['OKX','Binance'],posW:true,taker:{b:52300,s:49100,pl:0.5158},prem:-0.038,
-      lsEx:{acc:{OKX:1.2,Bybit:1.35,Binance:1.95},pro:{OKX:1.008,Binance:1.35}},oiSplit:{coinM:1.42,stableM:6.63},skew:{rr:-9.27,atmIv:33.2,days:20},cvdAgg:{binUsd:820000000,okxUsd:1305000000},
+      lsEx:{acc:{OKX:1.2,Bybit:1.35,Binance:1.95},pro:{OKX:1.008,Binance:1.35}},oiSplit:{coinM:1.42,stableM:6.63},skew:{rr:-9.27,atmIv:33.2,days:20},opts:{exp:'31JUL26',days:19,maxPain:64000,pc:0.41,callOI:67464,putOI:27603,spot:64196},cvdAgg:{binUsd:820000000,okxUsd:1305000000},
       oiHist:oiH,premHist:pmH,cvdFut:oiH.map(function(v,i){return +(i*10-2000+Math.random()*50).toFixed(1);}),fundHist:fdH,premHistD:pmH.slice(0,90),oiHistD:oiH.slice(0,30),
       hist:Array.from({length:72},function(){return 1.5+Math.random()*0.1;})},
     mkt:{futVol:14.9,spotVol:1.2}};

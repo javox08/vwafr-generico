@@ -191,6 +191,29 @@ module.exports = async (req, res) => {
         if (c && pu) out.btc.skew = { rr: +(c.iv - pu.iv).toFixed(2), atmIv: atm ? +atm.iv.toFixed(1) : null,
           days: +((toMs(exp) - now) / 864e5).toFixed(0) };
       }
+      // MAX PAIN y ratio PUT/CALL (por interés abierto) del vencimiento con más OI: el "imán"
+      // de precio hacia la expiración (donde más opciones caducan sin valor) y el sesgo puts/calls.
+      const byExp = {}; let sp2 = 0;
+      for (const it of arr) {
+        const m = ('' + it.instrument_name).match(/^BTC-(\d{1,2}[A-Z]{3}\d{2})-(\d+)-([CP])$/);
+        const oi = +it.open_interest || 0; if (!m || oi <= 0) continue;
+        if (it.underlying_price > 0) sp2 = it.underlying_price;
+        (byExp[m[1]] = byExp[m[1]] || []).push({ k: +m[2], cp: m[3], oi });
+      }
+      let tgt = null, tgtOI = -1;
+      for (const e in byExp) { if (!(toMs(e) > now + 2 * 864e5)) continue;
+        const tot = byExp[e].reduce((a, x) => a + x.oi, 0); if (tot > tgtOI) { tgtOI = tot; tgt = e; } }
+      if (tgt && sp2 > 0) {
+        const its = byExp[tgt]; let call = 0, put = 0;
+        for (const x of its) { if (x.cp === 'C') call += x.oi; else put += x.oi; }
+        const strikes = [...new Set(its.map(x => x.k))].sort((a, b) => a - b);
+        let mp = null, best = Infinity;
+        for (const S of strikes) { let pay = 0;
+          for (const x of its) pay += x.cp === 'C' ? Math.max(0, S - x.k) * x.oi : Math.max(0, x.k - S) * x.oi;
+          if (pay < best) { best = pay; mp = S; } }
+        out.btc.opts = { exp: tgt, days: +((toMs(tgt) - now) / 864e5).toFixed(0), maxPain: mp,
+          pc: call > 0 ? +(put / call).toFixed(2) : null, callOI: +call.toFixed(0), putOI: +put.toFixed(0), spot: +sp2.toFixed(0) };
+      }
     }
   } catch (e) {}
   // CPI REAL de EE.UU. (Fed/FRED, oficial, sin clave): último IPC + variación interanual
