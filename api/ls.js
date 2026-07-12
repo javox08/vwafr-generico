@@ -244,6 +244,23 @@ module.exports = async (req, res) => {
         out.cpi.estLastMom = +(em2 * 100).toFixed(2); out.cpi.estLastYoy = +(((+prev[1] * (1 + em2)) / +rows[n - 13][1] - 1) * 100).toFixed(1); }
     }
   } catch (e) {}
+  // EMPLEO EE.UU. (BLS, oficial): nóminas no agrícolas (NFP, cambio mensual en miles) y
+  // tasa de paro, para el calendario económico con el mismo formato Anterior/Previsión/Actual.
+  try {
+    const yy = new Date().getUTCFullYear();
+    const g = id => fetch('https://api.bls.gov/publicAPI/v2/timeseries/data/' + id + '?startyear=' + (yy - 1) + '&endyear=' + yy).then(r => r.json());
+    const [jn, ju] = await Promise.all([g('CES0000000001'), g('LNS14000000')]); // NFP nivel · paro %
+    const sn = jn && jn.Results && jn.Results.series && jn.Results.series[0] && jn.Results.series[0].data;
+    const su = ju && ju.Results && ju.Results.series && ju.Results.series[0] && ju.Results.series[0].data;
+    if (Array.isArray(sn) && sn.length >= 9) {
+      const vn = i => parseFloat(sn[i].value), chg = i => Math.round(vn(i) - vn(i + 1));
+      const mn = { M01: '01', M02: '02', M03: '03', M04: '04', M05: '05', M06: '06', M07: '07', M08: '08', M09: '09', M10: '10', M11: '11', M12: '12' }[sn[0].period] || '01';
+      const cs = [], cs2 = []; for (let i = 0; i < 6 && i + 2 < sn.length; i++) cs.push(chg(i)); for (let i = 1; i < 7 && i + 2 < sn.length; i++) cs2.push(chg(i));
+      const avg = a => a.length >= 3 ? Math.round(a.reduce((p, x) => p + x, 0) / a.length) : null;
+      out.jobs = { month: sn[0].year + '-' + mn + '-01', nfp: { act: chg(0), prev: chg(1), est: avg(cs), estLast: avg(cs2) } };
+      if (Array.isArray(su) && su.length >= 2) { const vu = i => parseFloat(su[i].value); out.jobs.unemp = { act: vu(0), prev: vu(1) }; }
+    }
+  } catch (e) {}
   // VOLUMEN 24h FUTUROS vs SPOT (mismo exchange = comparable): Binance BTC+ETH.
   // Futuros = derivados apalancados; spot = compra/venta real. Ratio del mercado.
   {
