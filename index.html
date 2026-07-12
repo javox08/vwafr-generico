@@ -802,7 +802,7 @@ function PosView({gFunding,cot}){
       const bc=((j&&j.coins)||[]).find(x=>x.c==='BTC');
       const masaAgg=(bc&&Number.isFinite(bc.r)&&bc.r>0)?bc.r/(1+bc.r):null;
       const prosAgg=(j&&j.btc&&Number.isFinite(j.btc.pos)&&j.btc.pos>0)?j.btc.pos/(1+j.btc.pos):null;
-      if(a&&j&&j.btc)setD({lsEx:j.btc.lsEx||null,taker:j.btc.taker||null,hist:(j.btc.hist||[]),cvdFut:j.btc.cvdFut||null,oiSplit:j.btc.oiSplit||null,skew:j.btc.skew||null,cvdAgg:j.btc.cvdAgg||null,masaAgg,prosAgg});
+      if(a&&j&&j.btc)setD({lsEx:j.btc.lsEx||null,taker:j.btc.taker||null,hist:(j.btc.hist||[]),cvdFut:j.btc.cvdFut||null,oiSplit:j.btc.oiSplit||null,skew:j.btc.skew||null,cvdAgg:j.btc.cvdAgg||null,masaAgg,prosAgg,coins:((j&&j.coins)||[])});
     }catch(_){}};
     load();const t=setInterval(load,120000);return()=>{a=false;clearInterval(t);};},[]);
   const [k,setK]=useState(null); // CVD spot diario (oficial: taker buy de las velas) + máx/mín 60d
@@ -920,6 +920,26 @@ function PosView({gFunding,cot}){
           <Row icon="🟡" lbl="Binance" src="takerlongshortRatio 24h" v={d.taker.pl}/>
         </React.Fragment>)}
         <div style={{fontSize:8.5,color:'var(--faint)',marginTop:8,lineHeight:1.6}}>{z!=null?('Extremosidad (OKX cuentas vs sus 72h): z-score '+z.toFixed(1)+(Math.abs(z)>=1.5?' → posicionamiento EXTREMO: históricamente funciona como CONTRAINDICADOR (multitud muy cargada de un lado = riesgo de squeeze al otro).':' → dentro de lo normal; el ratio de cuentas solo aporta señal en extremos.')):''} El ratio de cuentas NO es dinero: si hay más cuentas long, el lado corto tiene posiciones más grandes (ballenas).</div>
+        {(()=>{ // sesgo L/S del resto del top: masa (cuentas OKX+Bybit+Binance) + pros (top-traders OKX) por moneda, del mismo relé
+          const cs=((d&&d.coins)||[]).filter(x=>x.c!=='BTC').map(x=>{
+            const masa=(Number.isFinite(x.r)&&x.r>0)?x.r/(1+x.r):null;
+            const pros=(Number.isFinite(x.rp)&&x.rp>0)?x.rp/(1+x.rp):null;
+            const parts=[];if(masa!=null)parts.push(masa);if(pros!=null){parts.push(pros);parts.push(pros);}
+            return{c:x.c,cons:parts.length?parts.reduce((a,v)=>a+v,0)/parts.length:null};
+          }).filter(x=>x.cons!=null);
+          if(!cs.length)return null;
+          return(<div style={{marginTop:12,paddingTop:11,borderTop:'1px solid var(--line2)'}}>
+            <div style={{fontSize:8,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.6,fontWeight:700,marginBottom:7}}>🪙 Otras monedas — sesgo L/S (masa + pros ×2)</div>
+            {cs.map(x=>{const bull=x.cons>0.52,bear=x.cons<0.48;
+              return(<div key={x.c} style={{...flx({gap:8}),marginBottom:6}}>
+                <span className="mono" style={{fontSize:9.5,fontWeight:800,width:38,flexShrink:0,color:'var(--txt)'}}>{x.c}</span>
+                <div style={{flex:1,display:'flex',height:6,borderRadius:4,overflow:'hidden'}}>
+                  <div style={{width:(x.cons*100)+'%',background:'var(--up)',opacity:.8}}/><div style={{flex:1,background:'var(--down)',opacity:.8}}/>
+                </div>
+                <span className="mono" style={{fontSize:9,fontWeight:800,width:74,flexShrink:0,textAlign:'right',color:bull?'var(--up)':bear?'var(--down)':'var(--dim)'}}>{(x.cons*100).toFixed(0)}%L·{((1-x.cons)*100).toFixed(0)}%S</span>
+              </div>);})}
+            <div style={{fontSize:8,color:'var(--faint)',marginTop:5,lineHeight:1.5}}>Misma fórmula que el ⭐ sesgo de BTC, aplicada a cada moneda con los ratios oficiales del relé (mide cohortes, no dinero neto). Detalle por exchange: por ahora solo en BTC.</div>
+          </div>);})()}
       </React.Fragment>):(
         <div style={{fontSize:10,color:'var(--faint)',textAlign:'center',padding:'10px 0'}}>Cargando los ratios oficiales…</div>)}
     </div>
