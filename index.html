@@ -570,6 +570,33 @@ function Calc({coin,data,source,sel}){
 
       <Hero vwafr={vwafr} label={`Veredicto del funding · ${coin}`}/>
 
+      {/* ARBITRAJE / DISPERSIÓN de funding: mayor diferencial entre exchanges para esta moneda */}
+      {(()=>{
+        if(active.length<2)return null;
+        const sorted=[...active].sort((a,b)=>a.funding-b.funding);
+        const lo=sorted[0],hi=sorted[sorted.length-1],spread=hi.funding-lo.funding; // %/8h
+        if(!(spread>0.003))return null; // sin diferencial relevante
+        const apr=spread*3*365; // funding cada 8h → 3 pagos/día
+        return(<div style={panel({marginBottom:14,padding:14})}>
+          <div style={{...flx({justifyContent:'space-between'}),marginBottom:9}}>
+            <span style={eyebrow}>Arbitraje de funding · dispersión</span>
+            <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>{active.length} exchanges</span>
+          </div>
+          <div style={{...flx({justifyContent:'space-between',gap:10}),marginBottom:9}}>
+            <div>
+              <div style={{fontSize:7.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.4}}>Diferencial máx</div>
+              <div className="mono" style={{fontSize:18,fontWeight:800,color:'var(--accent)'}}>{spread.toFixed(4)}<span style={{fontSize:9,color:'var(--faint)'}}>%/8h</span></div>
+              <div style={{fontSize:8.5,color:'var(--up)'}}>≈ {apr.toFixed(0)}% APR si capturas el spread</div>
+            </div>
+            <div style={{textAlign:'right',fontSize:10}}>
+              <div><span style={{color:'var(--faint)'}}>corto en</span> <b style={{color:'var(--down)'}}>{hi.id}</b> <span className="mono" style={{color:'var(--down)'}}>{hi.funding>=0?'+':''}{hi.funding.toFixed(4)}%</span></div>
+              <div style={{marginTop:3}}><span style={{color:'var(--faint)'}}>largo en</span> <b style={{color:'var(--up)'}}>{lo.id}</b> <span className="mono" style={{color:'var(--up)'}}>{lo.funding>=0?'+':''}{lo.funding.toFixed(4)}%</span></div>
+            </div>
+          </div>
+          <div style={{fontSize:8.5,color:'var(--faint)',lineHeight:1.55}}>Mismo activo, funding distinto entre exchanges = <b style={{color:'var(--txt)'}}>arbitraje neutral en dirección</b>: largo donde el funding es más bajo (cobras o pagas menos) y corto donde es más alto → te quedas el diferencial sin apostar a que suba o baje. También mide la <b style={{color:'var(--txt)'}}>divergencia de sentimiento</b> entre plataformas. No incluye comisiones ni riesgo de ejecución.</div>
+        </div>);
+      })()}
+
       <div style={panel({marginBottom:14,padding:16})}>
         <div style={{...flx({justifyContent:'space-between'}),marginBottom:14}}>
           <span style={eyebrow}>Exchanges</span>

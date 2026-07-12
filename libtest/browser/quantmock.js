@@ -34,7 +34,8 @@
       if(u.indexOf('/api/ls')>=0)return J(lsData);
       if(u.indexOf('/api/fr')>=0)return J({t:Date.now(),ex:{Gate:{BTC:{f:0.004,oi:2.1}},MEXC:{BTC:{f:0.01,oi:4.9}},Binance:{BTC:{f:0.008,oi:12.2}},Bybit:{BTC:{f:0.006,oi:7.5}},Bitget:{BTC:{f:0.004,oi:2.2}},
         Kraken:{BTC:{f:0.0045,oi:0.12}},HTX:{BTC:{f:0.01,oi:2.06}},CoinEx:{BTC:{f:0,oi:0.075}},Bitfinex:{BTC:{f:0.0087,oi:0.57}},dYdX:{BTC:{f:-0.0136,oi:0.019}},WhiteBIT:{BTC:{f:-0.0039,oi:1.59}},Phemex:{BTC:{f:0.0065,oi:0.13}},Deribit:{BTC:{f:0.0018,oi:0.78}}}});
-      if(u.indexOf('/api/funding')>=0)return J({updated:Date.now(),coins:['BTC','ETH','SOL','XRP','BNB','DOGE','ADA','AVAX','LINK','LTC'],data:{}});
+      if(u.indexOf('/api/funding')>=0){var mk2=function(base){var ex={},names=['Binance','OKX','Bybit','Bitget','Gate','MEXC','HTX','Kraken'];names.forEach(function(n,i){ex[n]={funding:+(base+(i-3)*0.004).toFixed(4),oi:+(1+Math.random()*10).toFixed(2),ok:true};});return ex;};
+        return J({updated:Date.now(),coins:['BTC','ETH','SOL','XRP','BNB','DOGE','ADA','AVAX','LINK','LTC'],data:{BTC:mk2(0.008),ETH:mk2(0.006),SOL:mk2(0.012),XRP:mk2(0.004),BNB:mk2(0.005),DOGE:mk2(0.01),ADA:mk2(0.004),AVAX:mk2(0.007),LINK:mk2(0.006),LTC:mk2(0.005)}});}
       if(u.indexOf('/klines')>=0)return J(klines(u));
       if(u.indexOf('api.binance.com/api/v3/ticker/price')>=0)return J({price:'60000'});
       if(u.indexOf('coinbase.com/products/BTC-USD/ticker')>=0)return J({price:'60040'});
