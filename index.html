@@ -4872,7 +4872,7 @@ function QuantView({gFunding,nav}){
           <span style={eyebrow}>Calendario económico</span>
           {macroWindow&&<span className="mono" style={{fontSize:9,fontWeight:700,color:'var(--down)'}}>⚠ ventana de riesgo</span>}
         </div>
-        {cpiReal&&<div style={{fontSize:9,color:'var(--dim)',marginBottom:10,marginTop:-6,padding:'6px 9px',borderRadius:8,background:'#0A0D14',border:'1px solid var(--line2)'}} className="mono">📊 Último IPC EE.UU. REAL (Fed/FRED): <b style={{color:cpiReal.yoy>=3?'var(--down)':'var(--up)'}}>{cpiReal.yoy}% interanual</b> · {cpiReal.mom>=0?'+':''}{cpiReal.mom}% mensual <span style={{color:'var(--faint)'}}>({cpiReal.month})</span> {cpiReal.yoy>=3?'· inflación aún alta → presión para tipos altos (🔴 cripto)':'· inflación contenida → margen para bajar tipos (🟢 cripto)'}</div>}
+        {cpiReal&&<div style={{fontSize:9,color:'var(--dim)',marginBottom:10,marginTop:-6,padding:'6px 9px',borderRadius:8,background:'#0A0D14',border:'1px solid var(--line2)'}} className="mono">📊 Último IPC EE.UU. REAL (BLS · oficial): <b style={{color:cpiReal.yoy>=3?'var(--down)':'var(--up)'}}>{cpiReal.yoy}% interanual</b> · {cpiReal.mom>=0?'+':''}{cpiReal.mom}% mensual <span style={{color:'var(--faint)'}}>({cpiReal.month})</span> {cpiReal.yoy>=3?'· inflación aún alta → presión para tipos altos (🔴 cripto)':'· inflación contenida → margen para bajar tipos (🟢 cripto)'}</div>}
         {evNext.map((e,i)=>{
           const days=Math.ceil((e.d-now)/D), past=days<0;
           // GUÍA DE IMPACTO según el resultado, para cripto/dólar/acciones (🟢 bueno · 🔴 malo).
@@ -4895,7 +4895,7 @@ function QuantView({gFunding,nav}){
                   {past?'hace '+(-days)+'d ✓':days<=0?'HOY':'en '+days+'d'}
                 </span>
               </div>
-              {isCpiLast&&<div style={{fontSize:9,color:'var(--dim)',marginTop:4,marginLeft:2}} className="mono">📊 Último dato REAL: <b style={{color:cpiReal.yoy>=3?'var(--down)':'var(--up)'}}>{cpiReal.yoy}% interanual</b> · {cpiReal.mom>=0?'+':''}{cpiReal.mom}% mensual <span style={{color:'var(--faint)'}}>({cpiReal.month})</span></div>}
+              {isCpiLast&&<div style={{fontSize:9,color:'var(--dim)',marginTop:4,marginLeft:2}} className="mono">📊 Último dato REAL (BLS): <b style={{color:cpiReal.yoy>=3?'var(--down)':'var(--up)'}}>{cpiReal.yoy}% interanual</b> · {cpiReal.mom>=0?'+':''}{cpiReal.mom}% mensual <span style={{color:'var(--faint)'}}>({cpiReal.month})</span></div>}
               {imp&&<div style={{marginTop:5,marginLeft:2,fontSize:8,color:'var(--faint)',lineHeight:1.7}}>
                 <div>{imp.hiA[0]} cripto · {imp.hiA[1]} bolsa · {imp.hiA[2]} dólar — si {imp.hi}</div>
                 <div>{imp.loA[0]} cripto · {imp.loA[1]} bolsa · {imp.loA[2]} dólar — si {imp.lo}</div>
