@@ -6013,6 +6013,7 @@ function App(){
   const [updated,setUpdated]=useState(null);
   const [busy,setBusy]=useState(false);
   const [tab,setTab]=useState('BTC');
+  const [showAllCoins,setShowAllCoins]=useState(false); // portada más corta: ETH..LTC colapsados
   // ── PWA: capturar el evento de instalación para ofrecer "Instalar app" ──
   const [installEvt,setInstallEvt]=useState(null);
   const [iosHint,setIosHint]=useState(false);
@@ -6494,7 +6495,7 @@ function App(){
           const cc=cv.vwafr>=0?'var(--up)':'var(--down)';
           const gp=Math.min(Math.max(50+(cv.vwafr/0.02)*50,4),96);
           return(
-            <div key={c} onClick={()=>{setTab(c);const el=document.getElementById('coin-'+c);if(el)el.scrollIntoView({behavior:'smooth',block:'start'});}} style={{...flx({gap:9}),padding:'9px 6px',cursor:'pointer',
+            <div key={c} onClick={()=>{setTab(c);if(c!=='BTC')setShowAllCoins(true);setTimeout(()=>{const el=document.getElementById('coin-'+c);if(el)el.scrollIntoView({behavior:'smooth',block:'start'});},c!=='BTC'?60:0);}} style={{...flx({gap:9}),padding:'9px 6px',cursor:'pointer',
               borderTop:i?'1px solid #12151F':'none',
               background:sel?'rgba(110,139,255,.06)':'transparent',borderRadius:8,transition:'background .15s'}}>
               <span className="mono" style={{fontSize:10,color:'var(--faint)',width:12,flexShrink:0}}>{i+1}</span>
@@ -6514,14 +6515,21 @@ function App(){
       </div>
 
 
-      {/* ── Detalle de TODAS las monedas, apiladas (BTC, ETH, SOL, ...) ── */}
+      {/* ── Detalle por moneda: BTC siempre; ETH..LTC colapsados (portada más corta) ── */}
       {coins.map((c,idx)=>(
+        (idx===0||showAllCoins)?(
         <div key={c} id={'coin-'+c} style={{scrollMarginTop:10}}>
           {idx===0
             ? <Calc coin={c} data={data[c]} source={source} sel={c===tab}/>
             : <Lazy><Calc coin={c} data={data[c]} source={source} sel={c===tab}/></Lazy>}
-        </div>
+        </div>):null
       ))}
+      {!showAllCoins&&coins.length>1&&(
+        <div onClick={()=>setShowAllCoins(true)} style={{...flx({gap:8,justifyContent:'center'}),marginBottom:14,padding:'12px 14px',borderRadius:12,cursor:'pointer',
+          background:'rgba(110,139,255,.07)',border:'1px dashed rgba(110,139,255,.3)'}}>
+          <span style={{fontSize:14}}>📋</span>
+          <span style={{fontSize:11.5,fontWeight:700,color:'var(--accent)'}}>Ver detalle por moneda ({coins.slice(1).join(' · ')})</span>
+        </div>)}
 
       {/* ── TELEGRAM: avisos automáticos ── */}
       <div style={panel({marginBottom:14,padding:16})}>
