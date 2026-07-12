@@ -3987,7 +3987,24 @@ function QuantView({gFunding,nav}){
             // va a pasar?" — lo que antes se preguntaba pasando una captura.
             const mv=(pc&&pc.move)||(p1&&p1.move)||null;
             // niveles del tramo corto (soporte/resistencia visibles) para dar escenarios CONCRETOS
-            const lo1=pc?Math.min(...pc.spark.p):null, hi1=pc?Math.max(...pc.spark.p):null;
+            // Soporte/resistencia CERCANOS al precio actual. Antes se tomaba el mínimo/máximo
+            // del tramo ENTERO (5 días en 1h) → daba niveles lejanos tipo "perder 61.700" con
+            // el precio muy por encima. Ahora: pivote local más próximo POR DEBAJO (soporte) y
+            // POR ENCIMA (resistencia), y solo se usa si está a ≤8% (si no, no es accionable → null,
+            // y la narrativa de abajo omite el nivel en vez de citar uno lejano).
+            let lo1=null,hi1=null;
+            if(pc&&pc.spark&&pc.spark.p.length>6){
+              const sp=pc.spark.p, px=sp[sp.length-1];
+              const rec=sp.slice(-Math.min(60,sp.length)), loP=[],hiP=[];
+              for(let i2=1;i2<rec.length-1;i2++){
+                if(rec[i2]<rec[i2-1]&&rec[i2]<=rec[i2+1])loP.push(rec[i2]);
+                if(rec[i2]>rec[i2-1]&&rec[i2]>=rec[i2+1])hiP.push(rec[i2]);}
+              const below=loP.filter(v=>v<px), above=hiP.filter(v=>v>px);
+              const cLo=below.length?Math.max(...below):Math.min(...rec);
+              const cHi=above.length?Math.min(...above):Math.max(...rec);
+              if(cLo<px&&(px-cLo)/px<=0.08)lo1=cLo;
+              if(cHi>px&&(cHi-px)/px<=0.08)hi1=cHi;
+            }
             // "¿Por qué?": se compone con TODAS las piezas, como un analista (CVD, OI, premium, Coinbase)
             const parts=[];
             parts.push(pd>0?'El precio sube en el corto plazo':pd<0?'El precio cae en el corto plazo':'El precio está lateral');
