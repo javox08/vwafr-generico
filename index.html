@@ -5261,7 +5261,14 @@ function QuantView({gFunding,nav}){
       <div style={panel({marginBottom:14,padding:16})}>
         <div style={{...flx({justifyContent:'space-between'}),marginBottom:12}}>
           <span style={eyebrow}>Calendario económico</span>
-          {macroWindow&&<span className="mono" style={{fontSize:9,fontWeight:700,color:'var(--down)'}}>⚠ ventana de riesgo</span>}
+          {(()=>{ // chip del PRÓXIMO evento: cuenta atrás, en rojo si está a ≤2 días (volatilidad)
+            const nx=evNext.find(e2=>Math.ceil((e2.d-now)/D)>=0); if(!nx)return null;
+            const dd=Math.ceil((nx.d-now)/D), hot2=dd<=2;
+            return(<span className="mono" style={{fontSize:8.5,fontWeight:800,padding:'2px 8px',borderRadius:8,
+              color:hot2?'var(--down)':'var(--accent)',
+              background:hot2?'rgba(255,84,112,.1)':'rgba(110,139,255,.1)',
+              border:'1px solid '+(hot2?'rgba(255,84,112,.35)':'rgba(110,139,255,.3)'),
+              animation:hot2?'breathe 2s ease infinite':'none'}}>{hot2?'⚠ ':'⏰ '}{nx.t} {dd===0?'HOY':'en '+dd+'d'}{hot2?' · volatilidad':''}</span>);})()}
         </div>
         {cpiReal&&<div style={{fontSize:9,color:'var(--dim)',marginBottom:10,marginTop:-6,padding:'6px 9px',borderRadius:8,background:'#0A0D14',border:'1px solid var(--line2)'}} className="mono">📊 Último IPC EE.UU. REAL (BLS · oficial): <b style={{color:cpiReal.yoy>=3?'var(--down)':'var(--up)'}}>{cpiReal.yoy}% interanual</b> · {cpiReal.mom>=0?'+':''}{cpiReal.mom}% mensual <span style={{color:'var(--faint)'}}>({cpiReal.month})</span> {cpiReal.yoy>=3?'· inflación aún alta → presión para tipos altos (🔴 cripto)':'· inflación contenida → margen para bajar tipos (🟢 cripto)'}</div>}
         {evNext.map((e,i)=>{
