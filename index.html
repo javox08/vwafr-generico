@@ -5261,12 +5261,12 @@ function QuantView({gFunding,nav}){
       {/* VISOR DE PATRÓN DE VELAS (modal: toca fuera o la ✕ para cerrar) */}
       {velaSel&&(()=>{const pt=velaSel, up=pt.sig>0, col=up?'var(--up)':pt.sig<0?'var(--down)':'var(--dim)';
         return(
-        <div onClick={()=>setVelaSel(null)} style={{position:'fixed',inset:0,zIndex:300,background:'rgba(3,5,9,.88)',
+        <div onClick={()=>setVelaSel(null)} role="dialog" aria-modal="true" aria-label="Detalle del patrón de velas" style={{position:'fixed',inset:0,zIndex:300,background:'rgba(3,5,9,.88)',
           backdropFilter:'blur(5px)',WebkitBackdropFilter:'blur(5px)',display:'flex',alignItems:'center',justifyContent:'center',padding:14}}>
           <div onClick={e=>e.stopPropagation()} style={{...panel({padding:16}),width:'100%',maxWidth:400,maxHeight:'92vh',overflowY:'auto'}}>
             <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
               <span style={{fontSize:15,fontWeight:800,color:col}}>{up?'▲':pt.sig<0?'▼':'◆'} 🕯️ {pt.t}</span>
-              <span onClick={()=>setVelaSel(null)} style={{fontSize:20,color:'var(--faint)',cursor:'pointer',lineHeight:1,padding:'0 4px'}}>✕</span>
+              <span onClick={()=>setVelaSel(null)} role="button" aria-label="Cerrar" style={{fontSize:20,color:'var(--faint)',cursor:'pointer',lineHeight:1,padding:'0 4px'}}>✕</span>
             </div>
             <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:10}}>{pt.d}</div>
             <div style={{fontSize:8.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.7,fontWeight:700,marginBottom:5}}>Cómo es el patrón</div>
@@ -5310,12 +5310,12 @@ function QuantView({gFunding,nav}){
           ? 'El % es el acierto histórico REAL de que este tipo de evento revierta a 7 días (backtest sobre BTC). La flecha muestra hacia dónde suele ir el precio después. Solo los de acierto alto inclinan el sesgo del modelo. Toca fuera para cerrar.'
           : 'Patrón/indicador detectado AHORA en el gráfico diario. La flecha y la barra resumen qué hizo BTC históricamente cada vez que apareció (retorno a 10 días, backtest real). Toca fuera para cerrar.';
         return(
-        <div onClick={()=>setInfoSel(null)} style={{position:'fixed',inset:0,zIndex:300,background:'rgba(3,5,9,.88)',
+        <div onClick={()=>setInfoSel(null)} role="dialog" aria-modal="true" aria-label="Detalle del indicador" style={{position:'fixed',inset:0,zIndex:300,background:'rgba(3,5,9,.88)',
           backdropFilter:'blur(5px)',WebkitBackdropFilter:'blur(5px)',display:'flex',alignItems:'center',justifyContent:'center',padding:14}}>
           <div onClick={e=>e.stopPropagation()} style={{...panel({padding:16}),width:'100%',maxWidth:400,maxHeight:'92vh',overflowY:'auto'}}>
             <div style={{...flx({justifyContent:'space-between'}),marginBottom:10}}>
               <span style={{fontSize:14.5,fontWeight:800,color:manip?'#F3BA2F':vCol}}>{manip?'🕵️':(up?'▲':dn?'▼':'◆')} {pt.t}</span>
-              <span onClick={()=>setInfoSel(null)} style={{fontSize:20,color:'var(--faint)',cursor:'pointer',lineHeight:1,padding:'0 4px'}}>✕</span>
+              <span onClick={()=>setInfoSel(null)} role="button" aria-label="Cerrar" style={{fontSize:20,color:'var(--faint)',cursor:'pointer',lineHeight:1,padding:'0 4px'}}>✕</span>
             </div>
             {/* VEREDICTO grande y claro */}
             <div style={{...flx({gap:11}),padding:'11px 13px',borderRadius:11,marginBottom:11,background:`${vCol}14`,border:`1px solid ${vCol}33`}}>
@@ -5379,12 +5379,12 @@ function QuantView({gFunding,nav}){
         const dpath=rc.length?'M '+rc.map((v,i)=>X(i).toFixed(1)+' '+Y(v).toFixed(1)).join(' L '):'';
         const col=up?'var(--up)':'var(--down)';
         return(
-        <div onClick={()=>setFigSel(null)} style={{position:'fixed',inset:0,zIndex:300,background:'rgba(3,5,9,.88)',
+        <div onClick={()=>setFigSel(null)} role="dialog" aria-modal="true" aria-label="Detalle de la figura chartista" style={{position:'fixed',inset:0,zIndex:300,background:'rgba(3,5,9,.88)',
           backdropFilter:'blur(5px)',WebkitBackdropFilter:'blur(5px)',display:'flex',alignItems:'center',justifyContent:'center',padding:14}}>
           <div onClick={e=>e.stopPropagation()} style={{...panel({padding:16}),width:'100%',maxWidth:400,maxHeight:'92vh',overflowY:'auto'}}>
             <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
               <span style={{fontSize:15,fontWeight:800,color:col}}>{up?'▲':'▼'} {pt.t}</span>
-              <span onClick={()=>setFigSel(null)} style={{fontSize:20,color:'var(--faint)',cursor:'pointer',lineHeight:1,padding:'0 4px'}}>✕</span>
+              <span onClick={()=>setFigSel(null)} role="button" aria-label="Cerrar" style={{fontSize:20,color:'var(--faint)',cursor:'pointer',lineHeight:1,padding:'0 4px'}}>✕</span>
             </div>
             <div style={{...flx({gap:6}),marginBottom:10}}>
               <span className="mono" style={{fontSize:8,fontWeight:700,padding:'1px 6px',borderRadius:7,color:pt.forming?'#F3BA2F':'var(--up)',background:'rgba(255,255,255,.05)'}}>{pt.forming?'⏳ en formación':'✓ confirmada'}</span>
@@ -7147,7 +7147,7 @@ function App(){
       {/* MENÚ DE REDES (estilo Linktree, animado): se abre desde el pie, no navega directo */}
       {redesOpen&&(
         <div className="rd-back" onClick={closeRedes}>
-          <div className="rd-card" onClick={e=>e.stopPropagation()} role="dialog" aria-label="Redes sociales">
+          <div className="rd-card" onClick={e=>e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Redes sociales">
             {/* banner de portada con barrido de luz */}
             <div className="rd-cover"/>
             <span onClick={closeRedes} aria-label="Cerrar" role="button"
