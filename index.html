@@ -5164,9 +5164,12 @@ function QuantView({gFunding,nav}){
                     borderRadius:5,padding:'2px 6px'}}>{e.t}</span>
                   <span style={{fontSize:11.5,color:'var(--dim)'}}>{e.n}</span>
                 </div>
-                <span className="mono" style={{fontSize:10.5,color:past?'var(--faint)':days<=2?'var(--down)':'var(--faint)',fontWeight:days<=2&&!past?700:400}}>
-                  {past?'hace '+(-days)+'d ✓':days<=0?'HOY':'en '+days+'d'}
-                </span>
+                {days===0&&!past
+                  ?<span className="mono" style={{fontSize:9,fontWeight:800,letterSpacing:.5,padding:'2px 9px',borderRadius:7,color:'#fff',
+                      background:'linear-gradient(92deg,#E53E3E,#C53030)',animation:'rdLive 1.6s ease-in-out infinite'}}>HOY</span>
+                  :<span className="mono" style={{fontSize:10.5,color:past?'var(--faint)':days<=2?'var(--down)':'var(--faint)',fontWeight:days<=2&&!past?700:400}}>
+                    {past?'hace '+(-days)+'d ✓':'en '+days+'d'}
+                  </span>}
               </div>
               {/* Rejilla estilo Investing: ANTERIOR · PREVISIÓN · ACTUAL + veredicto para cripto (IPC en % · Empleo en miles) */}
               {evBox&&(()=>{const cb=evBox;
