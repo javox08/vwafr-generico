@@ -31,6 +31,7 @@
   var J=function(o){return Promise.resolve(new Response(JSON.stringify(o),{status:200,headers:{'Content-Type':'application/json'}}));};
   window.fetch=function(u){u=''+u;
     try{
+      if(u.indexOf('/api/social')>=0)return J({t:Date.now(),tiktok:{f:531,v:782,likes:10400},youtube:{subs:'34 subscribers'},twitch:{live:true}});
       if(u.indexOf('/api/ls')>=0)return J(lsData);
       if(u.indexOf('/api/fr')>=0)return J({t:Date.now(),ex:{Gate:{BTC:{f:0.004,oi:2.1}},MEXC:{BTC:{f:0.01,oi:4.9}},Binance:{BTC:{f:0.008,oi:12.2}},Bybit:{BTC:{f:0.006,oi:7.5}},Bitget:{BTC:{f:0.004,oi:2.2}},
         Kraken:{BTC:{f:0.0045,oi:0.12}},HTX:{BTC:{f:0.01,oi:2.06}},CoinEx:{BTC:{f:0,oi:0.075}},Bitfinex:{BTC:{f:0.0087,oi:0.57}},dYdX:{BTC:{f:-0.0136,oi:0.019}},WhiteBIT:{BTC:{f:-0.0039,oi:1.59}},Phemex:{BTC:{f:0.0065,oi:0.13}},Deribit:{BTC:{f:0.0018,oi:0.78}}}});

@@ -181,11 +181,30 @@
       border:1px solid var(--line2);border-radius:24px;padding:26px 18px 16px;
       animation:rdCard .42s cubic-bezier(.18,.9,.26,1.12) both;
       box-shadow:0 24px 70px -18px rgba(0,0,0,.8),0 0 52px -16px rgba(145,70,255,.4)}
-    /* halo de marca (verde/morado neón, como el logo de JAVOX) detrás del avatar */
-    .rd-card::before{content:'';position:absolute;top:-70px;left:50%;transform:translateX(-50%);
+    /* halo de marca (verde/morado neón, como el logo de JAVOX) detrás del avatar — con deriva lenta */
+    @keyframes rdDrift{0%,100%{transform:translateX(-50%) translateY(0) scale(1)}50%{transform:translateX(-46%) translateY(12px) scale(1.06)}}
+    @keyframes rdDrift2{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(-20px,-16px) scale(1.14)}}
+    .rd-card::before{content:'';position:absolute;top:-70px;left:50%;
       width:360px;height:250px;pointer-events:none;filter:blur(8px);
       background:radial-gradient(46% 55% at 62% 42%,rgba(145,70,255,.30),transparent 72%),
-                 radial-gradient(40% 48% at 36% 34%,rgba(67,230,96,.20),transparent 70%)}
+                 radial-gradient(40% 48% at 36% 34%,rgba(67,230,96,.20),transparent 70%);
+      animation:rdDrift 8s ease-in-out infinite}
+    .rd-card::after{content:'';position:absolute;bottom:-90px;right:-70px;width:280px;height:280px;
+      border-radius:50%;pointer-events:none;filter:blur(55px);
+      background:radial-gradient(circle,rgba(67,230,96,.15),transparent 65%);
+      animation:rdDrift2 10s ease-in-out infinite}
+    @keyframes rdSpark{0%,100%{opacity:0;transform:scale(.35)}50%{opacity:.9;transform:scale(1)}}
+    .rd-spark{position:absolute;width:4px;height:4px;border-radius:50%;pointer-events:none;opacity:0;
+      box-shadow:0 0 9px 2px rgba(255,255,255,.35);animation:rdSpark 3.6s ease-in-out infinite}
+    @keyframes rdLive{0%,100%{opacity:1;box-shadow:0 0 12px rgba(255,60,60,.7)}50%{opacity:.75;box-shadow:0 0 4px rgba(255,60,60,.3)}}
+    .rd-live{display:inline-block;font-size:8px;font-weight:800;letter-spacing:.4px;padding:3px 7px;border-radius:7px;
+      color:#fff;background:linear-gradient(92deg,#E53E3E,#C53030);animation:rdLive 1.6s ease-in-out infinite}
+    .rd-share{margin-top:10px;display:flex;align-items:center;justify-content:center;gap:8px;padding:12px;
+      border-radius:14px;cursor:pointer;font-size:12px;font-weight:800;color:#07090E;
+      background:linear-gradient(92deg,#43E660,#8AF5A3);box-shadow:0 8px 26px -10px rgba(67,230,96,.65);
+      transition:transform .15s ease,box-shadow .15s ease;user-select:none}
+    .rd-share:hover{transform:translateY(-1px);box-shadow:0 10px 30px -10px rgba(67,230,96,.85)}
+    .rd-share:active{transform:scale(.97)}
     .rd-ring{position:relative;width:86px;height:86px;margin:0 auto 11px;
       filter:drop-shadow(0 0 14px rgba(145,70,255,.45))}
     .rd-ring::before{content:'';position:absolute;inset:-4px;border-radius:50%;
@@ -197,11 +216,16 @@
     .rd-name{font-size:17px;font-weight:800;letter-spacing:-.3;
       background:linear-gradient(92deg,#43E660 0%,#BFF7CB 35%,#C9B3FF 65%,#9146FF 100%);
       -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:#E7ECF5}
-    .rd-link{display:flex;align-items:center;gap:12px;padding:12px 13px;margin-bottom:9px;border-radius:14px;
+    .rd-link{position:relative;overflow:hidden;display:flex;align-items:center;gap:12px;padding:12px 13px;margin-bottom:9px;border-radius:14px;
       background:rgba(255,255,255,.035);border:1px solid var(--line2);cursor:pointer;
       text-decoration:none;color:var(--txt);
       transition:transform .16s ease,border-color .16s ease,box-shadow .16s ease,background .16s ease;
       animation:rdItem .5s cubic-bezier(.16,.9,.28,1.18) both}
+    /* barrido de brillo al pasar (efecto premium) */
+    .rd-link::after{content:'';position:absolute;top:0;bottom:0;left:-70%;width:45%;transform:skewX(-18deg);
+      background:linear-gradient(90deg,transparent,rgba(255,255,255,.09),transparent);
+      transition:left .55s ease;pointer-events:none}
+    .rd-link:hover::after{left:125%}
     .rd-link:hover,.rd-link:focus-visible{transform:translateY(-2px) scale(1.012);border-color:var(--rc,var(--accent));
       box-shadow:0 8px 26px -8px var(--rc,var(--accent));background:rgba(255,255,255,.055);outline:none}
     .rd-link:active{transform:translateY(0) scale(.99)}
@@ -376,13 +400,15 @@ function ExLogo({name,color,size=16}){
 // Redes del creador (menú estilo Linktree en el pie; cada una con su color de marca y
 // su LOGO real —favicon oficial del dominio— con respaldo al emoji si no carga)
 const REDES=[
-  {n:'TikTok',s:'@javox_008',u:'https://www.tiktok.com/@javox_008',d:'tiktok.com',e:'🎵',c:'#FE2C55'},
-  {n:'YouTube',s:'@javox-k9p',u:'https://www.youtube.com/@javox-k9p',d:'youtube.com',e:'▶️',c:'#FF4444'},
-  {n:'Twitch',s:'javoxmaster',u:'https://www.twitch.tv/javoxmaster',d:'twitch.tv',e:'🎮',c:'#9146FF'},
-  {n:'X (Twitter)',s:'@Javidelatorrev1',u:'https://x.com/Javidelatorrev1',d:'x.com',e:'𝕏',c:'#E7ECF5'},
-  {n:'Facebook',s:'Javox',u:'https://www.facebook.com/share/18VjRoHMA2',d:'facebook.com',e:'📘',c:'#1877F2'},
-  {n:'LinkedIn',s:'Javier de la Torre',u:'https://www.linkedin.com/in/javier-thierry-de-la-torre-valdes-88887b2a3',d:'linkedin.com',e:'💼',c:'#0A66C2'},
-  {n:'Email',s:'javi27angel13@gmail.com',u:'mailto:javi27angel13@gmail.com',d:'gmail.com',e:'✉️',c:'#1FE0A0'},
+  // f0 = última cifra conocida (respaldo); el relé /api/social la actualiza EN VIVO al abrir el menú
+  {id:'tiktok',n:'TikTok',s:'@javox_008',u:'https://www.tiktok.com/@javox_008',d:'tiktok.com',e:'🎵',c:'#FE2C55',f0:'526 seguidores · 780 vídeos'},
+  {id:'youtube',n:'YouTube',s:'@javox-k9p',u:'https://www.youtube.com/@javox-k9p',d:'youtube.com',e:'▶️',c:'#FF4444',f0:'34 suscriptores'},
+  {id:'twitch',n:'Twitch',s:'javoxmaster',u:'https://www.twitch.tv/javoxmaster',d:'twitch.tv',e:'🎮',c:'#9146FF',f0:'directos'},
+  {id:'x',n:'X (Twitter)',s:'@Javidelatorrev1',u:'https://x.com/Javidelatorrev1',d:'x.com',e:'𝕏',c:'#E7ECF5',f0:''},
+  {id:'fb1',n:'Facebook',s:'cuenta principal',u:'https://www.facebook.com/share/1ThN8wBtBZ/',d:'facebook.com',e:'📘',c:'#1877F2',f0:''},
+  {id:'fb2',n:'Facebook · 2ª cuenta',s:'sígueme también aquí',u:'https://www.facebook.com/share/1B3hDAVPse/',d:'facebook.com',e:'📘',c:'#1877F2',f0:''},
+  {id:'li',n:'LinkedIn',s:'Javier de la Torre',u:'https://www.linkedin.com/in/javier-thierry-de-la-torre-valdes-88887b2a3',d:'linkedin.com',e:'💼',c:'#0A66C2',f0:'perfil profesional'},
+  {id:'mail',n:'Email',s:'javi27angel13@gmail.com',u:'mailto:javi27angel13@gmail.com',d:'gmail.com',e:'✉️',c:'#1FE0A0',f0:'contacto directo'},
 ];
 function RedAvatar(){ // logo real de JAVOX (guardado en el repo) → 🚀 si no carga
   const [err,setErr]=useState(false);
@@ -6421,6 +6447,15 @@ function App(){
   },[]);
   const closeRedes=()=>{setRedesOpen(false);
     try{if((location.hash||'').toLowerCase().indexOf('redes')>=0)history.replaceState(null,'',location.pathname+location.search);}catch(_){}};
+  // seguidores EN VIVO (relé /api/social, cacheado 1h): se piden solo al abrir el menú
+  const [social,setSocial]=useState(null);
+  useEffect(()=>{if(!redesOpen||social)return;let a=true;
+    fetch(LS_RELAY.replace('/ls','/social')).then(r=>r.json()).then(j=>{if(a&&j)setSocial(j);}).catch(()=>{});
+    return()=>{a=false;};},[redesOpen]);
+  const [shareCopied,setShareCopied]=useState(false);
+  const shareRedes=()=>{const url='https://vwafr-generico.pages.dev/#redes';
+    try{if(navigator.share){navigator.share({title:'Redes de JAVOX27',url});return;}}catch(_){}
+    try{navigator.clipboard.writeText(url);setShareCopied(true);setTimeout(()=>setShareCopied(false),1600);}catch(_){}};
   useEffect(()=>{
     const onPrompt=e=>{e.preventDefault();setInstallEvt(e);};
     window.addEventListener('beforeinstallprompt',onPrompt);
@@ -7037,11 +7072,24 @@ function App(){
           <div className="rd-card" onClick={e=>e.stopPropagation()} role="dialog" aria-label="Redes sociales">
             <span onClick={closeRedes} aria-label="Cerrar" role="button"
               style={{position:'absolute',top:12,right:14,fontSize:15,color:'var(--faint)',cursor:'pointer',padding:'4px 8px',zIndex:2}}>✕</span>
+            {/* chispas decorativas (verde/morado, parpadeo suave) */}
+            {[[10,15],[88,9],[72,24],[14,50],[92,58],[6,82]].map(([x,y],i)=>(
+              <span key={i} className="rd-spark" style={{left:x+'%',top:y+'%',animationDelay:(i*0.65)+'s',background:i%2?'#43E660':'#B78CFF'}}/>))}
             <div className="rd-ring"><RedAvatar/></div>
             <div className="rd-name" style={{textAlign:'center',marginBottom:3}}>@JAVOX27</div>
             <div style={{textAlign:'center',fontSize:9.5,color:'var(--dim)',marginBottom:16,lineHeight:1.5}}>El contenido que no sabías que necesitabas 🎬<br/><span style={{color:'var(--faint)'}}>Sígueme donde quieras 👇</span></div>
-            {REDES.map((r,i)=>(
-              <a key={r.n} className="rd-link" href={r.u} target="_blank" rel="noopener noreferrer"
+            {REDES.map((r,i)=>{
+              // seguidores EN VIVO del relé (si llegan) → si no, la última cifra conocida (f0)
+              let stat=r.f0||null, live=false;
+              if(social){
+                if(r.id==='tiktok'&&social.tiktok&&social.tiktok.f!=null)
+                  stat=social.tiktok.f.toLocaleString('es-ES')+' seguidores'+(social.tiktok.v?' · '+social.tiktok.v+' vídeos':'');
+                if(r.id==='youtube'&&social.youtube&&social.youtube.subs){const st=''+social.youtube.subs;
+                  stat=/suscriptor|subscriber/i.test(st)?st.replace(/subscribers?/i,'suscriptores'):st+' suscriptores';}
+                if(r.id==='twitch'&&social.twitch)live=!!social.twitch.live;
+              }
+              return(
+              <a key={r.id} className="rd-link" href={r.u} target="_blank" rel="noopener noreferrer"
                 style={{'--rc':r.c,animationDelay:(120+i*65)+'ms'}}>
                 <span style={{width:36,height:36,borderRadius:11,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',
                   background:r.c+'1C',border:'1px solid '+r.c+'55'}}><RedIcon d={r.d} e={r.e}/></span>
@@ -7049,9 +7097,14 @@ function App(){
                   <span style={{display:'block',fontSize:12,fontWeight:700}}>{r.n}</span>
                   <span className="mono" style={{display:'block',fontSize:8.5,color:'var(--faint)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{r.s}</span>
                 </span>
+                <span style={{marginLeft:'auto',textAlign:'right',flexShrink:0,paddingLeft:6}}>
+                  {live&&<span className="rd-live">🔴 EN DIRECTO</span>}
+                  {!live&&stat&&<span className="mono" style={{display:'block',fontSize:8,fontWeight:800,color:r.c==='#E7ECF5'?'var(--dim)':r.c,maxWidth:110,lineHeight:1.4}}>{stat}</span>}
+                </span>
                 <span className="arr">↗</span>
-              </a>))}
-            <div style={{textAlign:'center',fontSize:8,color:'var(--faint)',marginTop:10}}>se abren en una pestaña nueva</div>
+              </a>);})}
+            <div onClick={shareRedes} className="rd-share">{shareCopied?'✓ enlace copiado':'📤 Comparte este panel'}</div>
+            <div style={{textAlign:'center',fontSize:8,color:'var(--faint)',marginTop:8}}>los enlaces se abren en una pestaña nueva</div>
           </div>
         </div>)}
 
