@@ -6339,10 +6339,11 @@ function BotsView({gFunding}){
 // CoinTelegraph…). Los muy recientes o con palabras de impacto van como ÚLTIMA HORA.
 function NewsView(){
   const [nw,setNw]=useState(null);
+  const [nwT,setNwT]=useState(null); // hora de la última actualización del feed
   const [nerr,setNerr]=useState(false);
   useEffect(()=>{let a=true;
     const load=()=>fetch(LS_RELAY.replace('/ls','/news')).then(r=>r.json()).then(j=>{
-      if(!a)return; if(j&&j.items&&j.items.length)setNw(j.items);else if(!nw)setNerr(true);
+      if(!a)return; if(j&&j.items&&j.items.length){setNw(j.items);setNwT(j.t||Date.now());}else if(!nw)setNerr(true);
     }).catch(()=>{if(a&&!nw)setNerr(true);});
     load();const t=setInterval(load,900000);return()=>{a=false;clearInterval(t);};},[]);
   const ago=d=>{if(!d)return '';const m=Math.max(1,Math.round((Date.now()-d)/6e4));
@@ -6362,7 +6363,7 @@ function NewsView(){
           <span style={{width:7,height:7,borderRadius:'50%',background:'var(--down)',boxShadow:'0 0 8px var(--down)',animation:'breathe 1.8s ease infinite'}}/>
           <span style={eyebrow}>En vivo · última hora</span>
         </span>
-        <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>Google News · medios ES</span>
+        <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>Google News · medios ES{nwT?' · '+new Date(nwT).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}):''}</span>
       </div>
       {!nw&&!nerr&&<div>{[90,70,80,60].map((w,i)=><div key={i} className="sk" style={{width:w+'%'}}/>)}</div>}
       {nerr&&!nw&&<div style={{fontSize:10,color:'var(--faint)',textAlign:'center',padding:'14px 0'}}>Ahora mismo no llegan titulares (el relé puede estar desplegándose). Reintenta en unos minutos.</div>}
