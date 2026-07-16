@@ -3672,7 +3672,7 @@ function QuantView({gFunding,nav}){
       }
       return rows2.length?rows2:null;
     })();
-    const actSt=patterns.filter(p=>p.st&&!p.cancelled&&!(p.ago>0)); // el cono solo usa disparos FRESCOS y no cancelados (los persistentes son visuales)
+    const actSt=patterns.filter(p=>p.st&&!p.cancelled&&!(p.ago>0)); // el modelo solo usa disparos FRESCOS y no cancelados (los persistentes son visuales)
     const sig10=actSt.length?qMean(actSt.map(p=>p.st.avg)):0;                  // retorno medio histórico 10d de las señales activas
     // Patrones gráficos clásicos (estilo Binance) con su estadística
     const chartPats=chartPatterns(cl);
@@ -4175,7 +4175,7 @@ function QuantView({gFunding,nav}){
 
       {/* NAV RÁPIDA: la vista es muy larga — chips que saltan a cada sección */}
       <div style={{display:'flex',gap:6,overflowX:'auto',paddingBottom:6,marginBottom:10,WebkitOverflowScrolling:'touch'}}>
-        {[['sec-velo','📡 Velo'],['sec-vista','📊 Gráficos'],['sec-cono','🔮 Cono'],['sec-patrones','🕯️ Patrones'],['sec-figuras','📐 Figuras'],['sec-flujo','💵 Flujo'],['sec-manip','🕵️ Manipulación']].map(([id2,lbl])=>(
+        {[['sec-velo','📡 Velo'],['sec-vista','📊 Gráficos'],['sec-patrones','🕯️ Patrones'],['sec-figuras','📐 Figuras'],['sec-flujo','💵 Flujo'],['sec-manip','🕵️ Manipulación']].map(([id2,lbl])=>(
           <span key={id2} onClick={()=>{const el=document.getElementById(id2);if(el)el.scrollIntoView({behavior:'smooth',block:'start'});}}
             style={{flexShrink:0,fontSize:10,fontWeight:700,color:'var(--dim)',padding:'6px 11px',borderRadius:9,background:'var(--panel2)',border:'1px solid var(--line2)',cursor:'pointer',whiteSpace:'nowrap'}}>{lbl}</span>))}
       </div>
@@ -4760,7 +4760,7 @@ function QuantView({gFunding,nav}){
             </div>
           </div>
         )):<div style={{fontSize:11,color:'var(--faint)',textAlign:'center',padding:'6px 0'}}>Sin barridos, squeezes ni divergencias anómalas en los últimos 21 días.</div>}
-        <p style={{fontSize:9,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Busca manipulación en todos los sentidos: <b>barridos de stops</b> (mechas anómalas), <b>pump&dump / flash-crash</b> (movimiento extremo revertido), <b>vela de gran volumen absorbida</b>, <b>barrido en V</b>, <b>squeezes</b> (funding extremo) y <b>divergencias spot-futuros</b>. El <b>%</b> es el <b>acierto histórico real</b> de que ese tipo revierta a 7 días (backtest sobre BTC, n = nº de casos); solo los de acierto alto inclinan el cono, y con más fuerza cuanto mayor la ventaja.</p>
+        <p style={{fontSize:9,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Busca manipulación en todos los sentidos: <b>barridos de stops</b> (mechas anómalas), <b>pump&dump / flash-crash</b> (movimiento extremo revertido), <b>vela de gran volumen absorbida</b>, <b>barrido en V</b>, <b>squeezes</b> (funding extremo) y <b>divergencias spot-futuros</b>. El <b>%</b> es el <b>acierto histórico real</b> de que ese tipo revierta a 7 días (backtest sobre BTC, n = nº de casos); solo los de acierto alto inclinan el sesgo del modelo, y con más fuerza cuanto mayor la ventaja.</p>
       </div>
 
       {/* PATRONES CHARTISTAS (automático) */}
@@ -4884,142 +4884,13 @@ function QuantView({gFunding,nav}){
         )):<div style={{fontSize:11,color:'var(--faint)',textAlign:'center',padding:'8px 0'}}>Sin figuras gráficas claras ahora mismo en ninguna temporalidad.</div>}
           {figsAll.length>CAPF&&<div onClick={()=>setShowAllFigs(v=>!v)} style={{textAlign:'center',padding:'8px 0 2px',cursor:'pointer',fontSize:10,fontWeight:700,color:'var(--accent)'}}>{showAllFigs?'▲ ver menos':'▼ ver las '+(figsAll.length-CAPF)+' figuras restantes'}</div>}
           </React.Fragment>);})()}
-        <p style={{fontSize:9,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Figuras detectadas por pivotes de swing (dobles/triples techos y suelos, hombro-cabeza-hombro, triángulos, rupturas de rango) en <b>3 temporalidades</b>: <b style={{color:'#F3BA2F'}}>4h</b>, <b>1D</b> y <b style={{color:'#8AA0FF'}}>SEMANAL</b> — cada una backtesteada EN SU escala (el % es a 10 velas de esa temporalidad). <b style={{color:'var(--up)'}}>✓ confirmada</b> = ya rompió (solo las del diario alimentan el cono). <b style={{color:'#F3BA2F'}}>⏳ en formación</b> = la estructura está y el precio se acerca al disparo. <b>objetivo</b> = proyección por amplitud · <b>%</b> = acierto histórico ±margen. <b style={{color:'var(--down)'}}>⚠ no rentable</b> = la estadística contradice la teoría: no inclina el cono. Las canceladas se retiran a las 3 velas.</p>
+        <p style={{fontSize:9,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Figuras detectadas por pivotes de swing (dobles/triples techos y suelos, hombro-cabeza-hombro, triángulos, rupturas de rango) en <b>3 temporalidades</b>: <b style={{color:'#F3BA2F'}}>4h</b>, <b>1D</b> y <b style={{color:'#8AA0FF'}}>SEMANAL</b> — cada una backtesteada EN SU escala (el % es a 10 velas de esa temporalidad). <b style={{color:'var(--up)'}}>✓ confirmada</b> = ya rompió (solo las del diario alimentan el modelo). <b style={{color:'#F3BA2F'}}>⏳ en formación</b> = la estructura está y el precio se acerca al disparo. <b>objetivo</b> = proyección por amplitud · <b>%</b> = acierto histórico ±margen. <b style={{color:'var(--down)'}}>⚠ no rentable</b> = la estadística contradice la teoría: no inclina el modelo. Las canceladas se retiran a las 3 velas.</p>
       </div>
 
-      {/* MONTE CARLO · cono de probabilidad (grado institucional) */}
-      <div id="sec-cono" style={panel({marginBottom:14,padding:16,background:'radial-gradient(130% 80% at 50% 0%, rgba(110,139,255,.06) 0%, var(--panel) 55%)'})}>
-        <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
-          <span style={eyebrow}>Cono de probabilidad · 30 días</span>
-          <span className="mono" style={{fontSize:8.5,fontWeight:700,color:'var(--accent)',padding:'2px 7px',borderRadius:10,background:'rgba(110,139,255,.12)',border:'1px solid rgba(110,139,255,.3)'}}>700 sims · institucional</span>
-        </div>
-        <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:10}}>bloques de <b>días análogos</b> (régimen como el de hoy) con <b>bandas conformales</b> (cuantiles empíricos reales · colas gordas · 90% calibrado a ~91% en 9 años) · <span style={{color:c.drift>0?'var(--up)':c.drift<0?'var(--down)':'var(--faint)'}}>sesgo {c.drift>=0?'+':''}{(Math.expm1(c.drift)*100).toFixed(2)}%/día</span> · toca para ver día y precio</div>
-        {(()=>{
-          const coneLo=Math.min(...b.map(x=>x.p5)),coneHi=Math.max(...b.map(x=>x.p95));
-          const inR=v=>Number.isFinite(v)&&v>=coneLo*0.92&&v<=coneHi*1.08;
-          // solo el max pain de opciones (la operación/trade se quitó del cono)
-          const hlines=[inR(c.opt&&c.opt.maxPain)?{v:c.opt.maxPain,c:'#F3BA2F',label:'max pain'}:null].filter(Boolean);
-          return(
-          <TVChart series={b.map(x=>x.p50)} H={FH} glow grid hlines={hlines}
-            bands={[
-              {hi:b.map(x=>x.p95),lo:b.map(x=>x.p5),fill:'rgba(110,139,255,.07)'},
-              {hi:b.map(x=>x.p90),lo:b.map(x=>x.p10),fill:'rgba(110,139,255,.10)'},
-              {hi:b.map(x=>x.p75),lo:b.map(x=>x.p25),fill:'rgba(110,139,255,.16)'},
-              {hi:b.map(x=>x.p60),lo:b.map(x=>x.p40),fill:'rgba(110,139,255,.26)'},
-            ]}
-            fmt={money} label={i=>i===0?'hoy':'día '+i}/>);
-        })()}
-        <div style={{...flx({justifyContent:'space-around'}),marginTop:10}}>
-          {[['Sube',c.probUp.toFixed(0)+'%','var(--up)'],['+15%',c.probUp15.toFixed(0)+'%','var(--upDim)'],['-15%',c.probDn15.toFixed(0)+'%','var(--down)'],
-            ['Mediana',money(c.mc.bands[30].p50),'var(--txt)']].map((m,i)=>(
-            <div key={i} style={{textAlign:'center'}}>
-              <div className="mono" style={{fontSize:13,fontWeight:800,color:m[2]}}>{m[1]}</div>
-              <div style={{fontSize:8.5,color:'var(--dim)'}}>{m[0]}</div>
-            </div>
-          ))}
-        </div>
-        {/* BACKTEST HONESTO DEL CONO: acierto direccional real vs "siempre sube" */}
-        {c.coneBT&&(()=>{const r30=c.coneBT.d30,r7=c.coneBT.d7;
-          const good30=r30.hit>=r30.base||r30.ic>=0.1, good7=r7.hit>=r7.base||r7.ic>=0.08;
-          return(
-          <div style={{marginTop:12,paddingTop:11,borderTop:'1px solid var(--line2)'}}>
-            <div style={{...flx({justifyContent:'space-between'}),marginBottom:7}}>
-              <span style={{fontSize:9.5,color:'var(--faint)',fontWeight:600,letterSpacing:.5,textTransform:'uppercase'}}>🎯 Backtest del cono · 9 años</span>
-              <span className="mono" style={{fontSize:9,fontWeight:700,color:(good30||good7)?'var(--up)':'#F3BA2F'}}>{(good30||good7)?'✓ con ventaja':'≈ sin ventaja clara'}</span>
-            </div>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-              {[['30 días',r30],['Semanal (7d)',r7]].map(([lbl,r],i)=>(
-                <div key={i} style={{background:'#0A0D14',borderRadius:9,padding:'9px 10px'}}>
-                  <div style={{fontSize:8.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.6,fontWeight:600,marginBottom:4}}>{lbl}</div>
-                  <div className="mono" style={{fontSize:15,fontWeight:800,color:r.hit>=r.base?'var(--up)':'#F3BA2F'}}>{r.hit}%<span style={{fontSize:9,fontWeight:600,color:'var(--faint)'}}> acierto</span></div>
-                  <div className="mono" style={{fontSize:8,color:'var(--dim)',marginTop:2}}>vs "sube" {r.base}% · IC {r.ic>=0?'+':''}{r.ic} · n={r.n}</div>
-                </div>
-              ))}
-            </div>
-            <p style={{fontSize:8.5,color:'var(--faint)',marginTop:7,lineHeight:1.5}}>Medido punto por punto sobre 9 años (walk-forward, solo datos pasados en cada día). <b>Acierto</b> = % de veces que el sesgo del cono acertó la dirección; <b>IC</b> = correlación sesgo→retorno (positivo = la magnitud aporta información). La dirección a 30d es difícil de batir porque BTC sube ~{r30.base}% del tiempo; el valor real del cono está en la <b>magnitud del sesgo</b> (IC&gt;0) y en las <b>bandas de probabilidad calibradas</b>, no en clavar arriba/abajo.</p>
-          </div>);})()}
-        {/* NIVELES DEL CONO a 30d (P75/P25/P10 de las bandas calibradas): lo que SÍ tiene
-            valor medido. Los "checkpoints" semanales y el seguimiento de ruta fija se
-            eliminaron (decisión del usuario: una ruta de trazo único es ruido). */}
-        {(()=>{const bd=c.mc.bands;
-          return(
-          <div style={{marginTop:12,paddingTop:11,borderTop:'1px solid var(--line2)'}}>
-            <div style={{...flx({justifyContent:'space-between'}),marginBottom:8}}>
-              <span style={{fontSize:9.5,color:'var(--faint)',fontWeight:600,letterSpacing:.5,textTransform:'uppercase'}}>🎯 Niveles del cono · 30 días</span>
-              <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>bandas calibradas</span>
-            </div>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:6}}>
-              {[['🎯 Objetivo (P75)',money(bd[30].p75),'var(--up)'],
-                ['🛟 Suelo típico (P25)',money(bd[30].p25),'#5B9BFF'],
-                ['🛑 Invalidación (P10)',money(bd[30].p10),'var(--down)']].map((m,i)=>(
-                <div key={i} style={{background:'#0A0D14',borderRadius:8,padding:'7px 5px',textAlign:'center'}}>
-                  <div className="mono" style={{fontSize:10.5,fontWeight:800,color:m[2]}}>{m[1]}</div>
-                  <div style={{fontSize:7.5,color:'var(--dim)',marginTop:2}}>{m[0]}</div>
-                </div>))}
-            </div>
-            <p style={{fontSize:8.5,color:'var(--faint)',marginTop:7,lineHeight:1.5}}>Son percentiles de las <b>bandas</b> (no una predicción de trazo único): 1 de cada 4 veces el precio acaba por encima del objetivo, 1 de cada 4 por debajo del suelo, y solo 1 de cada 10 bajo la invalidación — si pasa, el escenario se descarta. No es consejo financiero.</p>
-          </div>);})()}
-        {/* AUTO-BACKTEST DE CALIBRACIÓN del modelo de volatilidad */}
-        {c.cal&&(()=>{const ok50=Math.abs(c.cal.cov50-50)<=10, ok90=Math.abs(c.cal.cov90-90)<=7;
-          const good=ok50&&ok90;
-          return(
-          <div style={{marginTop:11,paddingTop:11,borderTop:'1px solid var(--line2)'}}>
-            <div style={{...flx({justifyContent:'space-between'}),marginBottom:6}}>
-              <span style={{fontSize:9.5,color:'var(--faint)',fontWeight:600,letterSpacing:.5,textTransform:'uppercase'}}>Calibración · {c.cal.n} casos</span>
-              <span className="mono" style={{fontSize:9.5,fontWeight:700,color:good?'var(--up)':'#F3BA2F'}}>{good?'✓ bien calibrado':'aprox.'}</span>
-            </div>
-            <div style={{...flx({gap:8})}}>
-              {[['Banda 50%',c.cal.cov50,50],['Banda 90%',c.cal.cov90,90]].map((m,i)=>(
-                <div key={i} style={{flex:1,background:'#0A0D14',borderRadius:8,padding:'8px 9px',textAlign:'center'}}>
-                  <div className="mono" style={{fontSize:13,fontWeight:800,color:'var(--txt)'}}>{m[1].toFixed(0)}%</div>
-                  <div style={{fontSize:8.5,color:'var(--dim)'}}>{m[0]} · objetivo {m[2]}%</div>
-                </div>
-              ))}
-            </div>
-            <p style={{fontSize:9,color:'var(--faint)',marginTop:7,lineHeight:1.5}}>Sobre el histórico, el precio real a 10d cayó dentro de cada banda este % de las veces. Cuanto más cerca del objetivo, mejor calibrado el cono.</p>
-          </div>);})()}
-        {/* (el "marcador en vivo" de la ruta fija se eliminó junto con las rutas de trazo
-            único; la calibración de las bandas —arriba— sigue midiendo el cono de verdad.
-            loadRoutes/loadSkill siguen calculándose en segundo plano: alimentan la
-            auto-recalibración de la volatilidad.) */}
-        {/* EXPLICACIÓN: todos los sesgos que inclinan el Monte Carlo */}
-        <div onClick={()=>setShowBias(s=>!s)} style={{...flx({justifyContent:'space-between'}),marginTop:12,paddingTop:11,
-          borderTop:'1px solid var(--line2)',cursor:'pointer'}}>
-          <span className="mono" style={{fontSize:10,color:'var(--accent)',fontWeight:700}}>{showBias?'▲ ocultar por qué':'▼ ¿por qué este sesgo? · ver señales'}</span>
-          <span className="mono" style={{fontSize:9.5,color:'var(--faint)'}}>{c.biases.length} señales</span>
-        </div>
-        {showBias&&<div style={{marginTop:10}}>
-          <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:8,lineHeight:1.5}}>Cada señal aporta una deriva diaria <b>ponderada por su fiabilidad</b> (acierto histórico); las correlacionadas se agrupan en buckets y se promedian para no doble-contar. Los patrones se aplican <b>día a día</b> (1, 2, 3 … 30 días).</div>
-          {c.biases.slice().sort((a,b)=>Math.abs(b.v*(b.w??1))-Math.abs(a.v*(a.w??1))).map((bi,i)=>{
-            const pd=Math.expm1(bi.v)*100, pos=bi.v>=0, wp=Math.round((bi.w!=null?bi.w:0.5)*100);
-            return(
-            <div key={i} style={{...flx({gap:8}),padding:'7px 0',borderTop:i?'1px solid #12151F':'none'}}>
-              <span style={{fontSize:13,width:14,color:Math.abs(bi.v)<1e-6?'var(--faint)':pos?'var(--up)':'var(--down)'}}>{Math.abs(bi.v)<1e-6?'·':pos?'▲':'▼'}</span>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{...flx({gap:6})}}>
-                  <span style={{fontSize:11.5,fontWeight:700,color:'var(--txt)'}}>{bi.k}</span>
-                  <span className="mono" style={{fontSize:8,fontWeight:700,color:wp>=60?'var(--up)':wp>=45?'#F3BA2F':'var(--faint)',padding:'1px 5px',borderRadius:7,background:'rgba(255,255,255,.04)',flexShrink:0}}>fiab {wp}%</span>
-                </div>
-                <div style={{fontSize:9,color:'var(--faint)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{bi.why}</div>
-              </div>
-              <span className="mono" style={{fontSize:10.5,fontWeight:700,color:Math.abs(bi.v)<1e-6?'var(--faint)':pos?'var(--up)':'var(--down)'}}>{pos?'+':''}{pd.toFixed(3)}%/d</span>
-            </div>);
-          })}
-          {c.db&&Math.abs(c.db.adj)>1e-6&&(
-            <div style={{...flx({gap:8}),padding:'7px 0',borderTop:'1px solid #12151F'}}>
-              <span style={{fontSize:13,width:14,color:c.db.adj>=0?'var(--up)':'var(--down)'}}>{c.db.adj>=0?'▲':'▼'}</span>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{fontSize:11.5,fontWeight:700,color:'var(--txt)'}}>Auto-corrección (debiasing)</div>
-                <div style={{fontSize:9,color:'var(--faint)'}}>aprendida del error real vs predicho · {c.db.n} días</div>
-              </div>
-              <span className="mono" style={{fontSize:10.5,fontWeight:700,color:c.db.adj>=0?'var(--up)':'var(--down)'}}>{c.db.adj>=0?'+':''}{(Math.expm1(c.db.adj)*100).toFixed(3)}%/d</span>
-            </div>)}
-          <div style={{...flx({justifyContent:'space-between'}),marginTop:9,paddingTop:9,borderTop:'1px solid var(--line2)'}}>
-            <span style={{fontSize:11,fontWeight:800,color:'var(--txt)'}}>Sesgo total / día</span>
-            <span className="mono" style={{fontSize:12,fontWeight:800,color:c.drift>=0?'var(--up)':'var(--down)'}}>{c.drift>=0?'+':''}{(Math.expm1(c.drift)*100).toFixed(3)}%</span>
-          </div>
-        </div>}
-      </div>
+      {/* (el CONO de probabilidad —30d y 7d— se ELIMINÓ a petición del usuario.
+          El Monte Carlo sigue calculándose en segundo plano: alimenta la tabla de
+          "probabilidad de objetivos", la calculadora "¿tocará mi precio?" y los
+          avisos de Telegram.) */}
 
       {/* CALCULADORA: probabilidad de TOCAR un precio en 30d (primer-paso Monte Carlo) */}
       {c.mc&&c.mc.maxes&&(()=>{const tv=parseFloat((tgt||'').replace(/[^0-9.]/g,''));
@@ -5418,7 +5289,7 @@ function QuantView({gFunding,nav}){
           ? [['Cuándo',pt.ago>0?'hace '+pt.ago+'d':'hoy','var(--txt)'],['Casos',pt.samples!=null?'n='+pt.samples:'—','var(--txt)']]
           : [['Retorno típico',st?(st.avg>=0?'+':'')+st.avg+'%':'—',st&&st.avg>=0?'var(--up)':'var(--down)'],['Casos',st?'n='+st.n:'pocos','var(--txt)']];
         const expl=manip
-          ? 'El % es el acierto histórico REAL de que este tipo de evento revierta a 7 días (backtest sobre BTC). La flecha muestra hacia dónde suele ir el precio después. Solo los de acierto alto inclinan el cono. Toca fuera para cerrar.'
+          ? 'El % es el acierto histórico REAL de que este tipo de evento revierta a 7 días (backtest sobre BTC). La flecha muestra hacia dónde suele ir el precio después. Solo los de acierto alto inclinan el sesgo del modelo. Toca fuera para cerrar.'
           : 'Patrón/indicador detectado AHORA en el gráfico diario. La flecha y la barra resumen qué hizo BTC históricamente cada vez que apareció (retorno a 10 días, backtest real). Toca fuera para cerrar.';
         return(
         <div onClick={()=>setInfoSel(null)} style={{position:'fixed',inset:0,zIndex:300,background:'rgba(3,5,9,.88)',
