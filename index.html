@@ -205,18 +205,33 @@
       transition:transform .15s ease,box-shadow .15s ease;user-select:none}
     .rd-share:hover{transform:translateY(-1px);box-shadow:0 10px 30px -10px rgba(67,230,96,.85)}
     .rd-share:active{transform:scale(.97)}
-    .rd-ring{position:relative;width:86px;height:86px;margin:0 auto 11px;
-      filter:drop-shadow(0 0 14px rgba(145,70,255,.45))}
+    /* portada tipo banner (degradado de marca con barrido de luz) + avatar solapado */
+    .rd-cover{position:relative;margin:-26px -18px 0;height:88px;border-radius:24px 24px 0 0;overflow:hidden;
+      background:linear-gradient(115deg,#0E1320 0%,#2A1152 32%,#0B3D2E 72%,#0E1320 100%)}
+    .rd-cover::before{content:'';position:absolute;inset:0;
+      background:radial-gradient(60% 90% at 30% 15%,rgba(145,70,255,.5),transparent 62%),
+                 radial-gradient(52% 85% at 76% 75%,rgba(67,230,96,.38),transparent 62%)}
+    @keyframes rdSweep{0%,55%{left:-45%}100%{left:135%}}
+    .rd-cover::after{content:'';position:absolute;top:0;bottom:0;left:-45%;width:40%;transform:skewX(-20deg);
+      background:linear-gradient(90deg,transparent,rgba(255,255,255,.1),transparent);
+      animation:rdSweep 4.6s ease-in-out infinite}
+    .rd-stats{display:flex;gap:8px;margin:0 0 15px}
+    .rd-stat{flex:1;text-align:center;padding:9px 4px;border-radius:12px;
+      background:rgba(255,255,255,.035);border:1px solid var(--line2)}
+    .rd-stat .v{font-family:'JetBrains Mono',monospace;font-size:14.5px;font-weight:800;color:var(--txt)}
+    .rd-stat .l{font-size:7.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.5px;margin-top:2px}
+    .rd-ring{position:relative;width:96px;height:96px;margin:-48px auto 11px;z-index:2;
+      filter:drop-shadow(0 0 16px rgba(145,70,255,.5))}
     .rd-ring::before{content:'';position:absolute;inset:-4px;border-radius:50%;
       background:conic-gradient(from 0deg,#43E660,#9146FF,#E7ECF5,#43E660);
       animation:rdRing 5s linear infinite}
     .rd-ava{position:absolute;inset:0;border-radius:50%;display:flex;align-items:center;justify-content:center;
       font-size:27px;font-weight:800;color:#fff;background:#141926;border:3px solid #0A0D14;
       animation:rdAva 3.8s ease-in-out infinite;overflow:hidden}
-    .rd-name{font-size:17px;font-weight:800;letter-spacing:-.3;
+    .rd-name{font-size:19px;font-weight:800;letter-spacing:-.3;
       background:linear-gradient(92deg,#43E660 0%,#BFF7CB 35%,#C9B3FF 65%,#9146FF 100%);
       -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:#E7ECF5}
-    .rd-link{position:relative;overflow:hidden;display:flex;align-items:center;gap:12px;padding:12px 13px;margin-bottom:9px;border-radius:14px;
+    .rd-link{position:relative;overflow:hidden;display:flex;align-items:center;gap:12px;padding:13px 14px;margin-bottom:9px;border-radius:16px;
       background:rgba(255,255,255,.035);border:1px solid var(--line2);cursor:pointer;
       text-decoration:none;color:var(--txt);
       transition:transform .16s ease,border-color .16s ease,box-shadow .16s ease,background .16s ease;
@@ -433,12 +448,12 @@ function RedIcon({id,e}){ // logo oficial inline, en el COLOR de su marca → em
   const p=BRAND[key];
   if(!p)return <span style={{fontSize:16,lineHeight:1}}>{e}</span>;
   // TikTok: su logo real son 3 capas (cian y rosa desplazadas + blanco encima)
-  if(key==='tiktok')return(<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" style={{display:'block'}}>
+  if(key==='tiktok')return(<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" style={{display:'block'}}>
     <path d={p} fill="#25F4EE" transform="translate(-0.85,-0.5)"/>
     <path d={p} fill="#FE2C55" transform="translate(0.85,0.5)"/>
     <path d={p} fill="#fff"/></svg>);
   const IC={youtube:'#FF0000',twitch:'#9146FF',x:'#fff',facebook:'#1877F2',linkedin:'#0A66C2',gmail:'#EA4335'}[key]||'#fff';
-  return(<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" style={{display:'block'}}>
+  return(<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" style={{display:'block'}}>
     <path d={p} fill={IC}/></svg>);
 }
 
@@ -5262,23 +5277,8 @@ function QuantView({gFunding,nav}){
         </p>
       </div>
 
-      {/* Los bots (trade recomendado, backtest y ranking) se han movido a la pestaña "Bots" */}
-      <div style={panel({marginBottom:14,padding:16,textAlign:"center",background:"radial-gradient(130% 80% at 50% 0%, rgba(31,224,160,.06) 0%, var(--panel) 55%)"})}>
-        <div style={{fontSize:22,marginBottom:6}}>🤖</div>
-        <div style={{fontSize:13,fontWeight:800,color:"var(--txt)"}}>Los bots tienen su propia pestaña</div>
-        <div style={{fontSize:10.5,color:"var(--faint)",marginTop:6,lineHeight:1.55}}>El trade recomendado, el backtest y el <b>ranking de bots por rentabilidad</b> (todos sobre el mismo periodo y validados con walk-forward y Deflated Sharpe) están ahora en la pestaña <b style={{color:"var(--up)"}}>Bots</b>, arriba.</div>
-      </div>
-
-      {/* NUMÉRICO CHICO: ¿la ruta 30d está acertando? (marcador acumulado) */}
-      {c.skill&&c.skill.n>=1&&(()=>{const sk=c.skill, ok=sk.skill>0;
-        return(
-        <div style={{...flx({justifyContent:'center',gap:16}),marginBottom:10,padding:'9px 12px',borderRadius:10,background:'#0A0D14',border:'1px solid var(--line2)'}}>
-          <span style={{fontSize:8.5,color:'var(--faint)'}}>Ruta 30d</span>
-          <span className="mono" style={{fontSize:11,fontWeight:800,color:ok?'var(--up)':'#F3BA2F'}}>{ok?'✓ acierta':'~ sin ventaja'} {(sk.skill*100).toFixed(0)}%</span>
-          <span className="mono" style={{fontSize:9,color:'var(--dim)'}}>dirección {(sk.hit*100).toFixed(0)}%</span>
-          <span className="mono" style={{fontSize:9,color:'var(--dim)'}}>{sk.n} días</span>
-        </div>);
-      })()}
+      {/* (el aviso "los bots tienen su propia pestaña" y el marcador de la ruta 30d
+          se quitaron a petición del usuario: ruido al final de la vista) */}
 
       <p style={{fontSize:9.5,color:'var(--faint)',lineHeight:1.5,textAlign:'center',padding:'0 8px',marginBottom:8}}>
         Análisis automático con datos públicos (Binance · Deribit · CoinGecko · bitcoin-data). Modelos estadísticos.
@@ -7091,14 +7091,27 @@ function App(){
       {redesOpen&&(
         <div className="rd-back" onClick={closeRedes}>
           <div className="rd-card" onClick={e=>e.stopPropagation()} role="dialog" aria-label="Redes sociales">
+            {/* banner de portada con barrido de luz */}
+            <div className="rd-cover"/>
             <span onClick={closeRedes} aria-label="Cerrar" role="button"
-              style={{position:'absolute',top:12,right:14,fontSize:15,color:'var(--faint)',cursor:'pointer',padding:'4px 8px',zIndex:2}}>✕</span>
+              style={{position:'absolute',top:12,right:14,fontSize:15,color:'rgba(255,255,255,.8)',cursor:'pointer',padding:'4px 8px',zIndex:3}}>✕</span>
             {/* chispas decorativas (verde/morado, parpadeo suave) */}
             {[[10,15],[88,9],[72,24],[14,50],[92,58],[6,82]].map(([x,y],i)=>(
               <span key={i} className="rd-spark" style={{left:x+'%',top:y+'%',animationDelay:(i*0.65)+'s',background:i%2?'#43E660':'#B78CFF'}}/>))}
             <div className="rd-ring"><RedAvatar/></div>
             <div className="rd-name" style={{textAlign:'center',marginBottom:3}}>@JAVOX27</div>
-            <div style={{textAlign:'center',fontSize:9.5,color:'var(--dim)',marginBottom:16,lineHeight:1.5}}>El contenido que no sabías que necesitabas 🎬<br/><span style={{color:'var(--faint)'}}>Sígueme donde quieras 👇</span></div>
+            <div style={{textAlign:'center',fontSize:9.5,color:'var(--dim)',marginBottom:13,lineHeight:1.5}}>El contenido que no sabías que necesitabas 🎬<br/><span style={{color:'var(--faint)'}}>Sígueme donde quieras 👇</span></div>
+            {/* totales (en vivo si el relé responde; si no, última cifra conocida) */}
+            {(()=>{
+              const tk=social&&social.tiktok, tw=social&&social.twitch, xx=social&&social.x;
+              const ytN=(()=>{const s2=social&&social.youtube&&(''+social.youtube.subs||'');const m=s2&&s2.match(/[\d.,]+/);return m?parseInt(m[0].replace(/[.,]/g,''),10):34;})();
+              const totF=((tk&&tk.f)||526)+((xx&&xx.f!=null)?xx.f:24)+((tw&&tw.f!=null)?tw.f:107)+ytN;
+              const vids=(tk&&tk.v)||780;
+              return(<div className="rd-stats">
+                <div className="rd-stat"><div className="v">{totF.toLocaleString('es-ES')}</div><div className="l">seguidores</div></div>
+                <div className="rd-stat"><div className="v">{vids}+</div><div className="l">vídeos</div></div>
+                <div className="rd-stat"><div className="v">{REDES.length}</div><div className="l">plataformas</div></div>
+              </div>);})()}
             {REDES.map((r,i)=>{
               // seguidores EN VIVO del relé (si llegan) → si no, la última cifra conocida (f0)
               let stat=r.f0||null, live=false, sub=r.s;
@@ -7119,7 +7132,7 @@ function App(){
                 style={{'--rc':r.c,animationDelay:(120+i*65)+'ms'}}>
                 {/* chip estilo LED: fondo oscuro + logo blanco + aro blanco + halo del color de la marca
                     (TikTok con su doble neón cian/rosa real, no fondo rojo) */}
-                <span style={{width:36,height:36,borderRadius:11,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',
+                <span style={{width:40,height:40,borderRadius:13,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',
                   background:'#0F1419',border:'1px solid rgba(255,255,255,.28)',
                   boxShadow:r.glow||('0 0 11px '+r.c+'AA')}}><RedIcon id={r.id} e={r.e}/></span>
                 <span style={{minWidth:0}}>
