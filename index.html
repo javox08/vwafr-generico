@@ -120,6 +120,10 @@
       .mainwrap{max-width:1500px;column-width:360px;column-gap:28px}
       .mainwrap>.span-all{column-span:all}
       .mainwrap>*{break-inside:avoid}
+      /* Vistas que envuelven sus paneles en un <div> (Cuantitativo, Ciclo, Bots, Macro):
+         ocupan todo el ancho y reparten SUS paneles en columnas por sí mismas. */
+      .viewwrap{column-span:all;column-width:360px;column-gap:28px}
+      .viewwrap>*{break-inside:avoid}
     }
     input,button,textarea{font-family:inherit}
     body{background:var(--bg);font-family:'Sora',system-ui,sans-serif;color:var(--txt);
@@ -1391,7 +1395,7 @@ function CycleBTC(){
       z>0?'On-chain en zona baja — sesgo de acumulación.':z<0?'On-chain en zona alta — precaución.':'On-chain neutral.';})() : null;
 
   return(
-    <div>
+    <div className="viewwrap">
       <div style={{...flx({gap:10}),margin:'2px 2px 14px'}}>
         <CoinIcon c="BTC" size={32} radius={10}/>
         <div>
@@ -3925,7 +3929,7 @@ function QuantView({gFunding,nav}){
   const FH=128, b=c.mc.bands;
 
   return(
-    <div>
+    <div className="viewwrap">
       <div style={{...flx({gap:10}),margin:'2px 2px 14px'}}>
         <div style={{width:32,height:32,borderRadius:10,flexShrink:0,background:'rgba(110,139,255,.15)',
           border:'1px solid rgba(110,139,255,.4)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16}}>Σ</div>
@@ -5423,7 +5427,7 @@ function PIBView(){
   const pct=v=>(v>=0?'+':'')+v.toFixed(1)+'%';
 
   return(
-    <div>
+    <div className="viewwrap">
       <div style={{...flx({justifyContent:'space-between',gap:10}),margin:'2px 2px 14px'}}>
         <div style={{...flx({gap:10})}}>
           <div style={{width:32,height:32,borderRadius:10,flexShrink:0,background:'rgba(110,139,255,.15)',
@@ -5748,7 +5752,7 @@ function BotsView({gFunding}){
   const tcol=neutral?'var(--dim)':long?'var(--up)':'var(--down)';
 
   return(
-    <div>
+    <div className="viewwrap">
       {/* OPERACIÓN DEFINITIVA DE LOS BOTS RENTABLES (trade final con TP/SL en vivo) */}
       {(()=>{const dt=c.defTrade, dr=c.defRec, neutral=dt.side==='NEUTRAL'||dt.empty, long=dt.side==='LONG';
         const col=neutral?'var(--dim)':long?'var(--up)':'var(--down)';
