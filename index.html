@@ -227,7 +227,7 @@
       animation:rdRing 5s linear infinite}
     .rd-ava{position:absolute;inset:0;border-radius:50%;display:flex;align-items:center;justify-content:center;
       font-size:27px;font-weight:800;color:#fff;background:#141926;border:3px solid #0A0D14;
-      animation:rdAva 3.8s ease-in-out infinite;overflow:hidden}
+      overflow:hidden;will-change:transform} /* el movimiento lo dirige JS con objetivos al azar */
     .rd-name{font-size:19px;font-weight:800;letter-spacing:-.3;
       background:linear-gradient(92deg,#43E660 0%,#BFF7CB 35%,#C9B3FF 65%,#9146FF 100%);
       -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:#E7ECF5}
@@ -427,8 +427,24 @@ const REDES=[
 ];
 function RedAvatar(){ // logo real de JAVOX (guardado en el repo) → 🚀 si no carga
   const [err,setErr]=useState(false);
-  if(err)return <div className="rd-ava" style={{fontSize:27}}>🚀</div>;
-  return <img className="rd-ava" src="javox.jpg" alt="JAVOX27" onError={()=>setErr(true)}
+  const rf=React.useRef(null);
+  // Movimiento ALEATORIO orgánico (no un vaivén predecible): cada 0,9–2,3s el avatar
+  // deriva suavemente hacia un objetivo al azar (desplazamiento, giro y escala).
+  useEffect(()=>{
+    try{if(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches)return;}catch(_){}
+    let alive=true,tm;
+    const step=()=>{if(!alive)return;const el=rf.current;
+      if(el){
+        const dx=(Math.random()*10-5).toFixed(1),dy=(Math.random()*10-5).toFixed(1),
+          rot=(Math.random()*10-5).toFixed(1),sc=(0.98+Math.random()*0.06).toFixed(3),
+          dur=Math.round(900+Math.random()*1400);
+        el.style.transition='transform '+dur+'ms cubic-bezier(.35,.12,.28,1)';
+        el.style.transform='translate('+dx+'px,'+dy+'px) rotate('+rot+'deg) scale('+sc+')';
+        tm=setTimeout(step,dur+Math.random()*400);
+      }else tm=setTimeout(step,400);};
+    step();return()=>{alive=false;clearTimeout(tm);};},[]);
+  if(err)return <div ref={rf} className="rd-ava" style={{fontSize:27}}>🚀</div>;
+  return <img ref={rf} className="rd-ava" src="javox.jpg" alt="JAVOX27" onError={()=>setErr(true)}
     style={{objectFit:'cover',width:'100%',height:'100%'}}/>;
 }
 // Logos OFICIALES de cada red dibujados EN la web (formas de Simple Icons, SVG inline):
@@ -2110,9 +2126,17 @@ function monteCarlo(rets,price,days,paths,drift,mags,volScale,simW){
   const vs=(Number.isFinite(volScale)&&volScale>0)?volScale:1; // reescala la vol al régimen/implícita
   // mags: zonas del mapa de liquidez que actúan como IMÁN (el precio tiende a ir
   // hacia los clústeres de liquidaciones). Cada una: {p:nivel, w:fuerza}.
-  const M=(mags&&mags.length)?mags:null, S2=2*0.06*0.06; // núcleo gaussiano σ≈6%
-  const pull=v=>{let f=0;for(const m of M){const rel=(m.p-v)/v;f+=m.w*rel*Math.exp(-(rel*rel)/S2);}
-    return Math.max(-0.0035,Math.min(0.0035,f*0.5));}; // atracción diaria acotada
+  // Los imanes son un EMPUJÓN sutil hacia los clústeres, NUNCA un muelle sobre el precio:
+  // peso total normalizado (≤0,6), tope ±0,12%/día y ZONA MUERTA gaussiana (~2%) que anula
+  // fuerza Y pendiente cerca del precio actual. Antes (Σw≈5, tope 0,35%/día y fuerza lineal
+  // en el origen) los caminos quedaban CLAVADOS a ±1%: las bandas se salvaban porque
+  // conformalize() las reconstruye, pero los TOQUES (maxes/mins) salían ~0% → inútiles.
+  let M=null; if(mags&&mags.length){const tw=mags.reduce((a,x)=>a+Math.abs(x.w||0),0)||1;
+    const kw=Math.min(1,0.6/tw); M=mags.map(x=>({p:x.p,w:(x.w||0)*kw}));}
+  const S2=2*0.06*0.06, DZ=2*0.02*0.02; // núcleo gaussiano σ≈6% · zona muerta σ≈2%
+  const pull=v=>{let f=0;for(const m of M){const rel=(m.p-v)/v;
+    f+=m.w*rel*Math.exp(-(rel*rel)/S2)*(1-Math.exp(-(rel*rel)/DZ));}
+    return Math.max(-0.0012,Math.min(0.0012,f*0.5));}; // atracción diaria acotada
   // BOOTSTRAP POR BLOQUES con peso de recencia: en vez de días sueltos (que rompen
   // la estructura), se muestrean TRAMOS consecutivos de retornos reales → conserva
   // la volatilidad agrupada, las tendencias y las colas históricas. El arranque del
@@ -2135,17 +2159,25 @@ function monteCarlo(rets,price,days,paths,drift,mags,volScale,simW){
     }
     return s;};
   const slices=Array.from({length:days+1},()=>[]),finals=[],finals10=[],maxes=[],mins=[];
+  // NIVELES DE TOQUE útiles (±3/5/8/12%): para cada camino se apunta el DÍA del primer
+  // toque → probabilidad de tocar Y mediana de días hasta hacerlo (mucho más accionable
+  // que ±15/±30%, que casi nunca se tocan y salían 0% siempre).
+  const TL=[1.03,1.05,1.08,1.12,0.97,0.95,0.92,0.88].map(m2=>price*m2);
+  const touchD=TL.map(()=>[]);
   for(let p=0;p<paths;p++){let v=price,bi=n,bl=0,mx=price,mn=price;slices[0].push(v);
+    const td=TL.map(()=>0);
     for(let d=1;d<=days;d++){
       if(bl<=0||bi>=n){bi=pickStart();bl=1+Math.floor(-Math.log(Math.random()+1e-9)*4);} // bloque medio ~5d
       const r=(rets[bi]-mu)*vs;bi++;bl--; // demediado y reescalado a la vol objetivo
       const dr=darr?(drift[d-1]||0):dc;
       v*=Math.exp(r+dr+(M?pull(v):0));slices[d].push(v);
+      for(let li=0;li<TL.length;li++)if(!td[li]&&(TL[li]>=price?v>=TL[li]:v<=TL[li]))td[li]=d;
       if(v>mx)mx=v;if(v<mn)mn=v;if(d===10)finals10.push(v);}
-    finals.push(v);maxes.push(mx);mins.push(mn);}
+    finals.push(v);maxes.push(mx);mins.push(mn);
+    for(let li=0;li<TL.length;li++)if(td[li])touchD[li].push(td[li]);}
   const bands=slices.map(sl=>({p5:qPct(sl,5),p10:qPct(sl,10),p25:qPct(sl,25),p40:qPct(sl,40),
     p50:qPct(sl,50),p60:qPct(sl,60),p75:qPct(sl,75),p90:qPct(sl,90),p95:qPct(sl,95)}));
-  return {bands,finals,finals10,maxes,mins};
+  return {bands,finals,finals10,maxes,mins,touch:{lv:TL,days:touchD}};
 }
 // Rutas Monte Carlo persistentes: se FIJAN el día que nacen (snapshot de las
 // bandas) y luego cada día se ve cómo avanza el precio real sobre esa ruta.
@@ -3919,6 +3951,10 @@ function QuantView({gFunding,nav}){
     // reescalados a la volatilidad objetivo (implícita+reciente), con sesgos día a día e imán ──
     const pdrift=drift;
     const mc=monteCarlo(rets,price,30,700,drift30,mags,volScale,simW), fin=mc.finals;
+    try{window.__mcdbg={vs:volScale,st:sigTarget,sh:sigHist,n:rets.length,price,
+      b30:{p10:mc.bands[30].p10,p50:mc.bands[30].p50,p90:mc.bands[30].p90},
+      magN:mags?mags.length:0,magW:mags?mags.reduce((a,x)=>a+Math.abs(x.w||0),0):0,
+      touch3:mc.touch?mc.touch.days[0].length:null};}catch(_){}
     // ── CALIBRACIÓN CONFORMAL de las bandas (backtest: la banda del 90% del MC se
     // quedaba corta —cubría 82%— por las COLAS GORDAS de BTC). Se reconstruyen las
     // bandas con los cuantiles EMPÍRICOS de los retornos a d-días (demeados y
@@ -3960,9 +3996,11 @@ function QuantView({gFunding,nav}){
     // ── Probabilidad de TOCAR cada objetivo (first-passage: máximo/mínimo de cada
     // camino, no solo el valor final). Es la probabilidad real de que el precio
     // llegue a tocar el nivel en algún momento de los 30 días. ──
-    const levels=[1.30,1.15,0.85,0.70].map(mul=>{const lv=price*mul,up=mul>=1;
-      const hit=up?mc.maxes.filter(v=>v>=lv).length:mc.mins.filter(v=>v<=lv).length;
-      return {lv,pct:(mul-1)*100,p:hit/(mc.maxes.length||1)*100,up};});
+    const levels=(mc.touch?mc.touch.lv.map((lv,li)=>{
+      const up=lv>=price,arr=mc.touch.days[li],N=mc.maxes.length||1;
+      return {lv,pct:(lv/price-1)*100,p:arr.length/N*100,up,
+        med:arr.length?qPct(arr,50):null}; // mediana de días hasta el primer toque
+    }):[]).sort((a,b)=>b.pct-a.pct);
     // ── Correlaciones (riesgo sistémico) ──
     const corrE=(q.eth&&q.eth.length>10)?pearson(dret(cl),dret(q.eth)):null;
     const corrS=(q.sol&&q.sol.length>10)?pearson(dret(cl),dret(q.sol)):null;
@@ -5019,18 +5057,19 @@ function QuantView({gFunding,nav}){
           <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>Monte Carlo</span>
         </div>
         {c.levels.map((L,i)=>(
-          <div key={i} style={{...flx({gap:8}),padding:'7px 0',borderTop:i?'1px solid #12151F':'none'}}>
-            <span style={{fontSize:13,width:18,color:L.up?'var(--up)':'var(--down)'}}>{L.up?'▲':'▼'}</span>
-            <span className="mono" style={{fontSize:12,fontWeight:700,width:66,flexShrink:0}}>{money(L.lv)}</span>
-            <span className="mono" style={{fontSize:10,color:'var(--faint)',width:42}}>{L.pct>=0?'+':''}{L.pct.toFixed(0)}%</span>
+          <div key={i} style={{...flx({gap:7}),padding:'7px 0',borderTop:i?'1px solid #12151F':'none'}}>
+            <span style={{fontSize:13,width:16,color:L.up?'var(--up)':'var(--down)'}}>{L.up?'▲':'▼'}</span>
+            <span className="mono" style={{fontSize:11.5,fontWeight:700,width:62,flexShrink:0}}>{money(L.lv)}</span>
+            <span className="mono" style={{fontSize:9.5,color:'var(--faint)',width:34}}>{L.pct>=0?'+':''}{L.pct.toFixed(0)}%</span>
             <div style={{flex:1,height:7,borderRadius:4,background:'#0A0D14',overflow:'hidden'}}>
               <div style={{height:'100%',width:`${Math.min(100,L.p)}%`,borderRadius:4,
                 background:L.up?'linear-gradient(90deg,var(--upDim),var(--up))':'linear-gradient(90deg,var(--downDim),var(--down))'}}/>
             </div>
-            <span className="mono" style={{fontSize:11.5,fontWeight:700,width:38,textAlign:'right',color:L.up?'var(--up)':'var(--down)'}}>{L.p.toFixed(0)}%</span>
+            <span className="mono" style={{fontSize:11.5,fontWeight:700,width:36,textAlign:'right',color:L.up?'var(--up)':'var(--down)'}}>{L.p.toFixed(0)}%</span>
+            <span className="mono" style={{fontSize:8.5,color:'var(--dim)',width:34,textAlign:'right'}} title="mediana de días hasta el primer toque">{L.med!=null?'~'+Math.round(L.med)+'d':'—'}</span>
           </div>
         ))}
-        <p style={{fontSize:9.5,color:'var(--faint)',marginTop:9}}>Prob. de TOCAR cada nivel en algún momento de los 30 días (máx./mín. de cada simulación, no solo el cierre).</p>
+        <p style={{fontSize:9.5,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Prob. de <b style={{color:'var(--txt)'}}>TOCAR</b> cada nivel (±3/5/8/12%) en algún momento de los 30 días — no solo de cerrar ahí — y <b style={{color:'var(--txt)'}}>~días</b> = mediana de días hasta el primer toque (entre las simulaciones que lo tocan). Niveles cercanos y accionables: para objetivos concretos usa la calculadora de arriba.</p>
       </div>
 
       {/* OPCIONES (Deribit) */}
