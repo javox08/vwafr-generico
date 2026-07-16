@@ -32,6 +32,11 @@
   var J=function(o){return Promise.resolve(new Response(JSON.stringify(o),{status:200,headers:{'Content-Type':'application/json'}}));};
   window.fetch=function(u){u=''+u;
     try{
+      if(u.indexOf('/api/news')>=0)return J({t:Date.now(),items:[
+        {t:'El bitcoin se aleja de mínimos con el IPC de EEUU',s:'Expansión',u:'https://example.com/1',d:Date.now()-40*6e4,hot:true},
+        {t:'Bitcoin recupera los $65,000 tras resultados del IPP de EEUU',s:'Yahoo',u:'https://example.com/2',d:Date.now()-3*36e5,hot:false},
+        {t:'La SEC aprueba nuevas reglas para los ETF de criptomonedas',s:'Investing.com España',u:'https://example.com/3',d:Date.now()-5*36e5,hot:false},
+        {t:'Glassnode: Bitcoin podría estar formando un suelo',s:'FXStreet',u:'https://example.com/4',d:Date.now()-9*36e5,hot:false}]});
       if(u.indexOf('/api/social')>=0)return J({t:Date.now(),tiktok:{f:531,v:782,likes:10400},youtube:{subs:'34 subscribers'},twitch:{live:false,f:107},x:{f:24},fb1:{name:'Notici Javox'},fb2:{name:'NotiExpress',n:'3 me gusta'}});
       if(u.indexOf('/api/ls')>=0)return J(lsData);
       if(u.indexOf('/api/fr')>=0)return J({t:Date.now(),ex:{Gate:{BTC:{f:0.004,oi:2.1}},MEXC:{BTC:{f:0.01,oi:4.9}},Binance:{BTC:{f:0.008,oi:12.2}},Bybit:{BTC:{f:0.006,oi:7.5}},Bitget:{BTC:{f:0.004,oi:2.2}},

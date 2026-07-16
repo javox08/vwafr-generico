@@ -416,7 +416,7 @@ function ExLogo({name,color,size=16}){
 // su LOGO real —favicon oficial del dominio— con respaldo al emoji si no carga)
 const REDES=[
   // f0 = última cifra conocida (respaldo); el relé /api/social la actualiza EN VIVO al abrir el menú
-  {id:'tiktok',n:'TikTok',s:'@javox_008',u:'https://www.tiktok.com/@javox_008',d:'tiktok.com',e:'🎵',c:'#FE2C55',glow:'0 0 7px #25F4EECC, 0 0 14px #FE2C55BB',f0:'526 seguidores · 780 vídeos'},
+  {id:'tiktok',n:'TikTok',s:'@javox_008',u:'https://www.tiktok.com/@javox_008',d:'tiktok.com',e:'🎵',c:'#FE2C55',glow:'0 0 7px #25F4EECC, 0 0 14px #FE2C55BB',f0:'526 seguidores'},
   {id:'youtube',n:'YouTube',s:'@javox-k9p',u:'https://www.youtube.com/@javox-k9p',d:'youtube.com',e:'▶️',c:'#FF0000',f0:'34 suscriptores'},
   {id:'twitch',n:'Twitch',s:'javoxmaster',u:'https://www.twitch.tv/javoxmaster',d:'twitch.tv',e:'🎮',c:'#9146FF',f0:'107 seguidores'},
   {id:'x',n:'X (Twitter)',s:'@Javidelatorrev1',u:'https://x.com/Javidelatorrev1',d:'x.com',e:'𝕏',c:'#E7ECF5',f0:'24 seguidores'},
@@ -5273,7 +5273,7 @@ function QuantView({gFunding,nav}){
             </span>
           </div>);})()}
         <p style={{fontSize:9.5,color:'var(--faint)',lineHeight:1.5,marginTop:10}}>
-          <b style={{color:'var(--txt)'}}>🟢 = bueno · 🔴 = malo</b> para cada activo según el resultado (el mercado reacciona a la SORPRESA: dato real vs lo previo/esperado). Ej.: IPC más alto de lo esperado → la Fed sube/mantiene tipos → malo para cripto y bolsa, bueno para el dólar. El <b>número que salió</b> del IPC es oficial (BLS); el <b>esperado</b> es una estimación por tendencia (media de 6 meses) — <b>no</b> el consenso de mercado, que no tiene API pública gratis. Se mantienen 5 días tras el evento para ver el resultado. En las 48h alrededor la volatilidad se dispara: el modelo fuerza <b style={{color:'var(--down)'}}>NO-GO</b>. Los <b>cierres de gobierno</b> de EE.UU. retrasan datos macro.
+          <b style={{color:'var(--txt)'}}>🟢 = bueno · 🔴 = malo</b> para cada activo según el resultado (el mercado reacciona a la SORPRESA: dato real vs lo previo/esperado). Ej.: IPC más alto de lo esperado → la Fed sube/mantiene tipos → malo para cripto y bolsa, bueno para el dólar. El <b>número que salió</b> del IPC es oficial (BLS); el <b>esperado</b> es una estimación por tendencia (media de 6 meses) — <b>no</b> el consenso de mercado, que no tiene API pública gratis. Se mantienen 5 días tras el evento para ver el resultado. <b style={{color:'var(--txt)'}}>Dos datos pueden apuntar en direcciones opuestas</b> (p. ej. IPC caliente → 🔴 y empleo débil → 🟢) y NO es un error: cada uno se compara con SU previsión, y ambos influyen en la Fed por caminos distintos — el mercado pondera el conjunto. En las 48h alrededor la volatilidad se dispara: el modelo fuerza <b style={{color:'var(--down)'}}>NO-GO</b>. Los <b>cierres de gobierno</b> de EE.UU. retrasan datos macro.
         </p>
       </div>
 
@@ -6374,6 +6374,37 @@ function BotsView({gFunding}){
 
 // ── CONTEXTO DE MERCADO CRIPTO: dominancia BTC (¿altseason?) + oferta de stablecoins
 //    (liquidez = "pólvora seca"). Datos oficiales: CoinGecko global + DefiLlama. ──
+// 📰 NOTICIAS estilo terminal (Bloomberg): solo titulares IMPORTANTES en español,
+// del relé /api/news (Google News agrega Expansión/Investing/FXStreet/CoinTelegraph…).
+// Los muy recientes o con palabras de impacto llevan la etiqueta roja ÚLTIMA HORA.
+function NewsPanel(){
+  const [nw,setNw]=useState(null);
+  useEffect(()=>{let a=true;
+    const load=()=>fetch(LS_RELAY.replace('/ls','/news')).then(r=>r.json()).then(j=>{if(a&&j&&j.items&&j.items.length)setNw(j.items);}).catch(()=>{});
+    load();const t=setInterval(load,900000);return()=>{a=false;clearInterval(t);};},[]);
+  if(!nw)return null;
+  const ago=d=>{if(!d)return '';const m=Math.max(1,Math.round((Date.now()-d)/6e4));
+    return m<60?('hace '+m+' min'):m<1440?('hace '+Math.round(m/60)+' h'):('hace '+Math.round(m/1440)+' d');};
+  return(<div style={panel({marginBottom:14,padding:16})}>
+    <div style={{...flx({justifyContent:'space-between'}),marginBottom:10}}>
+      <span style={{...flx({gap:7})}}>
+        <span style={{width:7,height:7,borderRadius:'50%',background:'var(--down)',boxShadow:'0 0 8px var(--down)',animation:'breathe 1.8s ease infinite'}}/>
+        <span style={eyebrow}>📰 Noticias · solo lo importante</span>
+      </span>
+      <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>auto · 15 min</span>
+    </div>
+    {nw.slice(0,8).map((n,i)=>(
+      <a key={i} href={n.u} target="_blank" rel="noopener noreferrer" style={{display:'block',padding:'8px 0',
+        borderTop:i?'1px solid #12151F':'none',textDecoration:'none',cursor:'pointer'}}>
+        <div style={{...flx({gap:7,alignItems:'flex-start'})}}>
+          {n.hot&&<span className="mono" style={{fontSize:7,fontWeight:800,letterSpacing:.5,flexShrink:0,marginTop:2,padding:'2px 6px',borderRadius:5,color:'#fff',background:'linear-gradient(92deg,#E53E3E,#C53030)',animation:'rdLive 1.8s ease-in-out infinite'}}>ÚLTIMA HORA</span>}
+          <span style={{fontSize:10.5,fontWeight:n.hot?700:600,color:'var(--txt)',lineHeight:1.45,flex:1}}>{n.t}</span>
+        </div>
+        <div className="mono" style={{fontSize:7.5,color:'var(--faint)',marginTop:3}}>{n.s?n.s+' · ':''}{ago(n.d)} ↗</div>
+      </a>))}
+    <div style={{fontSize:7.5,color:'var(--faint)',marginTop:8,lineHeight:1.5}}>Titulares de medios (vía Google News) filtrados por impacto: última hora, récords, Fed/IPC, ETF, hacks… Se abren en el medio original.</div>
+  </div>);
+}
 function MarketCtx(){
   const [d,setD]=useState(null);
   useEffect(()=>{let a=true;
@@ -6948,6 +6979,7 @@ function App(){
       )}
 
 
+      <NewsPanel/>
       <MarketCtx/>
 
       {/* ── RESUMEN · todas las monedas (formato lista, estilo boceto) ── */}
@@ -7117,7 +7149,7 @@ function App(){
               let stat=r.f0||null, live=false, sub=r.s;
               if(social){
                 if(r.id==='tiktok'&&social.tiktok&&social.tiktok.f!=null)
-                  stat=social.tiktok.f.toLocaleString('es-ES')+' seguidores'+(social.tiktok.v?' · '+social.tiktok.v+' vídeos':'');
+                  stat=social.tiktok.f.toLocaleString('es-ES')+' seguidores'; // vídeos van en los totales de arriba (evita 2 líneas apelotonadas)
                 if(r.id==='youtube'&&social.youtube&&social.youtube.subs){const st=''+social.youtube.subs;
                   stat=/suscriptor|subscriber/i.test(st)?st.replace(/subscribers?/i,'suscriptores'):st+' suscriptores';}
                 if(r.id==='twitch'&&social.twitch){live=!!social.twitch.live;
