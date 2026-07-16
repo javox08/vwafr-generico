@@ -5142,18 +5142,21 @@ function QuantView({gFunding,nav}){
               ant: rel?cpiReal.prevYoy:cpiReal.yoy,       antM: rel?cpiReal.prevMom:cpiReal.mom,
               prev:rel?cpiReal.estLastYoy:cpiReal.estYoy, prevM:rel?cpiReal.estLastMom:cpiReal.estMom,
               act: rel?cpiReal.yoy:null,                  actM: rel?cpiReal.mom:null,
+              hist:cpiReal.hist||null,
               rHot:'inflación más alta de lo esperado → Fed más dura',rCool:'inflación cede → Fed más blanda'};}
           else if(e.t==='IPP'&&ppiReal&&(isLast||isNext)){const rel=isLast;
             evBox={rel,unit:'%',dec:1,thr:0.05,
               ant: rel?ppiReal.prevYoy:ppiReal.yoy,       antM: rel?ppiReal.prevMom:ppiReal.mom,
               prev:rel?ppiReal.estLastYoy:ppiReal.estYoy, prevM:rel?ppiReal.estLastMom:ppiReal.estMom,
               act: rel?ppiReal.yoy:null,                  actM: rel?ppiReal.mom:null,
+              hist:ppiReal.hist||null,
               rHot:'costes de producción al alza → anticipan IPC alto → Fed más dura',rCool:'inflación mayorista cede → el IPC vendrá más suave'};}
           else if(e.t==='EMPLEO'&&jobsReal&&(isLast||isNext)){const rel=isLast,J=jobsReal;
             evBox={rel,unit:'k',dec:0,thr:10,
               ant: rel?J.nfp.prev:J.nfp.act, antM:null,
               prev:rel?J.nfp.estLast:J.nfp.est, prevM:null,
               act: rel?J.nfp.act:null, actM:null,
+              hist:J.nfp.hist||null,
               rHot:'economía fuerte (más empleo) → Fed más dura',rCool:'empleo más débil → Fed más blanda (si es MUY débil, ojo recesión)',
               sub:J.unemp?(rel?('Paro: '+J.unemp.prev+'% → '+J.unemp.act+'%'):('Paro actual: '+J.unemp.act+'%')):null};}
           return(
@@ -5199,6 +5202,18 @@ function QuantView({gFunding,nav}){
                     {cell('Actual',cb.act,cb.actM,actCol,true,'pendiente')}
                   </div>
                   {cb.sub&&<div style={{fontSize:8,color:'var(--faint)',marginTop:3,textAlign:'center'}} className="mono">{cb.sub}</div>}
+                  {/* sparkline: tendencia real de los últimos meses (BLS) */}
+                  {cb.hist&&cb.hist.length>=4&&(()=>{const h=cb.hist,mn2=Math.min(...h),mx2=Math.max(...h),W3=120,H3=20;
+                    const Y3=v2=>H3-2-((v2-mn2)/((mx2-mn2)||1))*(H3-4);
+                    const pts=h.map((v2,i2)=>((i2/(h.length-1))*W3).toFixed(1)+','+Y3(v2).toFixed(1)).join(' ');
+                    const up3=h[h.length-1]>=h[0], col3=up3?'var(--down)':'var(--up)'; // al alza = caliente = rojo para cripto
+                    return(<div style={{...flx({gap:8,alignItems:'center'}),marginTop:6}}>
+                      <svg viewBox={'0 0 '+W3+' '+H3} width="120" height="20" style={{display:'block',flexShrink:0}}>
+                        <polyline points={pts} fill="none" stroke={col3} strokeWidth="1.6" strokeLinejoin="round"/>
+                        <circle cx={W3} cy={Y3(h[h.length-1])} r="2.2" fill={col3}/>
+                      </svg>
+                      <span style={{fontSize:7.5,color:'var(--faint)',lineHeight:1.4}}>tendencia {h.length} meses: {h[0]}{cb.unit==='k'?'k':'%'} → <b style={{color:col3}}>{h[h.length-1]}{cb.unit==='k'?'k':'%'}</b> ({up3?'al alza':'a la baja'})</span>
+                    </div>);})()}
                   <div style={{fontSize:8.5,fontWeight:800,color:vc,marginTop:5}}>{vt}</div>
                   <div style={{fontSize:8,color:'var(--faint)',lineHeight:1.5,marginTop:1}}>{vd}</div>
                   <div style={{fontSize:6.5,color:'var(--faint)',marginTop:3}}>Previsión = estimación propia por tendencia (media 6m), no el consenso de mercado (sin API pública gratis). Actual = BLS oficial.</div>

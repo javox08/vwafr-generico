@@ -283,6 +283,9 @@ module.exports = async (req, res) => {
         if (ms2.length >= 3 && v(12) > 0) { const em2 = ms2.reduce((p, x) => p + x, 0) / ms2.length;
           out.cpi.estLastMom = +(em2 * 100).toFixed(2);
           out.cpi.estLastYoy = +(((prev * (1 + em2)) / v(12) - 1) * 100).toFixed(1); }
+        // serie HISTÓRICA de interanuales (últimos ~6 meses, viejo→nuevo) para el sparkline
+        const hy = []; for (let i = 0; i < 6 && i + 12 < s.length; i++) { const a2 = v(i), b2 = v(i + 12); if (a2 > 0 && b2 > 0) hy.push(+((a2 / b2 - 1) * 100).toFixed(1)); }
+        if (hy.length >= 4) out.cpi.hist = hy.reverse();
       }
     }
   } catch (e) {}
@@ -328,6 +331,8 @@ module.exports = async (req, res) => {
         if (ms2.length >= 3 && v(12) > 0) { const em2 = ms2.reduce((p, x) => p + x, 0) / ms2.length;
           out.ppi.estLastMom = +(em2 * 100).toFixed(2);
           out.ppi.estLastYoy = +(((prev * (1 + em2)) / v(12) - 1) * 100).toFixed(1); }
+        const hy = []; for (let i = 0; i < 6 && i + 12 < s.length; i++) { const a2 = v(i), b2 = v(i + 12); if (a2 > 0 && b2 > 0) hy.push(+((a2 / b2 - 1) * 100).toFixed(1)); }
+        if (hy.length >= 4) out.ppi.hist = hy.reverse();
       }
     }
   } catch (e) {}
@@ -345,6 +350,8 @@ module.exports = async (req, res) => {
       const cs = [], cs2 = []; for (let i = 0; i < 6 && i + 2 < sn.length; i++) cs.push(chg(i)); for (let i = 1; i < 7 && i + 2 < sn.length; i++) cs2.push(chg(i));
       const avg = a => a.length >= 3 ? Math.round(a.reduce((p, x) => p + x, 0) / a.length) : null;
       out.jobs = { month: sn[0].year + '-' + mn + '-01', nfp: { act: chg(0), prev: chg(1), est: avg(cs), estLast: avg(cs2) } };
+      const hn = []; for (let i = 0; i < 6 && i + 2 < sn.length; i++) hn.push(chg(i));
+      if (hn.length >= 4) out.jobs.nfp.hist = hn.reverse();
       if (Array.isArray(su) && su.length >= 2) { const vu = i => parseFloat(su[i].value); out.jobs.unemp = { act: vu(0), prev: vu(1) }; }
     }
   } catch (e) {}

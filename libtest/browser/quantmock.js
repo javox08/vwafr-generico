@@ -21,9 +21,9 @@
   var mk=function(c,r,rp){return {c:c,r:r,srcs:3,rp:rp};};
   var lsData={t:Date.now(),coins:[mk('BTC',1.5,1.17),mk('ETH',1.8,1.05),mk('SOL',2.1,0.9),mk('XRP',1.2,1.3),mk('BNB',1.4,1.1),
     mk('DOGE',2.5,0.8),mk('ADA',1.1,1.2),mk('AVAX',1.7,0.95),mk('LINK',1.3,1.15),mk('LTC',1.6,1.0)],
-    cpi:{yoy:3.1,mom:0.24,month:'2026-05-01',prevYoy:3.4,prevMom:0.18,estMom:0.22,estYoy:3.0,estLastMom:0.16,estLastYoy:2.8},
-    jobs:{month:'2026-06-01',nfp:{act:57,prev:129,est:92,estLast:80},unemp:{act:4.2,prev:4.3}},
-    ppi:{yoy:2.4,mom:0.31,month:'2026-06-01',prevYoy:2.1,prevMom:0.18,estMom:0.2,estYoy:2.2,estLastMom:0.17,estLastYoy:2.0},
+    cpi:{yoy:3.1,mom:0.24,month:'2026-05-01',prevYoy:3.4,prevMom:0.18,estMom:0.22,estYoy:3.0,estLastMom:0.16,estLastYoy:2.8,hist:[4.1,3.9,3.8,3.6,3.4,3.1]},
+    jobs:{month:'2026-06-01',nfp:{act:57,prev:129,est:92,estLast:80,hist:[180,150,120,95,129,57]},unemp:{act:4.2,prev:4.3}},
+    ppi:{yoy:2.4,mom:0.31,month:'2026-06-01',prevYoy:2.1,prevMom:0.18,estMom:0.2,estYoy:2.2,estLastMom:0.17,estLastYoy:2.0,hist:[1.6,1.8,1.9,2.0,2.1,2.4]},
     btc:{pos:1.17,posSrcs:2,posEx:['OKX','Binance'],posW:true,taker:{b:52300,s:49100,pl:0.5158},prem:-0.038,
       lsEx:{acc:{OKX:1.2,Bybit:1.35,Binance:1.95},pro:{OKX:1.008,Binance:1.35}},oiSplit:{coinM:1.42,stableM:6.63},skew:{rr:-9.27,atmIv:33.2,days:20},opts:{exp:'31JUL26',days:19,maxPain:64000,pc:0.41,callOI:67464,putOI:27603,spot:64196},cvdAgg:{binUsd:820000000,okxUsd:1305000000},
       oiHist:oiH,premHist:pmH,cvdFut:oiH.map(function(v,i){return +(i*10-2000+Math.random()*50).toFixed(1);}),fundHist:fdH,premHistD:pmH.slice(0,90),oiHistD:oiH.slice(0,30),
