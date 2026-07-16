@@ -3,9 +3,10 @@
 Web de **análisis cripto 100% automático en español**, gratuita y sin registro:
 funding en vivo de 17 exchanges, análisis multi-temporalidad estilo Velo (CVD,
 interés abierto, funding, premium) que explica POR QUÉ sube o baja Bitcoin,
-mapa de liquidaciones con volumen real, patrones backtesteados, cono de
-probabilidad Monte Carlo, ciclo por halving, bots con backtest de 9 años y
-ciclo macro mundial.
+mapa de liquidaciones con volumen real, patrones backtesteados, probabilidades
+Monte Carlo de tocar niveles, noticias cripto con filtro político, calendario
+económico estilo Investing (IPC/IPP/empleo), ciclo por halving, bots con
+backtest de 9 años y ciclo macro mundial.
 
 **En vivo:** https://vwafr-generico.pages.dev/
 
@@ -24,6 +25,10 @@ ciclo macro mundial.
     premium agregado, históricos de OI/funding/premium, volumen futuros/spot.
   - `fr.js`: funding + OI de Gate, MEXC, Binance, Bybit, Bitget, Kraken, HTX,
     CoinEx, Bitfinex, dYdX, WhiteBIT, Phemex y Deribit (normalizado a %/8h).
+  - `social.js`: seguidores en vivo del menú de Redes (TikTok, YouTube, Twitch
+    con detección de directo vía DecAPI, X vía FxTwitter, Facebook) · caché 1h.
+  - `news.js`: titulares cripto en español vía Google News, con filtro
+    política/regulación-primero y descarte de análisis de opinión · caché 15 min.
 - **`worker/`** — Cloudflare Worker con cron: mensajes automáticos a Telegram
   (y opcional X/LinkedIn) y bot de trading opcional en Bitunix (ver su README).
 - **`sw.js`** — service worker (PWA instalable, offline, network-first para el

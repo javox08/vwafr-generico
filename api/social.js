@@ -17,10 +17,12 @@ export default async function handler(req, res) {
       const f = h.match(/"followerCount":(\d+)/), v = h.match(/"videoCount":(\d+)/), l = h.match(/"heartCount":(\d+)/);
       if (f) out.tiktok = { f: +f[1], v: v ? +v[1] : null, likes: l ? +l[1] : null };
     }).catch(() => {}),
-    // YouTube: el contador de suscriptores aparece como texto (idioma según región del edge)
-    jt('https://www.youtube.com/@javox-k9p').then(h => {
+    // YouTube: el contador de suscriptores aparece como texto. OJO: desde el edge de la UE
+    // (fra1) YouTube devuelve la página de CONSENTIMIENTO sin datos → cookie SOCS la salta.
+    jt('https://www.youtube.com/@javox-k9p', 6000, { ...UA, Cookie: 'SOCS=CAI', 'Accept-Language': 'en' }).then(h => {
       const m = h.match(/"subscriberCountText":\{"simpleText":"([^"]+)"/) ||
-        h.match(/([\d.,]+\s?[KM]?)\s+(?:subscribers|suscriptores)/i);
+        h.match(/([\d.,]+\s?[KM]?)\s+(?:subscribers|suscriptores)/i) ||
+        h.match(/"subscriberCount":"(\d+)"/);
       if (m) out.youtube = { subs: m[1].trim() };
       const vd = h.match(/"videosCountText":\{"runs":\[\{"text":"([^"]+)"/);
       if (vd && out.youtube) out.youtube.videos = vd[1];
@@ -40,16 +42,23 @@ export default async function handler(req, res) {
       const j = JSON.parse(h);
       if (j && j.user && Number.isFinite(j.user.followers)) out.x = { f: j.user.followers };
     }).catch(() => {}),
-    // Facebook: nombre real de cada página (título) y me gusta/seguidores si el HTML público los muestra
+    // Facebook: nombre real y me gusta/seguidores si el HTML los muestra. Desde Vercel el
+    // UA de iPhone recibe bloqueo → probamos el crawler oficial (recibe las og:meta) y
+    // el móvil como respaldo, leyendo og:title además de <title>.
     ...[['fb1', 'https://www.facebook.com/share/1ThN8wBtBZ/'], ['fb2', 'https://www.facebook.com/share/1B3hDAVPse/']].map(([k, u]) =>
-      jt(u, 7000, UA_IOS).then(h => {
-        const t = h.match(/<title>([^<]{2,60})<\/title>/);
-        const c = h.match(/([\d.,]+)\s*(?:mil\s*)?(?:seguidores|followers|me gusta|likes)/i);
-        const o = {};
-        if (t && !/facebook|log in|iniciar/i.test(t[1])) o.name = t[1].trim();
-        if (c) o.n = c[0].replace(/likes?/i, 'me gusta').replace(/followers/i, 'seguidores');
-        if (o.name || o.n) out[k] = o;
-      }).catch(() => {})),
+      (async () => {
+        for (const hd of [{ 'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)' }, UA_IOS]) {
+          try {
+            const h = await jt(u, 6000, hd);
+            const t = h.match(/<meta property="og:title" content="([^"]{2,80})"/) || h.match(/<title>([^<]{2,60})<\/title>/);
+            const c = h.match(/([\d.,]+)\s*(?:mil\s*)?(?:seguidores|followers|me gusta|likes)/i);
+            const o = {};
+            if (t && !/facebook|log in|iniciar|inicia sesión/i.test(t[1])) o.name = t[1].trim();
+            if (c) o.n = c[0].replace(/likes?/i, 'me gusta').replace(/followers/i, 'seguidores');
+            if (o.name || o.n) { out[k] = o; return; }
+          } catch (e) {}
+        }
+      })()),
   ]);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=7200');
