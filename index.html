@@ -219,6 +219,11 @@
     .sk{height:12px;border-radius:6px;margin:10px 0;
       background:linear-gradient(90deg,#12151F 25%,#1B2130 50%,#12151F 75%);
       background-size:200% 100%;animation:shimmer 1.4s infinite}
+    /* barrido de luz sutil sobre los héroes de veredicto (mismo lenguaje que redes) */
+    .hero-shine::after{content:'';position:absolute;top:0;bottom:0;left:-45%;width:38%;
+      transform:skewX(-18deg);pointer-events:none;
+      background:linear-gradient(90deg,transparent,rgba(255,255,255,.05),transparent);
+      animation:rdSweep 5.2s ease-in-out infinite}
     /* portada tipo banner (degradado de marca con barrido de luz) + avatar solapado */
     .rd-cover{position:relative;margin:-26px -18px 0;height:88px;border-radius:24px 24px 0 0;overflow:hidden;
       background:linear-gradient(115deg,#0E1320 0%,#2A1152 32%,#0B3D2E 72%,#0E1320 100%)}
@@ -608,7 +613,7 @@ function Hero({vwafr,label,big}){
   const SC=S.up?'var(--up)':'var(--down)';
   const SCdim=S.up?'var(--upDim)':'var(--downDim)';
   return(
-    <div key={S.t} className="rise" style={panel({
+    <div key={S.t} className="rise hero-shine" style={panel({
       position:'relative',overflow:'hidden',marginBottom:14,
       padding:big?'28px 20px 24px':'24px 20px 22px',
       background:`radial-gradient(120% 90% at 50% -10%, ${S.up?'rgba(31,224,160,.10)':'rgba(255,84,112,.10)'} 0%, var(--panel) 55%)`,
@@ -1082,6 +1087,15 @@ function PosView({gFunding,cot}){
     const sd=Math.sqrt(hs.reduce((s,x)=>s+(x-m)*(x-m),0)/hs.length);if(sd>1e-6)z=(hs[0]-m)/sd;}}
   const ex=d&&d.lsEx;
   return(<div className="viewwrap">
+    {/* cabecera de vista (consistente con Noticias/Cuantitativo) */}
+    <div style={{...flx({gap:10}),margin:'2px 2px 14px'}}>
+      <div style={{width:32,height:32,borderRadius:10,flexShrink:0,background:'rgba(110,139,255,.14)',
+        border:'1px solid rgba(110,139,255,.3)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16}}>⚖️</div>
+      <div>
+        <div style={{fontSize:15,fontWeight:800,letterSpacing:-.3,lineHeight:1.05}}>Posiciones L/S</div>
+        <div style={{...eyebrow,fontSize:9}}>datos oficiales por cohortes · opciones BTC y ETH</div>
+      </div>
+    </div>
     {/* qué se puede medir y qué no */}
     <div style={panel({marginBottom:14,padding:16})}>
       <div style={{...flx({justifyContent:'space-between'}),marginBottom:6}}>
@@ -1166,7 +1180,8 @@ function PosView({gFunding,cot}){
             <div style={{fontSize:8,color:'var(--faint)',marginTop:5,lineHeight:1.5}}>Misma fórmula que el ⭐ sesgo de BTC, aplicada a cada moneda con los ratios oficiales del relé (mide cohortes, no dinero neto). Detalle por exchange: por ahora solo en BTC.</div>
           </div>);})()}
       </React.Fragment>):(
-        <div style={{fontSize:10,color:'var(--faint)',textAlign:'center',padding:'10px 0'}}>Cargando los ratios oficiales…</div>)}
+        <div style={{padding:'4px 0'}}>{[85,65,75,55,70].map((w,i)=><div key={i} className="sk" style={{width:w+'%'}}/>)}
+          <div style={{fontSize:8.5,color:'var(--faint)',textAlign:'center',marginTop:6}}>cargando los ratios oficiales…</div></div>)}
     </div>
 
     {/* AUTO-AUDITORÍA del veredicto ⭐ (acierto REAL de dirección, medido en tu navegador) */}
@@ -6524,6 +6539,19 @@ function MarketCtx(){
       }catch(_){}}
       if(a&&(o.btcD||o.stbl||o.corpBtc))setD(o);};
     load();const t=setInterval(load,300000);return()=>{a=false;clearInterval(t);};},[]);
+  // ÍNDICE DE ALTSEASON propio: % de las alts del top 10 que BATEN a BTC a 90 días,
+  // calculado con klines de Binance (CoinGecko gratis no da retornos a 90d).
+  const [alts,setAlts]=useState(null);
+  useEffect(()=>{let a=true;(async()=>{try{
+    const SY=['BTC','ETH','SOL','XRP','BNB','DOGE','ADA','AVAX','LINK','LTC'];
+    const res=await Promise.all(SY.map(s=>fetch('https://api.binance.com/api/v3/klines?symbol='+s+'USDT&interval=1d&limit=91').then(r=>r.json()).catch(()=>null)));
+    const r90={};res.forEach((k,i)=>{if(Array.isArray(k)&&k.length>60){const p0=+k[0][4],p1=+k[k.length-1][4];if(p0>0&&p1>0)r90[SY[i]]=p1/p0-1;}});
+    if(r90.BTC==null)return;
+    const as=SY.slice(1).filter(s=>r90[s]!=null);
+    if(as.length<5)return;
+    const beat=as.filter(s=>r90[s]>r90.BTC);
+    if(a)setAlts({pct:Math.round(beat.length/as.length*100),n:as.length,beat:beat.length,btc:+(r90.BTC*100).toFixed(1)});
+  }catch(_){}})();return()=>{a=false;};},[]);
   if(!d)return null;
   const fmB=v=>v>=1e12?'$'+(v/1e12).toFixed(2)+'T':'$'+Math.round(v/1e9)+'B';
   const btcD=d.btcD,alt=btcD!=null&&btcD<52; // <52% dominancia ≈ tono altseason
@@ -6550,6 +6578,19 @@ function MarketCtx(){
         </div>
         <div style={{fontSize:7.5,color:'var(--dim)',marginTop:3,lineHeight:1.4}}>Es la <b style={{color:'var(--txt)'}}>pólvora seca</b>: dinero listo para comprar. {Number.isFinite(d.stblChg)&&Math.abs(d.stblChg)>=0.2?(d.stblChg>=0?'📈 Subiendo → liquidez ENTRANDO (combustible alcista).':'📉 Bajando → capital SALIENDO del cripto.'):'Subiendo = liquidez entrando; bajando = capital saliendo.'}</div>
       </div>}
+      {alts&&(()=>{const seas=alts.pct>=75?{t:'ALTSEASON',c:'#1FE0A0',d:'el dinero rota con fuerza a las alts'}:
+          alts.pct<=25?{t:'BITCOIN SEASON',c:'#F7931A',d:'BTC manda; las alts se quedan atrás'}:
+          {t:'MIXTO',c:'#F3BA2F',d:'sin rotación clara todavía'};
+        return(<div style={{gridColumn:'1 / -1',background:'#0A0D14',borderRadius:9,padding:'9px 10px'}}>
+          <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
+            <span className="mono" style={{fontSize:13,fontWeight:800,color:seas.c}}>🌗 {seas.t} · {alts.pct}%</span>
+            <span style={{fontSize:8,color:'var(--faint)'}}>índice de altseason · 90d</span>
+          </div>
+          <div style={{position:'relative',height:6,borderRadius:4,overflow:'hidden',background:'linear-gradient(90deg,#F7931A 0%,#3A3320 45%,#12351F 55%,#1FE0A0 100%)',opacity:.9}}>
+            <div style={{position:'absolute',left:'calc('+alts.pct+'% - 2px)',top:-1,width:4,height:8,borderRadius:2,background:'#fff',boxShadow:'0 0 6px rgba(255,255,255,.8)'}}/>
+          </div>
+          <div style={{fontSize:7.5,color:'var(--dim)',marginTop:4,lineHeight:1.4}}>{alts.beat} de {alts.n} alts del top 10 baten a BTC a 90 días ({alts.btc>=0?'+':''}{alts.btc}% BTC) → {seas.d}. ≥75% = altseason · ≤25% = bitcoin season. Klines de Binance, cálculo propio.</div>
+        </div>);})()}
       {d.corpBtc!=null&&<div style={{gridColumn:'1 / -1',background:'#0A0D14',borderRadius:9,padding:'9px 10px'}}>
         <div style={{...flx({justifyContent:'space-between'})}}>
           <span className="mono" style={{fontSize:13,fontWeight:800,color:'#F7931A'}}>{Math.round(d.corpBtc).toLocaleString('es-ES')} BTC{d.corpUsd?' · '+fmB(d.corpUsd):''}</span>
