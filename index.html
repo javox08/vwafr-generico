@@ -401,12 +401,12 @@ function ExLogo({name,color,size=16}){
 // su LOGO real —favicon oficial del dominio— con respaldo al emoji si no carga)
 const REDES=[
   // f0 = última cifra conocida (respaldo); el relé /api/social la actualiza EN VIVO al abrir el menú
-  {id:'tiktok',n:'TikTok',s:'@javox_008',u:'https://www.tiktok.com/@javox_008',d:'tiktok.com',e:'🎵',c:'#FE2C55',f0:'526 seguidores · 780 vídeos'},
+  {id:'tiktok',n:'TikTok',s:'@javox_008',u:'https://www.tiktok.com/@javox_008',d:'tiktok.com',e:'🎵',c:'#FE2C55',glow:'0 0 7px #25F4EECC, 0 0 14px #FE2C55BB',f0:'526 seguidores · 780 vídeos'},
   {id:'youtube',n:'YouTube',s:'@javox-k9p',u:'https://www.youtube.com/@javox-k9p',d:'youtube.com',e:'▶️',c:'#FF4444',f0:'34 suscriptores'},
   {id:'twitch',n:'Twitch',s:'javoxmaster',u:'https://www.twitch.tv/javoxmaster',d:'twitch.tv',e:'🎮',c:'#9146FF',f0:'directos'},
-  {id:'x',n:'X (Twitter)',s:'@Javidelatorrev1',u:'https://x.com/Javidelatorrev1',d:'x.com',e:'𝕏',c:'#E7ECF5',bg:'#0F1419',f0:''},
-  {id:'fb1',n:'Facebook',s:'cuenta principal',u:'https://www.facebook.com/share/1ThN8wBtBZ/',d:'facebook.com',e:'📘',c:'#1877F2',f0:''},
-  {id:'fb2',n:'Facebook · 2ª cuenta',s:'sígueme también aquí',u:'https://www.facebook.com/share/1B3hDAVPse/',d:'facebook.com',e:'📘',c:'#1877F2',f0:''},
+  {id:'x',n:'X (Twitter)',s:'@Javidelatorrev1',u:'https://x.com/Javidelatorrev1',d:'x.com',e:'𝕏',c:'#E7ECF5',f0:'24 seguidores'},
+  {id:'fb1',n:'Facebook',s:'Notici Javox',u:'https://www.facebook.com/share/1ThN8wBtBZ/',d:'facebook.com',e:'📘',c:'#1877F2',f0:''},
+  {id:'fb2',n:'Facebook',s:'NotiExpress',u:'https://www.facebook.com/share/1B3hDAVPse/',d:'facebook.com',e:'📘',c:'#1877F2',f0:'3 me gusta'},
   {id:'li',n:'LinkedIn',s:'Javier de la Torre',u:'https://www.linkedin.com/in/javier-thierry-de-la-torre-valdes-88887b2a3',d:'linkedin.com',e:'💼',c:'#0A66C2',f0:'perfil profesional'},
   {id:'mail',n:'Email',s:'javi27angel13@gmail.com',u:'mailto:javi27angel13@gmail.com',d:'gmail.com',e:'✉️',c:'#1FE0A0',f0:'contacto directo'},
 ];
@@ -7095,23 +7095,29 @@ function App(){
             <div style={{textAlign:'center',fontSize:9.5,color:'var(--dim)',marginBottom:16,lineHeight:1.5}}>El contenido que no sabías que necesitabas 🎬<br/><span style={{color:'var(--faint)'}}>Sígueme donde quieras 👇</span></div>
             {REDES.map((r,i)=>{
               // seguidores EN VIVO del relé (si llegan) → si no, la última cifra conocida (f0)
-              let stat=r.f0||null, live=false;
+              let stat=r.f0||null, live=false, sub=r.s;
               if(social){
                 if(r.id==='tiktok'&&social.tiktok&&social.tiktok.f!=null)
                   stat=social.tiktok.f.toLocaleString('es-ES')+' seguidores'+(social.tiktok.v?' · '+social.tiktok.v+' vídeos':'');
                 if(r.id==='youtube'&&social.youtube&&social.youtube.subs){const st=''+social.youtube.subs;
                   stat=/suscriptor|subscriber/i.test(st)?st.replace(/subscribers?/i,'suscriptores'):st+' suscriptores';}
                 if(r.id==='twitch'&&social.twitch)live=!!social.twitch.live;
+                if(r.id==='x'&&social.x&&social.x.f!=null)stat=social.x.f.toLocaleString('es-ES')+' seguidores';
+                if((r.id==='fb1'||r.id==='fb2')&&social[r.id]){
+                  if(social[r.id].name)sub=social[r.id].name;
+                  if(social[r.id].n)stat=social[r.id].n;}
               }
               return(
               <a key={r.id} className="rd-link" href={r.u} target="_blank" rel="noopener noreferrer"
                 style={{'--rc':r.c,animationDelay:(120+i*65)+'ms'}}>
+                {/* chip estilo LED: fondo oscuro + logo blanco + aro blanco + halo del color de la marca
+                    (TikTok con su doble neón cian/rosa real, no fondo rojo) */}
                 <span style={{width:36,height:36,borderRadius:11,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',
-                  background:r.bg||r.c,border:'1px solid rgba(255,255,255,.16)',
-                  boxShadow:'0 4px 14px -4px '+r.c+'AA'}}><RedIcon id={r.id} e={r.e}/></span>
+                  background:'#0F1419',border:'1px solid rgba(255,255,255,.28)',
+                  boxShadow:r.glow||('0 0 11px '+r.c+'AA')}}><RedIcon id={r.id} e={r.e}/></span>
                 <span style={{minWidth:0}}>
                   <span style={{display:'block',fontSize:12,fontWeight:700}}>{r.n}</span>
-                  <span className="mono" style={{display:'block',fontSize:8.5,color:'var(--faint)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{r.s}</span>
+                  <span className="mono" style={{display:'block',fontSize:8.5,color:'var(--faint)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{sub}</span>
                 </span>
                 <span style={{marginLeft:'auto',textAlign:'right',flexShrink:0,paddingLeft:6}}>
                   {live&&<span className="rd-live">🔴 EN DIRECTO</span>}
