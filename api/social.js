@@ -25,9 +25,15 @@ export default async function handler(req, res) {
       const vd = h.match(/"videosCountText":\{"runs":\[\{"text":"([^"]+)"/);
       if (vd && out.youtube) out.youtube.videos = vd[1];
     }).catch(() => {}),
-    // Twitch: si está emitiendo, la página incluye isLiveBroadcast (schema.org)
-    jt('https://www.twitch.tv/javoxmaster').then(h => {
-      out.twitch = { live: h.includes('isLiveBroadcast') };
+    // Twitch vía DecAPI (fiable; el HTML de twitch.tv daba falsos positivos de directo):
+    // uptime = "... is offline" si no emite, o el tiempo en directo si sí. + seguidores.
+    jt('https://decapi.me/twitch/uptime/javoxmaster', 5000).then(h => {
+      const s = (h || '').trim();
+      out.twitch = Object.assign(out.twitch || {}, { live: s.length > 0 && !/offline|not live|error|no user/i.test(s) });
+    }).catch(() => {}),
+    jt('https://decapi.me/twitch/followcount/javoxmaster', 5000).then(h => {
+      const n = parseInt((h || '').trim(), 10);
+      if (Number.isFinite(n) && n >= 0) out.twitch = Object.assign(out.twitch || {}, { f: n });
     }).catch(() => {}),
     // X (Twitter): seguidores vía FxTwitter (espejo público, sin clave)
     jt('https://api.fxtwitter.com/Javidelatorrev1', 5000).then(h => {
