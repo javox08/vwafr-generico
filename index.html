@@ -113,16 +113,14 @@
        pie ocupan el ancho completo). */
     .mainwrap{max-width:540px;margin-inline:auto;padding-inline:16px}
     @media(min-width:700px) and (max-width:819px){body{zoom:1.15}}
-    /* A partir de ~820px de ancho, los paneles fluyen en tantas columnas como quepan
-       (~360px cada una): 2 en tablet, 3 en escritorio, 4 en pantallas grandes. Se ajusta
-       solo al ancho real, sin dejar huecos. Cabecera, navegación y pie ocupan todo el ancho. */
+    /* A partir de ~820px: el contenedor se ensancha y CADA VISTA reparte sus paneles
+       en tantas columnas como quepan (~360px cada una): 2 en tablet, 3 en escritorio.
+       Sin columnas anidadas ni column-span (los navegadores de tablet las pintan mal
+       dejando todo a la izquierda): cabecera, navegación y pie son bloques normales
+       de ancho completo, y solo .viewwrap es multicolumna. */
     @media(min-width:820px){
-      .mainwrap{max-width:1500px;column-width:360px;column-gap:28px}
-      .mainwrap>.span-all{column-span:all}
-      .mainwrap>*{break-inside:avoid}
-      /* Vistas que envuelven sus paneles en un <div> (Cuantitativo, Ciclo, Bots, Macro):
-         ocupan todo el ancho y reparten SUS paneles en columnas por sí mismas. */
-      .viewwrap{column-span:all;column-width:360px;column-gap:28px}
+      .mainwrap{max-width:1500px}
+      .viewwrap{column-width:360px;column-gap:28px}
       .viewwrap>*{break-inside:avoid}
     }
     input,button,textarea{font-family:inherit}
@@ -169,6 +167,37 @@
       color:var(--dim);font-size:11px;line-height:1.7;text-align:center;position:relative;z-index:1}
     .ftr a{color:var(--accent);text-decoration:none}
     .ftr .links{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin:8px 0}
+    /* REDES · menú estilo Linktree con animación (se abre desde el pie, no navega directo) */
+    @keyframes rdBack{from{opacity:0}to{opacity:1}}
+    @keyframes rdCard{from{opacity:0;transform:translateY(30px) scale(.96)}to{opacity:1;transform:none}}
+    @keyframes rdItem{from{opacity:0;transform:translateY(16px) scale(.95)}to{opacity:1;transform:none}}
+    @keyframes rdAva{0%,100%{transform:translateY(0) rotate(-2deg)}50%{transform:translateY(-6px) rotate(2deg)}}
+    @keyframes rdRing{to{transform:rotate(360deg)}}
+    .rd-back{position:fixed;inset:0;z-index:90;background:rgba(4,6,10,.82);backdrop-filter:blur(9px);
+      -webkit-backdrop-filter:blur(9px);display:flex;align-items:center;justify-content:center;
+      padding:16px;animation:rdBack .25s ease both}
+    .rd-card{position:relative;width:100%;max-width:392px;max-height:88vh;overflow-y:auto;overflow-x:hidden;
+      background:linear-gradient(168deg,#11141F 0%,#0A0D14 60%,#0B0E17 100%);
+      border:1px solid var(--line2);border-radius:24px;padding:24px 18px 16px;
+      animation:rdCard .42s cubic-bezier(.18,.9,.26,1.12) both;
+      box-shadow:0 24px 70px -18px rgba(0,0,0,.75),0 0 44px -18px rgba(110,139,255,.35)}
+    .rd-ring{position:relative;width:72px;height:72px;margin:0 auto 10px}
+    .rd-ring::before{content:'';position:absolute;inset:-4px;border-radius:50%;
+      background:conic-gradient(from 0deg,#6E8BFF,#1FE0A0,#F3BA2F,#FF5470,#6E8BFF);
+      animation:rdRing 5s linear infinite}
+    .rd-ava{position:absolute;inset:0;border-radius:50%;display:flex;align-items:center;justify-content:center;
+      font-size:27px;font-weight:800;color:#fff;background:#141926;border:3px solid #0A0D14;
+      animation:rdAva 3.8s ease-in-out infinite}
+    .rd-link{display:flex;align-items:center;gap:12px;padding:12px 13px;margin-bottom:9px;border-radius:14px;
+      background:rgba(255,255,255,.035);border:1px solid var(--line2);cursor:pointer;
+      text-decoration:none;color:var(--txt);
+      transition:transform .16s ease,border-color .16s ease,box-shadow .16s ease,background .16s ease;
+      animation:rdItem .5s cubic-bezier(.16,.9,.28,1.18) both}
+    .rd-link:hover,.rd-link:focus-visible{transform:translateY(-2px) scale(1.012);border-color:var(--rc,var(--accent));
+      box-shadow:0 8px 26px -8px var(--rc,var(--accent));background:rgba(255,255,255,.055);outline:none}
+    .rd-link:active{transform:translateY(0) scale(.99)}
+    .rd-link .arr{margin-left:auto;color:var(--faint);font-size:12px;transition:transform .16s ease,color .16s}
+    .rd-link:hover .arr{transform:translate(2px,-2px);color:var(--rc,var(--accent))}
     .mono{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums}
     input[type=number]::-webkit-inner-spin-button{opacity:.25}
     input:focus{border-color:var(--accent)!important;outline:none}
@@ -207,7 +236,8 @@
 </head>
 <body>
 
-<div id="root" style="position:relative;z-index:1"></div>
+<!-- z-index:2 > .seo (1): así los modales de la app (Redes, visores) pintan SIEMPRE por encima del bloque SEO -->
+<div id="root" style="position:relative;z-index:2"></div>
 
 <!-- ─────────── Contenido SEO/GEO rastreable (visible y sin depender de JS) ─────────── -->
 <section class="seo">
@@ -333,6 +363,18 @@ function ExLogo({name,color,size=16}){
     alt={name} width={size} height={size} loading="lazy"
     style={{width:size,height:size,borderRadius:4,flexShrink:0,background:'#0A0D14'}}/>;
 }
+
+// Redes del creador (menú estilo Linktree en el pie; cada una con su color de marca)
+const REDES=[
+  {n:'TikTok',s:'@javox_008',u:'https://www.tiktok.com/@javox_008',e:'🎵',c:'#FE2C55'},
+  {n:'YouTube',s:'@javox-k9p',u:'https://www.youtube.com/@javox-k9p',e:'▶️',c:'#FF4444'},
+  {n:'Twitch',s:'javoxmaster',u:'https://www.twitch.tv/javoxmaster',e:'🎮',c:'#9146FF'},
+  {n:'X (Twitter)',s:'@Javidelatorrev1',u:'https://x.com/Javidelatorrev1',e:'𝕏',c:'#E7ECF5'},
+  {n:'Facebook',s:'Javox',u:'https://www.facebook.com/share/18VjRoHMA2',e:'📘',c:'#1877F2'},
+  {n:'LinkedIn',s:'Javi de la Torre',u:'https://www.linkedin.com/in/javi-thierry-de-la-torre-valdes-88887b2a3',e:'💼',c:'#0A66C2'},
+  {n:'Email',s:'javi27angel13@gmail.com',u:'mailto:javi27angel13@gmail.com',e:'✉️',c:'#1FE0A0'},
+  {n:'Linktree',s:'todos los enlaces',u:'https://linktr.ee/JAVOX27',e:'🌳',c:'#43E660'},
+];
 
 // Respaldo en el navegador (CORS) para Binance/Bybit, geo-bloqueados en el servidor.
 async function bybitFallback(coins,data){
@@ -925,7 +967,7 @@ function PosView({gFunding,cot}){
   let z=null;{const hs=(d&&d.hist)||[];if(hs.length>30){const m=hs.reduce((s,x)=>s+x,0)/hs.length;
     const sd=Math.sqrt(hs.reduce((s,x)=>s+(x-m)*(x-m),0)/hs.length);if(sd>1e-6)z=(hs[0]-m)/sd;}}
   const ex=d&&d.lsEx;
-  return(<>
+  return(<div className="viewwrap">
     {/* qué se puede medir y qué no */}
     <div style={panel({marginBottom:14,padding:16})}>
       <div style={{...flx({justifyContent:'space-between'}),marginBottom:6}}>
@@ -968,7 +1010,14 @@ function PosView({gFunding,cot}){
             <div style={{display:'flex',height:8,borderRadius:5,overflow:'hidden'}}>
               <div style={{width:(cons*100)+'%',background:'var(--up)',opacity:.85}}/><div style={{flex:1,background:'var(--down)',opacity:.85}}/>
             </div>
-            <div style={{fontSize:8,color:'var(--faint)',marginTop:5,lineHeight:1.5}}>Este es el número de referencia. Debajo, cada fuente por separado (verás valores algo distintos: cada exchange y cada cohorte —retail, pros, flujo— mide su propio grupo; por eso <b style={{color:'var(--txt)'}}>nunca coinciden al 100%</b>, y no es un error).</div>
+            {/* cada cohorte con su lado, de un vistazo (así se ve si alguna contradice al consenso) */}
+            <div style={{...flx({gap:6}),flexWrap:'wrap',marginTop:7}}>
+              {[['👥 Masa',d.masaAgg],['🐋 Pros',d.prosAgg],['⚡ Flujo 24h',tk]].map(([lbl,v])=>{if(v==null)return null;
+                const c2=v>0.52?'var(--up)':v<0.48?'var(--down)':'#F3BA2F';
+                return(<span key={lbl} className="mono" style={{fontSize:8.5,fontWeight:800,padding:'3px 8px',borderRadius:7,color:c2,background:'rgba(255,255,255,.05)',border:'1px solid var(--line2)'}}>{lbl} {(v*100).toFixed(0)}%L</span>);})}
+            </div>
+            <div style={{fontSize:8,color:'var(--faint)',marginTop:6,lineHeight:1.5}}>Este es el número de referencia. Debajo, cada fuente por separado (cada cohorte —retail, pros, flujo— mide su propio grupo; por eso <b style={{color:'var(--txt)'}}>nunca coinciden al 100%</b>, y no es un error).</div>
+            <div style={{fontSize:8,color:'var(--dim)',marginTop:5,lineHeight:1.55,padding:'6px 8px',borderRadius:7,background:'rgba(255,255,255,.03)',border:'1px solid var(--line2)'}}>🤔 <b style={{color:'var(--txt)'}}>¿Alguien te dice lo contrario</b> («todos están cortos/largos»)? Casi seguro mira OTRA métrica: el «Long/Short» de portada de Coinglass es el <b style={{color:'var(--txt)'}}>volumen taker</b> (cuánto se vende/compra a mercado, no quién está posicionado), o una sola cohorte/exchange (los top traders de OKX, por ejemplo, pueden estar cortos mientras el retail está largo). Arriba tienes cada fuente OFICIAL por separado para comprobarlo tú mismo.</div>
           </div>);})()}
         <div style={{fontSize:8,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.6,fontWeight:700,marginBottom:6}}>👥 Cuentas (retail) — % de CUENTAS en cada lado</div>
         <Row icon="🟡" lbl="Binance" src="globalLongShortAccountRatio" v={pct(ex.acc&&ex.acc.Binance)}/>
@@ -1212,7 +1261,7 @@ function PosView({gFunding,cot}){
       </div>)}
     </div>
     <p style={{fontSize:8,color:'var(--faint)',lineHeight:1.6,marginBottom:14}}>Fuentes: Binance futures/data (ratios, taker, OI), OKX rubik, Bybit v5, CFTC (COT). Endpoints públicos oficiales, sin clave; histórico de ratios limitado a 30 días por Binance. Nada aquí es consejo financiero.</p>
-  </>);
+  </div>);
 }
 
 function CycleBTC(){
@@ -6335,6 +6384,7 @@ function App(){
   // ── PWA: capturar el evento de instalación para ofrecer "Instalar app" ──
   const [installEvt,setInstallEvt]=useState(null);
   const [iosHint,setIosHint]=useState(false);
+  const [redesOpen,setRedesOpen]=useState(false); // menú de redes (estilo Linktree) desde el pie
   useEffect(()=>{
     const onPrompt=e=>{e.preventDefault();setInstallEvt(e);};
     window.addEventListener('beforeinstallprompt',onPrompt);
@@ -6596,7 +6646,7 @@ function App(){
       {view==='bots'&&<BotsView gFunding={g.vwafr}/>}
       {view==='pib'&&<PIBView/>}
 
-      {home&&<>
+      {home&&<div className="viewwrap">
       {/* status strip */}
       <div style={{...flx({justifyContent:'space-between'}),padding:'0 4px',marginBottom:16}}>
         <div style={{...flx({gap:6}),fontSize:10.5,color:'var(--dim)'}} className="mono">
@@ -6920,18 +6970,49 @@ function App(){
           Datos de exchanges públicos, solo informativo. No es consejo financiero.
         </p>
       </div>
-      </>}
+      </div>}
 
-      {/* PIE DE PÁGINA (todas las vistas) */}
+      {/* PIE DE PÁGINA (todas las vistas) · ordenado: marca → enlaces → fuentes → avisos legales */}
       <div className="ftr span-all">
         <div style={{fontWeight:800,color:'var(--txt)',fontSize:12.5,letterSpacing:-.2}}>VWAFR · Cripto Quant</div>
         <div style={{marginTop:4}}>Funding · Ciclo BTC · Cuantitativo · Macro · 100% automático</div>
         <div className="links">
           <a href="/privacidad.html">Privacidad</a>
           <a href="/contacto.html">Contacto</a>
+          <a onClick={()=>setRedesOpen(true)} role="button" tabIndex={0}
+            onKeyDown={e=>{if(e.key==='Enter'||e.key===' ')setRedesOpen(true);}}
+            style={{cursor:'pointer'}}>🔗 Redes</a>
         </div>
-        <div style={{fontSize:9.5,color:'var(--faint)',marginTop:6,lineHeight:1.6}}>Datos: Binance · Deribit · CoinGecko · bitcoin-data · Banco Mundial. Modelos estadísticos con fines educativos — <b style={{color:'var(--down)'}}>no es consejo de inversión</b>.</div>
+        <div style={{fontSize:9.5,color:'var(--faint)',marginTop:6,lineHeight:1.6}}>Datos: Binance · OKX · Bybit · Deribit · CoinGecko · bitcoin-data · BLS · Banco Mundial.<br/>Modelos estadísticos con fines educativos — <b style={{color:'var(--down)'}}>no es consejo de inversión</b>.</div>
+        <div style={{fontSize:9,color:'var(--faint)',marginTop:10,paddingTop:10,borderTop:'1px solid var(--line2)',lineHeight:1.6}}>
+          🛡️ Esta web utiliza la red de <b style={{color:'var(--dim)'}}>Cloudflare</b> por motivos de seguridad. No rastreamos tu navegación, pero los sistemas de seguridad pueden registrar temporalmente tu IP para evitar ataques.
+        </div>
+        <div style={{fontSize:9,color:'var(--faint)',marginTop:8}}>© {new Date().getFullYear()} VWAFR · hecho en España 🇪🇸</div>
       </div>
+
+      {/* MENÚ DE REDES (estilo Linktree, animado): se abre desde el pie, no navega directo */}
+      {redesOpen&&(
+        <div className="rd-back" onClick={()=>setRedesOpen(false)}>
+          <div className="rd-card" onClick={e=>e.stopPropagation()} role="dialog" aria-label="Redes sociales">
+            <span onClick={()=>setRedesOpen(false)} aria-label="Cerrar" role="button"
+              style={{position:'absolute',top:12,right:14,fontSize:15,color:'var(--faint)',cursor:'pointer',padding:'4px 8px',zIndex:2}}>✕</span>
+            <div className="rd-ring"><div className="rd-ava">🚀</div></div>
+            <div style={{textAlign:'center',marginBottom:3,fontSize:15.5,fontWeight:800,color:'var(--txt)',letterSpacing:-.3}}>@JAVOX27</div>
+            <div style={{textAlign:'center',fontSize:9.5,color:'var(--dim)',marginBottom:16,lineHeight:1.5}}>El contenido que no sabías que necesitabas 🎬<br/><span style={{color:'var(--faint)'}}>Sígueme donde quieras 👇</span></div>
+            {REDES.map((r,i)=>(
+              <a key={r.n} className="rd-link" href={r.u} target="_blank" rel="noopener noreferrer"
+                style={{'--rc':r.c,animationDelay:(120+i*65)+'ms'}}>
+                <span style={{width:36,height:36,borderRadius:11,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',
+                  fontSize:16,background:r.c+'1C',border:'1px solid '+r.c+'55'}}>{r.e}</span>
+                <span style={{minWidth:0}}>
+                  <span style={{display:'block',fontSize:12,fontWeight:700}}>{r.n}</span>
+                  <span className="mono" style={{display:'block',fontSize:8.5,color:'var(--faint)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{r.s}</span>
+                </span>
+                <span className="arr">↗</span>
+              </a>))}
+            <div style={{textAlign:'center',fontSize:8,color:'var(--faint)',marginTop:10}}>se abren en una pestaña nueva</div>
+          </div>
+        </div>)}
 
     </div>
     </>
