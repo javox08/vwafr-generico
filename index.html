@@ -105,7 +105,9 @@
     }
     *{margin:0;padding:0;box-sizing:border-box}
     html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
-    html,body{overflow-x:hidden;max-width:100%}
+    /* clip recorta el desbordamiento horizontal SIN crear contenedor de scroll
+       (hidden rompía position:sticky de la nav); hidden queda de respaldo antiguo */
+    html,body{overflow-x:hidden;overflow-x:clip;max-width:100%}
     img,svg,canvas{max-width:100%}
     /* Contenedor principal. Móvil: una columna cómoda. Tablet en vertical: se escala
        un poco. Tablet apaisada y escritorio: DOS columnas para aprovechar el ancho y
@@ -165,6 +167,14 @@
                  radial-gradient(36% 32% at 4% 84%, rgba(145,70,255,.055), transparent 70%)}
     ::selection{background:rgba(110,139,255,.32);color:#fff}
     .nav-glow{box-shadow:0 0 0 1px rgba(110,139,255,.25),0 6px 18px -6px rgba(110,139,255,.45)}
+    /* nav PEGAJOSA con cristal: las pestañas siempre a mano al hacer scroll */
+    .mainnav{position:sticky;top:0;z-index:45;margin:0 -16px 16px;padding:8px 16px;
+      background:rgba(7,9,14,.86);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+      border-bottom:1px solid var(--line2)}
+    /* entrada suave de cada vista al cambiar de pestaña */
+    @keyframes vwIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+    .viewwrap{animation:vwIn .3s ease both}
+    button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
     /* pie de página */
     .ftr{max-width:540px;margin:26px auto 8px;padding:18px 16px 8px;border-top:1px solid var(--line);
       color:var(--dim);font-size:11px;line-height:1.7;text-align:center;position:relative;z-index:1}
@@ -6881,7 +6891,7 @@ function App(){
         </div>)}
 
       {/* NAV apartados (desplaza en horizontal si no caben) */}
-      <div className="span-all tabs" style={{...flx({gap:5}),marginBottom:16,overflowX:'auto',paddingBottom:2}}>
+      <div className="span-all tabs mainnav" style={{...flx({gap:5}),overflowX:'auto'}}>
         {[['home','Funding'],['cycle','Ciclo'],['quant','Cuant'],['pos','L/S'],['bots','Bots'],['pib','Macro'],['news','Noticias']].map(([k,label])=>{
           const on=view===k;
           return(
