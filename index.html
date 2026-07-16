@@ -571,7 +571,8 @@ const fmtUsd=v=>{if(!(v>0))return '';
 const eyebrow={fontSize:10,letterSpacing:3,color:'var(--dim)',textTransform:'uppercase',fontWeight:600};
 // paneles con degradado sutil + sombra suave (mismo lenguaje visual que el panel de redes)
 const panel=(ex={})=>({background:'linear-gradient(168deg,#11141F 0%,#0B0E16 100%)',
-  border:'1px solid var(--line)',borderRadius:16,boxShadow:'0 14px 34px -24px rgba(0,0,0,.7)',...ex});
+  border:'1px solid var(--line)',borderRadius:16,
+  boxShadow:'0 14px 34px -24px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.045)',...ex});
 const inp=(c='var(--txt)')=>({background:'#080A10',border:'1px solid var(--line)',borderRadius:7,
   color:c,fontFamily:"'JetBrains Mono',monospace",fontSize:12.5,padding:'6px 8px',width:'100%',
   boxSizing:'border-box',fontVariantNumeric:'tabular-nums'});
@@ -1723,6 +1724,14 @@ function CycleBTC(){
         const past=[]; for(let h=Math.max(0,hidx-3);h<hidx;h++){const c=mk(h); if(c&&c.s.length>200)past.push(c);}
         const cur=mk(hidx);
         if(!cur||cur.s.length<10||past.length<2)return null;
+        // ancla el ÚLTIMO punto al precio VIVO y al día real de reloj: la serie histórica
+        // avanza a saltos (STEP=2) y su última vela puede ser de ayer → el "hoy · día N"
+        // se quedaba 1-3 días atrás respecto al contador de arriba (que usa el reloj).
+        if(Number.isFinite(price)&&price>0&&cur.base>0){
+          const dReal=Math.min(LEN,Math.floor((Date.now()-HALVINGS[hidx])/864e5));
+          const lastPt=cur.s[cur.s.length-1];
+          if(lastPt[0]<dReal)cur.s.push([dReal,price/cur.base]);else lastPt[1]=price/cur.base;
+        }
         const Dnow=cur.s[cur.s.length-1][0], mNow=cur.s[cur.s.length-1][1];
         // ── ALARGAMIENTO DE CICLOS: cada ciclo dura más (el techo llega más tarde).
         // Se mide el día del techo de cada ciclo previo con los datos reales, se
@@ -1788,7 +1797,7 @@ function CycleBTC(){
             <div style={{padding:'10px 12px',borderRadius:10,background:'rgba(243,186,47,.06)',border:'1px solid rgba(243,186,47,.25)'}}>
               <div style={{fontSize:9,letterSpacing:1,color:'#F3BA2F',textTransform:'uppercase',fontWeight:700,marginBottom:3}}>Techo por esta ruta</div>
               <div className="mono" style={{fontSize:16,fontWeight:800,color:'var(--txt)'}}>{money(projTecho)}</div>
-              <div style={{fontSize:9,color:'var(--faint)',marginTop:2}}>{pkD>Dnow?('día ~'+pkD+' · '+pkDate.toLocaleDateString('es-ES',{month:'short',year:'numeric'})):'ya visto (la ruta cae desde hoy)'}</div>
+              <div style={{fontSize:9,color:'var(--faint)',marginTop:2}}>{pkD>Dnow?((Number.isFinite(price)&&price>0&&projTecho/price<1.03)?'≈ nivel actual — esta ruta no ve un techo NUEVO claro por delante':('día ~'+pkD+' · '+pkDate.toLocaleDateString('es-ES',{month:'short',year:'numeric'}))):'ya visto (la ruta cae desde hoy)'}</div>
             </div>
             <div style={{padding:'10px 12px',borderRadius:10,background:'#0A0D14',border:'1px solid var(--line2)'}}>
               <div style={{fontSize:9,letterSpacing:1,color:'var(--dim)',textTransform:'uppercase',fontWeight:700,marginBottom:3}}>Fin de ciclo (día 1460)</div>
@@ -2201,7 +2210,7 @@ function monteCarlo(rets,price,days,paths,drift,mags,volScale,simW){
 // para que siempre quede recorrido por delante. Guardadas en localStorage.
 function loadRoutes(price,bands){
   const D=86400000, now=Date.now();
-  let store={}; try{store=JSON.parse(localStorage.getItem('vwafr_routes_v1'))||{};}catch(_){}
+  let store={}; try{store=JSON.parse(localStorage.getItem('vwafr_routes_v2'))||{};}catch(_){}
   const specs=[['r7',7,2],['r30',30,6]]; // [clave, días, reiniciar-cuando-faltan]
   const out={};
   for(const [key,days,resetBefore] of specs){
@@ -2216,7 +2225,7 @@ function loadRoutes(price,bands){
     }
     out[key]={...r,elapsed:needReset?0:Math.min(elapsed,days),fresh:needReset};
   }
-  try{localStorage.setItem('vwafr_routes_v1',JSON.stringify(store));}catch(_){}
+  try{localStorage.setItem('vwafr_routes_v2',JSON.stringify(store));}catch(_){}
   return out;
 }
 // RSI puntual en el día j (sobre las 14 variaciones que terminan en j).
@@ -2265,7 +2274,7 @@ function debiasCommit(price,predLogRet,db){
 // - acierto direccional (signo de la mediana) y cobertura de la banda 50%.
 // Acumula en EWMA y solo puntúa una vez por (ruta, día).
 function loadSkill(route,price){
-  let s=null; try{s=JSON.parse(localStorage.getItem('vwafr_skill_v1'));}catch(_){}
+  let s=null; try{s=JSON.parse(localStorage.getItem('vwafr_skill_v2'));}catch(_){}
   s=s||{mp:0,bp:0,hit:0,cov:0,n:0,key:''};
   if(route&&!route.fresh&&route.elapsed>=1&&route.p50&&price>0){
     const day=Math.min(route.elapsed,route.days), key=route.start+'#'+day;
@@ -2279,7 +2288,7 @@ function loadSkill(route,price){
       const inBand=(price>=Math.min(q25,q75)&&price<=Math.max(q25,q75))?1:0;
       s.hit=s.n?s.hit*(1-a)+dirOk*a:dirOk; s.cov=s.n?s.cov*(1-a)+inBand*a:inBand;
       s.n++; s.key=key;
-      try{localStorage.setItem('vwafr_skill_v1',JSON.stringify(s));}catch(_){}
+      try{localStorage.setItem('vwafr_skill_v2',JSON.stringify(s));}catch(_){}
     }
   }
   return {...s,skill:s.bp>0?(1-s.mp/s.bp):0};
@@ -3553,7 +3562,7 @@ function QuantView({gFunding,nav}){
     // ── AUTO-RECALIBRACIÓN (termostato de precisión): si las bandas vienen
     // cubriendo DE MÁS (cono demasiado ancho) se estrechan, y si cubren de menos
     // se ensanchan. Usa la calibración histórica y el marcador EN VIVO (skill). ──
-    {let skPrev=null;try{skPrev=JSON.parse(localStorage.getItem('vwafr_skill_v1'));}catch(_){}
+    {let skPrev=null;try{skPrev=JSON.parse(localStorage.getItem('vwafr_skill_v2'));}catch(_){}
       if(cal){if(cal.cov50>60)volScale*=0.93;else if(cal.cov50<40)volScale*=1.07;
         if(cal.cov90>96)volScale*=0.95;else if(cal.cov90<84)volScale*=1.05;}
       if(skPrev&&skPrev.n>=8&&Number.isFinite(skPrev.cov)){
@@ -6475,7 +6484,7 @@ function NewsView(){
     </div>
     <div style={panel({marginBottom:14,padding:16})}>
       <div style={{...eyebrow,marginBottom:8}}>🧠 Cómo se filtra</div>
-      <div style={{fontSize:10,color:'var(--dim)',lineHeight:1.65}}>Un filtro puntúa cada titular por <b style={{color:'var(--txt)'}}>impacto</b> (última hora, récords/máximos, Fed·IPC·tipos, SEC·ETF, hacks, liquidaciones, regulación…) y por <b style={{color:'var(--txt)'}}>frescura</b>, elimina duplicados de la misma noticia en varios medios y solo deja pasar ~10. Sin clickbait: si no mueve el mercado, no sale. La etiqueta <b style={{color:'#E53E3E'}}>ÚLTIMA HORA</b> marca lo urgente o lo importante de las últimas 3 horas.</div>
+      <div style={{fontSize:10,color:'var(--dim)',lineHeight:1.65}}>Prioriza <b style={{color:'var(--txt)'}}>política y hechos</b>: regulación (SEC, MiCA, leyes), gobiernos y bancos centrales (Fed·BCE·tipos), ETF e institucionales, demandas/multas, hacks y récords — y <b style={{color:'var(--down)'}}>descarta el análisis de opinión</b> (predicciones de analistas, "podría llegar a…", soportes/resistencias, guías). Deduplica la misma noticia en varios medios y deja pasar ~12. La etiqueta <b style={{color:'#E53E3E'}}>ÚLTIMA HORA</b> marca lo urgente o lo político de las últimas 3 h.</div>
     </div>
   </div>);
 }
