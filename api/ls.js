@@ -200,9 +200,13 @@ module.exports = async (req, res) => {
         if (it.underlying_price > 0) sp2 = it.underlying_price;
         (byExp[m[1]] = byExp[m[1]] || []).push({ k: +m[2], cp: m[3], oi });
       }
-      let tgt = null, tgtOI = -1;
-      for (const e in byExp) { if (!(toMs(e) > now + 2 * 864e5)) continue;
-        const tot = byExp[e].reduce((a, x) => a + x.oi, 0); if (tot > tgtOI) { tgtOI = tot; tgt = e; } }
+      // vencimiento: el de más OI de los PRÓXIMOS ≤45 días (el "imán" solo actúa cerca de
+      // la expiración; los LEAPS lejanos acumulan mucho OI pero no tiran del precio). Si no, global.
+      const pick = maxD => { let t2 = null, best = -1; for (const e in byExp) {
+        const dd = (toMs(e) - now) / 864e5; if (dd < 2 || (maxD && dd > maxD)) continue;
+        const tot = byExp[e].reduce((a, x) => a + x.oi, 0); if (tot > best) { best = tot; t2 = e; } }
+        return t2; };
+      const tgt = pick(45) || pick(null);
       if (tgt && sp2 > 0) {
         const its = byExp[tgt]; let call = 0, put = 0;
         for (const x of its) { if (x.cp === 'C') call += x.oi; else put += x.oi; }
@@ -213,6 +217,40 @@ module.exports = async (req, res) => {
           if (pay < best) { best = pay; mp = S; } }
         out.btc.opts = { exp: tgt, days: +((toMs(tgt) - now) / 864e5).toFixed(0), maxPain: mp,
           pc: call > 0 ? +(put / call).toFixed(2) : null, callOI: +call.toFixed(0), putOI: +put.toFixed(0), spot: +sp2.toFixed(0) };
+      }
+    }
+  } catch (e) {}
+  // MAX PAIN y PUT/CALL de ETH (mismo cálculo que BTC, book de opciones ETH de Deribit)
+  try {
+    const r = await jf('https://www.deribit.com/api/v2/public/get_book_summary_by_currency?currency=ETH&kind=option', 5000);
+    const arr = (r && r.result) || [];
+    if (arr.length > 20) {
+      const now = Date.now(), MON = { JAN: 0, FEB: 1, MAR: 2, APR: 3, MAY: 4, JUN: 5, JUL: 6, AUG: 7, SEP: 8, OCT: 9, NOV: 10, DEC: 11 };
+      const toMs = s => { const m = s.match(/^(\d{1,2})([A-Z]{3})(\d{2})$/); if (!m) return NaN;
+        return Date.UTC(2000 + (+m[3]), MON[m[2]], +m[1], 8, 0, 0); };
+      const byExp = {}; let sp2 = 0;
+      for (const it of arr) {
+        const m = ('' + it.instrument_name).match(/^ETH-(\d{1,2}[A-Z]{3}\d{2})-(\d+)-([CP])$/);
+        const oi = +it.open_interest || 0; if (!m || oi <= 0) continue;
+        if (it.underlying_price > 0) sp2 = it.underlying_price;
+        (byExp[m[1]] = byExp[m[1]] || []).push({ k: +m[2], cp: m[3], oi });
+      }
+      const pick = maxD => { let t2 = null, best = -1; for (const e in byExp) {
+        const dd = (toMs(e) - now) / 864e5; if (dd < 2 || (maxD && dd > maxD)) continue;
+        const tot = byExp[e].reduce((a, x) => a + x.oi, 0); if (tot > best) { best = tot; t2 = e; } }
+        return t2; };
+      const tgt = pick(45) || pick(null);
+      if (tgt && sp2 > 0) {
+        const its = byExp[tgt]; let call = 0, put = 0;
+        for (const x of its) { if (x.cp === 'C') call += x.oi; else put += x.oi; }
+        const strikes = [...new Set(its.map(x => x.k))].sort((a, b) => a - b);
+        let mp = null, best = Infinity;
+        for (const S of strikes) { let pay = 0;
+          for (const x of its) pay += x.cp === 'C' ? Math.max(0, S - x.k) * x.oi : Math.max(0, x.k - S) * x.oi;
+          if (pay < best) { best = pay; mp = S; } }
+        out.eth = out.eth || {};
+        out.eth.opts = { exp: tgt, days: +((toMs(tgt) - now) / 864e5).toFixed(0), maxPain: mp,
+          pc: call > 0 ? +(put / call).toFixed(2) : null, callOI: +call.toFixed(0), putOI: +put.toFixed(0), spot: +(+sp2).toFixed(0) };
       }
     }
   } catch (e) {}

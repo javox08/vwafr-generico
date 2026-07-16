@@ -27,6 +27,7 @@
       lsEx:{acc:{OKX:1.2,Bybit:1.35,Binance:1.95},pro:{OKX:1.008,Binance:1.35}},oiSplit:{coinM:1.42,stableM:6.63},skew:{rr:-9.27,atmIv:33.2,days:20},opts:{exp:'31JUL26',days:19,maxPain:64000,pc:0.41,callOI:67464,putOI:27603,spot:64196},cvdAgg:{binUsd:820000000,okxUsd:1305000000},
       oiHist:oiH,premHist:pmH,cvdFut:oiH.map(function(v,i){return +(i*10-2000+Math.random()*50).toFixed(1);}),fundHist:fdH,premHistD:pmH.slice(0,90),oiHistD:oiH.slice(0,30),
       hist:Array.from({length:72},function(){return 1.5+Math.random()*0.1;})},
+    eth:{opts:{exp:'31JUL26',days:15,maxPain:1800,pc:0.59,callOI:181000,putOI:107000,spot:1917}},
     mkt:{futVol:14.9,spotVol:1.2}};
   var J=function(o){return Promise.resolve(new Response(JSON.stringify(o),{status:200,headers:{'Content-Type':'application/json'}}));};
   window.fetch=function(u){u=''+u;

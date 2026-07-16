@@ -945,7 +945,7 @@ function PosView({gFunding,cot}){
       const bc=((j&&j.coins)||[]).find(x=>x.c==='BTC');
       const masaAgg=(bc&&Number.isFinite(bc.r)&&bc.r>0)?bc.r/(1+bc.r):null;
       const prosAgg=(j&&j.btc&&Number.isFinite(j.btc.pos)&&j.btc.pos>0)?j.btc.pos/(1+j.btc.pos):null;
-      if(a&&j&&j.btc)setD({lsEx:j.btc.lsEx||null,taker:j.btc.taker||null,hist:(j.btc.hist||[]),cvdFut:j.btc.cvdFut||null,oiSplit:j.btc.oiSplit||null,skew:j.btc.skew||null,opts:j.btc.opts||null,cvdAgg:j.btc.cvdAgg||null,masaAgg,prosAgg,coins:((j&&j.coins)||[])});
+      if(a&&j&&j.btc)setD({lsEx:j.btc.lsEx||null,taker:j.btc.taker||null,hist:(j.btc.hist||[]),cvdFut:j.btc.cvdFut||null,oiSplit:j.btc.oiSplit||null,skew:j.btc.skew||null,opts:j.btc.opts||null,ethOpts:(j.eth&&j.eth.opts)||null,cvdAgg:j.btc.cvdAgg||null,masaAgg,prosAgg,coins:((j&&j.coins)||[])});
     }catch(_){}};
     load();const t=setInterval(load,120000);return()=>{a=false;clearInterval(t);};},[]);
   const [k,setK]=useState(null); // CVD spot diario (oficial: taker buy de las velas) + máx/mín 60d
@@ -1191,36 +1191,44 @@ function PosView({gFunding,cot}){
         <div style={{fontSize:8.5,color:'var(--faint)',marginTop:6,lineHeight:1.55}}>Sentimiento de <b style={{color:'var(--txt)'}}>hedgers e institucionales</b> (no retail): negativo = pagan más por protección a la baja (típico en cripto). Lo informativo es el CAMBIO y los extremos, no el nivel absoluto. Proxy: call ~110% vs put ~90% de la expiración cercana a 30 días.</div>
       </div>);})()}
 
-    {/* MAX PAIN + PUT/CALL (Deribit): imán de precio hacia el vencimiento y sesgo de opciones */}
-    {d&&d.opts&&Number.isFinite(d.opts.maxPain)&&(()=>{const o=d.opts;
-      const dist=o.spot>0?((o.maxPain/o.spot-1)*100):0;
-      const pc=o.pc,callH=pc!=null&&pc<0.7,putH=pc!=null&&pc>1,pcCol=callH?'var(--up)':putH?'var(--down)':'var(--dim)';
-      const tot=(o.callOI||0)+(o.putOI||0),callPct=tot>0?o.callOI/tot*100:50;
-      return(<div style={panel({marginBottom:14,padding:16})}>
-        <div style={{...flx({justifyContent:'space-between'}),marginBottom:8}}>
+    {/* MAX PAIN + PUT/CALL (Deribit): imán de precio hacia el vencimiento — BTC y ETH */}
+    {d&&((d.opts&&Number.isFinite(d.opts.maxPain))||(d.ethOpts&&Number.isFinite(d.ethOpts.maxPain)))&&(
+      <div style={panel({marginBottom:14,padding:16})}>
+        <div style={{...flx({justifyContent:'space-between'}),marginBottom:10}}>
           <span style={eyebrow}>Opciones · max pain y put/call</span>
-          <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>Deribit · venc. {o.exp} ({o.days}d)</span>
+          <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>Deribit oficial</span>
         </div>
-        <div style={{...flx({justifyContent:'space-between'}),marginBottom:8}}>
-          <div>
-            <div style={{fontSize:7.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.4}}>Max pain (imán)</div>
-            <div className="mono" style={{fontSize:17,fontWeight:800,color:'var(--txt)'}}>{money(o.maxPain)}</div>
-            <div style={{fontSize:8,color:Math.abs(dist)<1?'var(--dim)':dist>0?'var(--up)':'var(--down)'}}>{dist>=0?'+':''}{dist.toFixed(1)}% vs precio ({money(o.spot)})</div>
-          </div>
-          <div style={{textAlign:'right'}}>
-            <div style={{fontSize:7.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.4}}>Put/Call (OI)</div>
-            <div className="mono" style={{fontSize:17,fontWeight:800,color:pcCol}}>{pc!=null?pc.toFixed(2):'—'}</div>
-            <div style={{fontSize:8,color:pcCol}}>{callH?'calls dominan → optimismo':putH?'puts dominan → cobertura/miedo':'equilibrado'}</div>
-          </div>
-        </div>
-        <div style={{display:'flex',height:7,borderRadius:4,overflow:'hidden',marginBottom:3}}>
-          <div style={{width:callPct+'%',background:'var(--up)',opacity:.8}}/><div style={{flex:1,background:'var(--down)',opacity:.8}}/>
-        </div>
-        <div style={{...flx({justifyContent:'space-between'}),fontSize:7,color:'var(--faint)'}}>
-          <span>calls {(o.callOI/1000).toFixed(1)}k contratos</span><span>puts {(o.putOI/1000).toFixed(1)}k contratos</span>
-        </div>
-        <div style={{fontSize:8.5,color:'var(--faint)',marginTop:7,lineHeight:1.55}}><b style={{color:'var(--txt)'}}>Max pain</b> = precio donde MÁS opciones caducan sin valor; cerca del vencimiento el precio suele gravitar hacia ahí (los creadores de mercado cubren su gamma). <b style={{color:'var(--txt)'}}>Put/Call</b> por interés abierto: bajo = mercado cargado de calls (optimismo/apuestas); alto = mucha cobertura con puts (miedo, a veces marca suelo). Solo BTC · vencimiento con más OI.</div>
-      </div>);})()}
+        {[['BTC',d.opts,'#F7931A'],['ETH',d.ethOpts,'#627EEA']].map(([cn,o,cc],bi)=>{
+          if(!o||!Number.isFinite(o.maxPain))return null;
+          const dist=o.spot>0?((o.maxPain/o.spot-1)*100):0;
+          const pc=o.pc,callH=pc!=null&&pc<0.7,putH=pc!=null&&pc>1,pcCol=callH?'var(--up)':putH?'var(--down)':'var(--dim)';
+          const tot=(o.callOI||0)+(o.putOI||0),callPct=tot>0?o.callOI/tot*100:50;
+          return(<div key={cn} style={bi>0?{marginTop:11,paddingTop:11,borderTop:'1px solid var(--line2)'}:{}}>
+            <div style={{...flx({justifyContent:'space-between'}),marginBottom:6}}>
+              <span style={{...flx({gap:6})}}><CoinIcon c={cn} size={16} radius={5}/><b style={{fontSize:11,color:cc}}>{cn}</b></span>
+              <span className="mono" style={{fontSize:8,color:'var(--faint)'}}>venc. {o.exp} ({o.days}d)</span>
+            </div>
+            <div style={{...flx({justifyContent:'space-between'}),marginBottom:8}}>
+              <div>
+                <div style={{fontSize:7.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.4}}>Max pain (imán)</div>
+                <div className="mono" style={{fontSize:17,fontWeight:800,color:'var(--txt)'}}>{money(o.maxPain)}</div>
+                <div style={{fontSize:8,color:Math.abs(dist)<1?'var(--dim)':dist>0?'var(--up)':'var(--down)'}}>{dist>=0?'+':''}{dist.toFixed(1)}% vs precio ({money(o.spot)})</div>
+              </div>
+              <div style={{textAlign:'right'}}>
+                <div style={{fontSize:7.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.4}}>Put/Call (OI)</div>
+                <div className="mono" style={{fontSize:17,fontWeight:800,color:pcCol}}>{pc!=null?pc.toFixed(2):'—'}</div>
+                <div style={{fontSize:8,color:pcCol}}>{callH?'calls dominan → optimismo':putH?'puts dominan → cobertura/miedo':'equilibrado'}</div>
+              </div>
+            </div>
+            <div style={{display:'flex',height:7,borderRadius:4,overflow:'hidden',marginBottom:3}}>
+              <div style={{width:callPct+'%',background:'var(--up)',opacity:.8}}/><div style={{flex:1,background:'var(--down)',opacity:.8}}/>
+            </div>
+            <div style={{...flx({justifyContent:'space-between'}),fontSize:7,color:'var(--faint)'}}>
+              <span>calls {(o.callOI/1000).toFixed(1)}k contratos</span><span>puts {(o.putOI/1000).toFixed(1)}k contratos</span>
+            </div>
+          </div>);})}
+        <div style={{fontSize:8.5,color:'var(--faint)',marginTop:9,lineHeight:1.55}}><b style={{color:'var(--txt)'}}>Max pain</b> = precio donde MÁS opciones caducan sin valor; cerca del vencimiento el precio suele gravitar hacia ahí (los creadores de mercado cubren su gamma). <b style={{color:'var(--txt)'}}>Put/Call</b> por interés abierto: bajo = mercado cargado de calls (optimismo/apuestas); alto = mucha cobertura con puts (miedo, a veces marca suelo). Vencimiento elegido: el de más OI de los próximos ≤45 días (el imán solo actúa cerca de la expiración).</div>
+      </div>)}
 
     {/* OI coin-margined vs stablecoin */}
     {d&&d.oiSplit&&(()=>{const c2=d.oiSplit.coinM,s2=d.oiSplit.stableM,sh=c2/(c2+s2)*100;
