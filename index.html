@@ -364,17 +364,30 @@ function ExLogo({name,color,size=16}){
     style={{width:size,height:size,borderRadius:4,flexShrink:0,background:'#0A0D14'}}/>;
 }
 
-// Redes del creador (menú estilo Linktree en el pie; cada una con su color de marca)
+// Redes del creador (menú estilo Linktree en el pie; cada una con su color de marca y
+// su LOGO real —favicon oficial del dominio— con respaldo al emoji si no carga)
 const REDES=[
-  {n:'TikTok',s:'@javox_008',u:'https://www.tiktok.com/@javox_008',e:'🎵',c:'#FE2C55'},
-  {n:'YouTube',s:'@javox-k9p',u:'https://www.youtube.com/@javox-k9p',e:'▶️',c:'#FF4444'},
-  {n:'Twitch',s:'javoxmaster',u:'https://www.twitch.tv/javoxmaster',e:'🎮',c:'#9146FF'},
-  {n:'X (Twitter)',s:'@Javidelatorrev1',u:'https://x.com/Javidelatorrev1',e:'𝕏',c:'#E7ECF5'},
-  {n:'Facebook',s:'Javox',u:'https://www.facebook.com/share/18VjRoHMA2',e:'📘',c:'#1877F2'},
-  {n:'LinkedIn',s:'Javi de la Torre',u:'https://www.linkedin.com/in/javi-thierry-de-la-torre-valdes-88887b2a3',e:'💼',c:'#0A66C2'},
-  {n:'Email',s:'javi27angel13@gmail.com',u:'mailto:javi27angel13@gmail.com',e:'✉️',c:'#1FE0A0'},
-  {n:'Linktree',s:'todos los enlaces',u:'https://linktr.ee/JAVOX27',e:'🌳',c:'#43E660'},
+  {n:'TikTok',s:'@javox_008',u:'https://www.tiktok.com/@javox_008',d:'tiktok.com',e:'🎵',c:'#FE2C55'},
+  {n:'YouTube',s:'@javox-k9p',u:'https://www.youtube.com/@javox-k9p',d:'youtube.com',e:'▶️',c:'#FF4444'},
+  {n:'Twitch',s:'javoxmaster',u:'https://www.twitch.tv/javoxmaster',d:'twitch.tv',e:'🎮',c:'#9146FF'},
+  {n:'X (Twitter)',s:'@Javidelatorrev1',u:'https://x.com/Javidelatorrev1',d:'x.com',e:'𝕏',c:'#E7ECF5'},
+  {n:'Facebook',s:'Javox',u:'https://www.facebook.com/share/18VjRoHMA2',d:'facebook.com',e:'📘',c:'#1877F2'},
+  {n:'LinkedIn',s:'Javi de la Torre',u:'https://www.linkedin.com/in/javi-thierry-de-la-torre-valdes-88887b2a3',d:'linkedin.com',e:'💼',c:'#0A66C2'},
+  {n:'Email',s:'javi27angel13@gmail.com',u:'mailto:javi27angel13@gmail.com',d:'gmail.com',e:'✉️',c:'#1FE0A0'},
+  {n:'Linktree',s:'todos los enlaces',u:'https://linktr.ee/JAVOX27',d:'linktr.ee',e:'🌳',c:'#43E660'},
 ];
+function RedIcon({d,e}){ // logo oficial de la red (favicon del dominio) → emoji si falla
+  // respaldo también POR TIEMPO: si en 2,5s no ha cargado (petición colgada/bloqueada por
+  // adblocker, que no dispara onError), se muestra el emoji en vez de una caja vacía
+  const [err,setErr]=useState(false);
+  const rf=React.useRef(null);
+  useEffect(()=>{const t=setTimeout(()=>{const im=rf.current;
+    if(im&&!(im.complete&&im.naturalWidth>0))setErr(true);},2500);
+    return()=>clearTimeout(t);},[]);
+  if(!d||err)return <span style={{fontSize:16,lineHeight:1}}>{e}</span>;
+  return <img ref={rf} src={'https://www.google.com/s2/favicons?domain='+d+'&sz=64'} onError={()=>setErr(true)}
+    alt="" width={20} height={20} loading="lazy" style={{width:20,height:20,borderRadius:5,display:'block'}}/>;
+}
 
 // Respaldo en el navegador (CORS) para Binance/Bybit, geo-bloqueados en el servidor.
 async function bybitFallback(coins,data){
@@ -6597,15 +6610,20 @@ function App(){
     <>
     <div className="mainwrap" style={{paddingBottom:8}}>
 
-      {/* TOPBAR */}
+      {/* TOPBAR (logo del sitio + título de la vista) */}
       <div className="span-all" style={{...flx({justifyContent:'space-between'}),padding:'4px 2px 12px'}}>
-        <div>
-          <div style={{...flx({gap:7}),marginBottom:5}}>
-            <div style={{width:7,height:7,borderRadius:2,background:'var(--accent)',
-              boxShadow:'0 0 8px var(--accent)',animation:'breathe 2.4s ease infinite'}}/>
-            <span style={eyebrow}>{TITLE[0]}</span>
+        <div style={{...flx({gap:11})}}>
+          <img src="icon.svg" alt="VWAFR · Cripto Quant" width={40} height={40}
+            style={{width:40,height:40,borderRadius:11,flexShrink:0,border:'1px solid var(--line2)',
+              background:'#0A0D14',boxShadow:'0 0 16px rgba(110,139,255,.22)'}}/>
+          <div>
+            <div style={{...flx({gap:7}),marginBottom:5}}>
+              <div style={{width:7,height:7,borderRadius:2,background:'var(--accent)',
+                boxShadow:'0 0 8px var(--accent)',animation:'breathe 2.4s ease infinite'}}/>
+              <span style={eyebrow}>{TITLE[0]}</span>
+            </div>
+            <h1 style={{fontSize:21,fontWeight:800,letterSpacing:-.5,lineHeight:1}}>{TITLE[1]}</h1>
           </div>
-          <h1 style={{fontSize:21,fontWeight:800,letterSpacing:-.5,lineHeight:1}}>{TITLE[1]}</h1>
         </div>
         {/* sin botón de "Actualizar": los datos se refrescan solos cada 60 s y el botón
             confundía (parecía un aviso de actualización pendiente) */}
@@ -7003,7 +7021,7 @@ function App(){
               <a key={r.n} className="rd-link" href={r.u} target="_blank" rel="noopener noreferrer"
                 style={{'--rc':r.c,animationDelay:(120+i*65)+'ms'}}>
                 <span style={{width:36,height:36,borderRadius:11,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',
-                  fontSize:16,background:r.c+'1C',border:'1px solid '+r.c+'55'}}>{r.e}</span>
+                  background:r.c+'1C',border:'1px solid '+r.c+'55'}}><RedIcon d={r.d} e={r.e}/></span>
                 <span style={{minWidth:0}}>
                   <span style={{display:'block',fontSize:12,fontWeight:700}}>{r.n}</span>
                   <span className="mono" style={{display:'block',fontSize:8.5,color:'var(--faint)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{r.s}</span>
