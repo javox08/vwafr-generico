@@ -157,9 +157,12 @@
     body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
       background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);
       background-size:44px 44px;opacity:.025}
-    /* resplandor ambiental superior (profundidad estilo terminal) */
-    body::after{content:'';position:fixed;top:-12%;left:50%;transform:translateX(-50%);width:130%;height:360px;z-index:0;pointer-events:none;
-      background:radial-gradient(58% 100% at 50% 0%, rgba(110,139,255,.09), transparent 72%)}
+    /* resplandor ambiental (profundidad estilo terminal): halo superior + auroras
+       sutiles verde/morado abajo, como el panel de redes pero muy tenue */
+    body::after{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
+      background:radial-gradient(58% 46% at 50% 0%, rgba(110,139,255,.09), transparent 72%),
+                 radial-gradient(34% 30% at 92% 88%, rgba(31,224,160,.05), transparent 70%),
+                 radial-gradient(36% 32% at 4% 84%, rgba(145,70,255,.055), transparent 70%)}
     ::selection{background:rgba(110,139,255,.32);color:#fff}
     .nav-glow{box-shadow:0 0 0 1px rgba(110,139,255,.25),0 6px 18px -6px rgba(110,139,255,.45)}
     /* pie de página */
@@ -205,6 +208,17 @@
       transition:transform .15s ease,box-shadow .15s ease;user-select:none}
     .rd-share:hover{transform:translateY(-1px);box-shadow:0 10px 30px -10px rgba(67,230,96,.85)}
     .rd-share:active{transform:scale(.97)}
+    /* NOTICIAS (pestaña): tarjetas con el mismo lenguaje que redes */
+    .nw-item{display:block;padding:11px 12px;margin-bottom:8px;border-radius:13px;
+      background:rgba(255,255,255,.03);border:1px solid var(--line2);text-decoration:none;
+      transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease;
+      animation:rdItem .45s cubic-bezier(.16,.9,.28,1.15) both}
+    .nw-item:hover{transform:translateY(-1px);border-color:rgba(110,139,255,.5);
+      box-shadow:0 7px 22px -9px rgba(110,139,255,.55)}
+    .nw-hot{border-left:3px solid #E53E3E}
+    .sk{height:12px;border-radius:6px;margin:10px 0;
+      background:linear-gradient(90deg,#12151F 25%,#1B2130 50%,#12151F 75%);
+      background-size:200% 100%;animation:shimmer 1.4s infinite}
     /* portada tipo banner (degradado de marca con barrido de luz) + avatar solapado */
     .rd-cover{position:relative;margin:-26px -18px 0;height:88px;border-radius:24px 24px 0 0;overflow:hidden;
       background:linear-gradient(115deg,#0E1320 0%,#2A1152 32%,#0B3D2E 72%,#0E1320 100%)}
@@ -555,7 +569,9 @@ const fmtUsd=v=>{if(!(v>0))return '';
   if(m>=1)return '$'+m.toFixed(1).replace('.',',')+'M';
   return '$'+Math.round(m*1000)+'K';};
 const eyebrow={fontSize:10,letterSpacing:3,color:'var(--dim)',textTransform:'uppercase',fontWeight:600};
-const panel=(ex={})=>({background:'var(--panel)',border:'1px solid var(--line)',borderRadius:16,...ex});
+// paneles con degradado sutil + sombra suave (mismo lenguaje visual que el panel de redes)
+const panel=(ex={})=>({background:'linear-gradient(168deg,#11141F 0%,#0B0E16 100%)',
+  border:'1px solid var(--line)',borderRadius:16,boxShadow:'0 14px 34px -24px rgba(0,0,0,.7)',...ex});
 const inp=(c='var(--txt)')=>({background:'#080A10',border:'1px solid var(--line)',borderRadius:7,
   color:c,fontFamily:"'JetBrains Mono',monospace",fontSize:12.5,padding:'6px 8px',width:'100%',
   boxSizing:'border-box',fontVariantNumeric:'tabular-nums'});
@@ -6413,35 +6429,54 @@ function BotsView({gFunding}){
 
 // ── CONTEXTO DE MERCADO CRIPTO: dominancia BTC (¿altseason?) + oferta de stablecoins
 //    (liquidez = "pólvora seca"). Datos oficiales: CoinGecko global + DefiLlama. ──
-// 📰 NOTICIAS estilo terminal (Bloomberg): solo titulares IMPORTANTES en español,
-// del relé /api/news (Google News agrega Expansión/Investing/FXStreet/CoinTelegraph…).
-// Los muy recientes o con palabras de impacto llevan la etiqueta roja ÚLTIMA HORA.
-function NewsPanel(){
+// 📰 NOTICIAS (pestaña propia, estilo terminal Bloomberg): solo titulares IMPORTANTES
+// en español, del relé /api/news (Google News agrega Expansión/Investing/FXStreet/
+// CoinTelegraph…). Los muy recientes o con palabras de impacto van como ÚLTIMA HORA.
+function NewsView(){
   const [nw,setNw]=useState(null);
+  const [nerr,setNerr]=useState(false);
   useEffect(()=>{let a=true;
-    const load=()=>fetch(LS_RELAY.replace('/ls','/news')).then(r=>r.json()).then(j=>{if(a&&j&&j.items&&j.items.length)setNw(j.items);}).catch(()=>{});
+    const load=()=>fetch(LS_RELAY.replace('/ls','/news')).then(r=>r.json()).then(j=>{
+      if(!a)return; if(j&&j.items&&j.items.length)setNw(j.items);else if(!nw)setNerr(true);
+    }).catch(()=>{if(a&&!nw)setNerr(true);});
     load();const t=setInterval(load,900000);return()=>{a=false;clearInterval(t);};},[]);
-  if(!nw)return null;
   const ago=d=>{if(!d)return '';const m=Math.max(1,Math.round((Date.now()-d)/6e4));
     return m<60?('hace '+m+' min'):m<1440?('hace '+Math.round(m/60)+' h'):('hace '+Math.round(m/1440)+' d');};
-  return(<div style={panel({marginBottom:14,padding:16})}>
-    <div style={{...flx({justifyContent:'space-between'}),marginBottom:10}}>
-      <span style={{...flx({gap:7})}}>
-        <span style={{width:7,height:7,borderRadius:'50%',background:'var(--down)',boxShadow:'0 0 8px var(--down)',animation:'breathe 1.8s ease infinite'}}/>
-        <span style={eyebrow}>📰 Noticias · solo lo importante</span>
-      </span>
-      <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>auto · 15 min</span>
+  return(<div className="viewwrap">
+    <div style={{...flx({gap:10}),margin:'2px 2px 14px'}}>
+      <div style={{width:32,height:32,borderRadius:10,flexShrink:0,background:'rgba(229,62,62,.14)',
+        border:'1px solid rgba(229,62,62,.35)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16}}>📰</div>
+      <div>
+        <div style={{fontSize:15,fontWeight:800,letterSpacing:-.3,lineHeight:1.05}}>Noticias cripto</div>
+        <div style={{...eyebrow,fontSize:9}}>solo lo importante · en español · auto cada 15 min</div>
+      </div>
     </div>
-    {nw.slice(0,8).map((n,i)=>(
-      <a key={i} href={n.u} target="_blank" rel="noopener noreferrer" style={{display:'block',padding:'8px 0',
-        borderTop:i?'1px solid #12151F':'none',textDecoration:'none',cursor:'pointer'}}>
-        <div style={{...flx({gap:7,alignItems:'flex-start'})}}>
-          {n.hot&&<span className="mono" style={{fontSize:7,fontWeight:800,letterSpacing:.5,flexShrink:0,marginTop:2,padding:'2px 6px',borderRadius:5,color:'#fff',background:'linear-gradient(92deg,#E53E3E,#C53030)',animation:'rdLive 1.8s ease-in-out infinite'}}>ÚLTIMA HORA</span>}
-          <span style={{fontSize:10.5,fontWeight:n.hot?700:600,color:'var(--txt)',lineHeight:1.45,flex:1}}>{n.t}</span>
-        </div>
-        <div className="mono" style={{fontSize:7.5,color:'var(--faint)',marginTop:3}}>{n.s?n.s+' · ':''}{ago(n.d)} ↗</div>
-      </a>))}
-    <div style={{fontSize:7.5,color:'var(--faint)',marginTop:8,lineHeight:1.5}}>Titulares de medios (vía Google News) filtrados por impacto: última hora, récords, Fed/IPC, ETF, hacks… Se abren en el medio original.</div>
+    <div style={panel({marginBottom:14,padding:16})}>
+      <div style={{...flx({justifyContent:'space-between'}),marginBottom:11}}>
+        <span style={{...flx({gap:7})}}>
+          <span style={{width:7,height:7,borderRadius:'50%',background:'var(--down)',boxShadow:'0 0 8px var(--down)',animation:'breathe 1.8s ease infinite'}}/>
+          <span style={eyebrow}>En vivo · última hora</span>
+        </span>
+        <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>Google News · medios ES</span>
+      </div>
+      {!nw&&!nerr&&<div>{[90,70,80,60].map((w,i)=><div key={i} className="sk" style={{width:w+'%'}}/>)}</div>}
+      {nerr&&!nw&&<div style={{fontSize:10,color:'var(--faint)',textAlign:'center',padding:'14px 0'}}>Ahora mismo no llegan titulares (el relé puede estar desplegándose). Reintenta en unos minutos.</div>}
+      {nw&&nw.map((n,i)=>(
+        <a key={i} href={n.u} target="_blank" rel="noopener noreferrer"
+          className={'nw-item'+(n.hot?' nw-hot':'')} style={{animationDelay:(i*55)+'ms'}}>
+          <div style={{...flx({gap:8,alignItems:'flex-start'})}}>
+            {n.hot&&<span className="mono" style={{fontSize:7,fontWeight:800,letterSpacing:.5,flexShrink:0,marginTop:2,padding:'2px 6px',borderRadius:5,color:'#fff',background:'linear-gradient(92deg,#E53E3E,#C53030)',animation:'rdLive 1.8s ease-in-out infinite'}}>ÚLTIMA HORA</span>}
+            <span style={{fontSize:11.5,fontWeight:n.hot?700:600,color:'var(--txt)',lineHeight:1.5,flex:1}}>{n.t}</span>
+            <span style={{color:'var(--faint)',fontSize:11,flexShrink:0}}>↗</span>
+          </div>
+          <div className="mono" style={{fontSize:8,color:'var(--faint)',marginTop:4}}>{n.s?n.s+' · ':''}{ago(n.d)}</div>
+        </a>))}
+      <div style={{fontSize:8,color:'var(--faint)',marginTop:8,lineHeight:1.5}}>Cada titular abre el medio original en una pestaña nueva.</div>
+    </div>
+    <div style={panel({marginBottom:14,padding:16})}>
+      <div style={{...eyebrow,marginBottom:8}}>🧠 Cómo se filtra</div>
+      <div style={{fontSize:10,color:'var(--dim)',lineHeight:1.65}}>Un filtro puntúa cada titular por <b style={{color:'var(--txt)'}}>impacto</b> (última hora, récords/máximos, Fed·IPC·tipos, SEC·ETF, hacks, liquidaciones, regulación…) y por <b style={{color:'var(--txt)'}}>frescura</b>, elimina duplicados de la misma noticia en varios medios y solo deja pasar ~10. Sin clickbait: si no mueve el mercado, no sale. La etiqueta <b style={{color:'#E53E3E'}}>ÚLTIMA HORA</b> marca lo urgente o lo importante de las últimas 3 horas.</div>
+    </div>
   </div>);
 }
 function MarketCtx(){
@@ -6753,7 +6788,8 @@ function App(){
     quant:['BTC · finanzas cuantitativas','Análisis Cuantitativo'],
     pos:['BTC · posicionamiento oficial','Posiciones L/S'],
     bots:['BTC · estrategias automáticas','Bots de Trading'],
-    pib:['Macro · ciclo económico mundial','Ciclo económico']}[view];
+    pib:['Macro · ciclo económico mundial','Ciclo económico'],
+    news:['Cripto · última hora','Noticias']}[view];
 
   return(
     <>
@@ -6794,15 +6830,15 @@ function App(){
           <span onClick={()=>{setIosHint(false);try{localStorage.setItem('vwafr_ios_hint','1');}catch(_){}}} style={{fontSize:13,color:'var(--faint)',cursor:'pointer',padding:'0 4px'}}>✕</span>
         </div>)}
 
-      {/* NAV apartados */}
-      <div className="span-all" style={{...flx({gap:7}),marginBottom:16}}>
-        {[['home','Funding'],['cycle','Ciclo'],['quant','Cuantitativo'],['pos','L/S'],['bots','Bots'],['pib','Macro']].map(([k,label])=>{
+      {/* NAV apartados (desplaza en horizontal si no caben) */}
+      <div className="span-all tabs" style={{...flx({gap:5}),marginBottom:16,overflowX:'auto',paddingBottom:2}}>
+        {[['home','Funding'],['cycle','Ciclo'],['quant','Cuant'],['pos','L/S'],['bots','Bots'],['pib','Macro'],['news','Noticias']].map(([k,label])=>{
           const on=view===k;
           return(
-            <button key={k} onClick={()=>setView(k)} className={on?'nav-glow':''} aria-label={'Ver sección '+label} aria-current={on?'page':undefined} style={{flex:1,padding:'9px 2px',borderRadius:10,
-              fontSize:11,fontWeight:700,cursor:'pointer',transition:'all .18s',whiteSpace:'nowrap',letterSpacing:-.2,
+            <button key={k} onClick={()=>setView(k)} className={on?'nav-glow':''} aria-label={'Ver sección '+label} aria-current={on?'page':undefined} style={{flex:'1 0 auto',padding:'9px 6px',borderRadius:10,
+              fontSize:10.5,fontWeight:700,cursor:'pointer',transition:'all .18s',whiteSpace:'nowrap',letterSpacing:-.2,
               border:`1px solid ${on?'var(--accent)':'var(--line)'}`,
-              background:on?'rgba(110,139,255,.12)':'transparent',color:on?'var(--txt)':'var(--dim)'}}>{label}</button>
+              background:on?'linear-gradient(135deg,rgba(110,139,255,.22),rgba(31,224,160,.10))':'transparent',color:on?'var(--txt)':'var(--dim)'}}>{label}</button>
           );
         })}
       </div>
@@ -6812,6 +6848,7 @@ function App(){
       {view==='pos'&&<PosView gFunding={g.vwafr} cot={cot}/>}
       {view==='bots'&&<BotsView gFunding={g.vwafr}/>}
       {view==='pib'&&<PIBView/>}
+      {view==='news'&&<NewsView/>}
 
       {home&&<div className="viewwrap">
       {/* status strip */}
@@ -7018,7 +7055,6 @@ function App(){
       )}
 
 
-      <NewsPanel/>
       <MarketCtx/>
 
       {/* ── RESUMEN · todas las monedas (formato lista, estilo boceto) ── */}
