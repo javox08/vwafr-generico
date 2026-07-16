@@ -1590,8 +1590,8 @@ function CycleBTC(){
         </div>
       </div>
 
-      {/* Precio — hero con degradado según la fase */}
-      <div className="rise" style={panel({position:'relative',overflow:'hidden',marginBottom:14,padding:'24px 20px 20px',
+      {/* Precio — hero con degradado según la fase (+ barrido de luz como el resto) */}
+      <div className="rise hero-shine" style={panel({position:'relative',overflow:'hidden',marginBottom:14,padding:'24px 20px 20px',
         background:`radial-gradient(120% 90% at 50% -10%, ${ph.c}1F 0%, var(--panel) 58%)`,borderColor:`${ph.c}33`})}>
         <div style={{position:'absolute',top:0,left:'15%',right:'15%',height:1,
           background:`linear-gradient(90deg,transparent,${ph.c},transparent)`,opacity:.65}}/>
@@ -5993,6 +5993,15 @@ function BotsView({gFunding}){
 
   return(
     <div className="viewwrap">
+      {/* cabecera de vista (consistente con L/S/Noticias) */}
+      <div style={{...flx({gap:10}),margin:'2px 2px 14px'}}>
+        <div style={{width:32,height:32,borderRadius:10,flexShrink:0,background:'rgba(31,224,160,.13)',
+          border:'1px solid rgba(31,224,160,.32)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16}}>🤖</div>
+        <div>
+          <div style={{fontSize:15,fontWeight:800,letterSpacing:-.3,lineHeight:1.05}}>Bots de trading</div>
+          <div style={{...eyebrow,fontSize:9}}>backtest de 9 años · walk-forward · Deflated Sharpe</div>
+        </div>
+      </div>
       {/* OPERACIÓN DEFINITIVA DE LOS BOTS RENTABLES (trade final con TP/SL en vivo) */}
       {(()=>{const dt=c.defTrade, dr=c.defRec, neutral=dt.side==='NEUTRAL'||dt.empty, long=dt.side==='LONG';
         const col=neutral?'var(--dim)':long?'var(--up)':'var(--down)';
