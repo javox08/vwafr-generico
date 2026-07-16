@@ -178,16 +178,25 @@
       padding:16px;animation:rdBack .25s ease both}
     .rd-card{position:relative;width:100%;max-width:392px;max-height:88vh;overflow-y:auto;overflow-x:hidden;
       background:linear-gradient(168deg,#11141F 0%,#0A0D14 60%,#0B0E17 100%);
-      border:1px solid var(--line2);border-radius:24px;padding:24px 18px 16px;
+      border:1px solid var(--line2);border-radius:24px;padding:26px 18px 16px;
       animation:rdCard .42s cubic-bezier(.18,.9,.26,1.12) both;
-      box-shadow:0 24px 70px -18px rgba(0,0,0,.75),0 0 44px -18px rgba(110,139,255,.35)}
-    .rd-ring{position:relative;width:72px;height:72px;margin:0 auto 10px}
+      box-shadow:0 24px 70px -18px rgba(0,0,0,.8),0 0 52px -16px rgba(145,70,255,.4)}
+    /* halo de marca (verde/morado neón, como el logo de JAVOX) detrás del avatar */
+    .rd-card::before{content:'';position:absolute;top:-70px;left:50%;transform:translateX(-50%);
+      width:360px;height:250px;pointer-events:none;filter:blur(8px);
+      background:radial-gradient(46% 55% at 62% 42%,rgba(145,70,255,.30),transparent 72%),
+                 radial-gradient(40% 48% at 36% 34%,rgba(67,230,96,.20),transparent 70%)}
+    .rd-ring{position:relative;width:86px;height:86px;margin:0 auto 11px;
+      filter:drop-shadow(0 0 14px rgba(145,70,255,.45))}
     .rd-ring::before{content:'';position:absolute;inset:-4px;border-radius:50%;
-      background:conic-gradient(from 0deg,#6E8BFF,#1FE0A0,#F3BA2F,#FF5470,#6E8BFF);
+      background:conic-gradient(from 0deg,#43E660,#9146FF,#E7ECF5,#43E660);
       animation:rdRing 5s linear infinite}
     .rd-ava{position:absolute;inset:0;border-radius:50%;display:flex;align-items:center;justify-content:center;
       font-size:27px;font-weight:800;color:#fff;background:#141926;border:3px solid #0A0D14;
-      animation:rdAva 3.8s ease-in-out infinite}
+      animation:rdAva 3.8s ease-in-out infinite;overflow:hidden}
+    .rd-name{font-size:17px;font-weight:800;letter-spacing:-.3;
+      background:linear-gradient(92deg,#43E660 0%,#BFF7CB 35%,#C9B3FF 65%,#9146FF 100%);
+      -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:#E7ECF5}
     .rd-link{display:flex;align-items:center;gap:12px;padding:12px 13px;margin-bottom:9px;border-radius:14px;
       background:rgba(255,255,255,.035);border:1px solid var(--line2);cursor:pointer;
       text-decoration:none;color:var(--txt);
@@ -372,10 +381,15 @@ const REDES=[
   {n:'Twitch',s:'javoxmaster',u:'https://www.twitch.tv/javoxmaster',d:'twitch.tv',e:'🎮',c:'#9146FF'},
   {n:'X (Twitter)',s:'@Javidelatorrev1',u:'https://x.com/Javidelatorrev1',d:'x.com',e:'𝕏',c:'#E7ECF5'},
   {n:'Facebook',s:'Javox',u:'https://www.facebook.com/share/18VjRoHMA2',d:'facebook.com',e:'📘',c:'#1877F2'},
-  {n:'LinkedIn',s:'Javi de la Torre',u:'https://www.linkedin.com/in/javi-thierry-de-la-torre-valdes-88887b2a3',d:'linkedin.com',e:'💼',c:'#0A66C2'},
+  {n:'LinkedIn',s:'Javier de la Torre',u:'https://www.linkedin.com/in/javier-thierry-de-la-torre-valdes-88887b2a3',d:'linkedin.com',e:'💼',c:'#0A66C2'},
   {n:'Email',s:'javi27angel13@gmail.com',u:'mailto:javi27angel13@gmail.com',d:'gmail.com',e:'✉️',c:'#1FE0A0'},
-  {n:'Linktree',s:'todos los enlaces',u:'https://linktr.ee/JAVOX27',d:'linktr.ee',e:'🌳',c:'#43E660'},
 ];
+function RedAvatar(){ // logo real de JAVOX (guardado en el repo) → 🚀 si no carga
+  const [err,setErr]=useState(false);
+  if(err)return <div className="rd-ava" style={{fontSize:27}}>🚀</div>;
+  return <img className="rd-ava" src="javox.jpg" alt="JAVOX27" onError={()=>setErr(true)}
+    style={{objectFit:'cover',width:'100%',height:'100%'}}/>;
+}
 function RedIcon({d,e}){ // logo oficial de la red (favicon del dominio) → emoji si falla
   // respaldo también POR TIEMPO: si en 2,5s no ha cargado (petición colgada/bloqueada por
   // adblocker, que no dispara onError), se muestra el emoji en vez de una caja vacía
@@ -6398,6 +6412,15 @@ function App(){
   const [installEvt,setInstallEvt]=useState(null);
   const [iosHint,setIosHint]=useState(false);
   const [redesOpen,setRedesOpen]=useState(false); // menú de redes (estilo Linktree) desde el pie
+  // ENLACE DIRECTO al menú de redes (para la bio de las redes sociales):
+  // https://vwafr-generico.pages.dev/#redes → abre la web CON el menú ya abierto
+  useEffect(()=>{
+    const chk=()=>{try{if((location.hash||'').toLowerCase().indexOf('redes')>=0)setRedesOpen(true);}catch(_){}};
+    chk();window.addEventListener('hashchange',chk);
+    return()=>window.removeEventListener('hashchange',chk);
+  },[]);
+  const closeRedes=()=>{setRedesOpen(false);
+    try{if((location.hash||'').toLowerCase().indexOf('redes')>=0)history.replaceState(null,'',location.pathname+location.search);}catch(_){}};
   useEffect(()=>{
     const onPrompt=e=>{e.preventDefault();setInstallEvt(e);};
     window.addEventListener('beforeinstallprompt',onPrompt);
@@ -7010,12 +7033,12 @@ function App(){
 
       {/* MENÚ DE REDES (estilo Linktree, animado): se abre desde el pie, no navega directo */}
       {redesOpen&&(
-        <div className="rd-back" onClick={()=>setRedesOpen(false)}>
+        <div className="rd-back" onClick={closeRedes}>
           <div className="rd-card" onClick={e=>e.stopPropagation()} role="dialog" aria-label="Redes sociales">
-            <span onClick={()=>setRedesOpen(false)} aria-label="Cerrar" role="button"
+            <span onClick={closeRedes} aria-label="Cerrar" role="button"
               style={{position:'absolute',top:12,right:14,fontSize:15,color:'var(--faint)',cursor:'pointer',padding:'4px 8px',zIndex:2}}>✕</span>
-            <div className="rd-ring"><div className="rd-ava">🚀</div></div>
-            <div style={{textAlign:'center',marginBottom:3,fontSize:15.5,fontWeight:800,color:'var(--txt)',letterSpacing:-.3}}>@JAVOX27</div>
+            <div className="rd-ring"><RedAvatar/></div>
+            <div className="rd-name" style={{textAlign:'center',marginBottom:3}}>@JAVOX27</div>
             <div style={{textAlign:'center',fontSize:9.5,color:'var(--dim)',marginBottom:16,lineHeight:1.5}}>El contenido que no sabías que necesitabas 🎬<br/><span style={{color:'var(--faint)'}}>Sígueme donde quieras 👇</span></div>
             {REDES.map((r,i)=>(
               <a key={r.n} className="rd-link" href={r.u} target="_blank" rel="noopener noreferrer"
