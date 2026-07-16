@@ -305,6 +305,32 @@ module.exports = async (req, res) => {
         out.cpi.estLastMom = +(em2 * 100).toFixed(2); out.cpi.estLastYoy = +(((+prev[1] * (1 + em2)) / +rows[n - 13][1] - 1) * 100).toFixed(1); }
     }
   } catch (e) {}
+  // IPP EE.UU. (BLS, oficial): inflación MAYORISTA (PPI demanda final, WPSFD4). Suele
+  // anticipar al IPC (los costes de producción acaban llegando al consumidor). Misma
+  // estructura que el IPC: dato, previo, previsión por tendencia y previsión del último.
+  try {
+    const yy = new Date().getUTCFullYear();
+    const j = await fetch('https://api.bls.gov/publicAPI/v2/timeseries/data/WPSFD4?startyear=' + (yy - 1) + '&endyear=' + yy).then(r => r.json());
+    const s = j && j.Results && j.Results.series && j.Results.series[0] && j.Results.series[0].data;
+    if (Array.isArray(s) && s.length >= 13) {
+      const v = i => parseFloat(s[i].value);
+      const last = v(0), prev = v(1), yr = v(12);
+      const mn = { M01: '01', M02: '02', M03: '03', M04: '04', M05: '05', M06: '06', M07: '07', M08: '08', M09: '09', M10: '10', M11: '11', M12: '12' }[s[0].period] || '01';
+      if (last > 0 && yr > 0) {
+        out.ppi = { yoy: +((last / yr - 1) * 100).toFixed(1), mom: +((last / prev - 1) * 100).toFixed(2), month: s[0].year + '-' + mn + '-01' };
+        if (s.length >= 14) { const prev2 = v(2), yr2 = v(13);
+          if (prev > 0 && prev2 > 0 && yr2 > 0) { out.ppi.prevYoy = +((prev / yr2 - 1) * 100).toFixed(1); out.ppi.prevMom = +((prev / prev2 - 1) * 100).toFixed(2); } }
+        const ms = []; for (let i = 0; i < 6 && i + 1 < s.length; i++) { const a = v(i), b = v(i + 1); if (a > 0 && b > 0) ms.push(a / b - 1); }
+        if (ms.length >= 3) { const em = ms.reduce((p, x) => p + x, 0) / ms.length;
+          out.ppi.estMom = +(em * 100).toFixed(2);
+          if (v(11) > 0) out.ppi.estYoy = +(((last * (1 + em)) / v(11) - 1) * 100).toFixed(1); }
+        const ms2 = []; for (let i = 1; i < 7 && i + 1 < s.length; i++) { const a = v(i), b = v(i + 1); if (a > 0 && b > 0) ms2.push(a / b - 1); }
+        if (ms2.length >= 3 && v(12) > 0) { const em2 = ms2.reduce((p, x) => p + x, 0) / ms2.length;
+          out.ppi.estLastMom = +(em2 * 100).toFixed(2);
+          out.ppi.estLastYoy = +(((prev * (1 + em2)) / v(12) - 1) * 100).toFixed(1); }
+      }
+    }
+  } catch (e) {}
   // EMPLEO EE.UU. (BLS, oficial): nóminas no agrícolas (NFP, cambio mensual en miles) y
   // tasa de paro, para el calendario económico con el mismo formato Anterior/Previsión/Actual.
   try {
