@@ -3027,16 +3027,20 @@ function confluences(cl,oh){
   }
   // booleanas precalculadas
   const B=CONDS.map(c=>{const a=new Array(N).fill(false);for(let i=START;i<N;i++)a[i]=!!c.fn(i);return a;});
-  // base: % de veces que el precio estuvo más alto H días después (mismo tramo)
-  let bN=0,bW=0;for(let i=START;i<N-H;i++){bN++;if(cl[i+H]>cl[i])bW++;}
-  const base=bN?bW/bN*100:55;
-  const K=15, shr=(w,n)=>(w*n+base*K)/(n+K); // encogimiento bayesiano hacia la base
-  const evalCombo=idx=>{let n=0,w=0,s=0;
-    for(let i=START;i<N-H;i++){let ok=true;for(const j of idx)if(!B[j][i]){ok=false;break;}
-      if(!ok)continue;n++;const r=cl[i+H]/cl[i]-1;s+=r;if(r>0)w++;}
-    if(n<20)return null;
-    const winRaw=w/n*100, win=shr(winRaw,n), edge=win-base;
-    return {idx,n,win,winRaw,edge,avg:s/n*100,labels:idx.map(j=>CONDS[j].t)};
+  // bases por HORIZONTE: % de veces que el precio estuvo más alto h días después
+  const HS=[5,10,20], BASE={};
+  for(const h of HS){let n2=0,w2=0;for(let i=START;i<N-h;i++){n2++;if(cl[i+h]>cl[i])w2++;}BASE[h]=n2?w2/n2*100:55;}
+  const base=BASE[H];
+  const K=15, shrTo=(w,n,b)=>(w*n+b*K)/(n+K); // encogimiento bayesiano hacia su base
+  const evalCombo=idx=>{ // una sola pasada, resultado a 5/10/20 días
+    const st={};for(const h of HS)st[h]={n:0,w:0,s:0};
+    for(let i=START;i<N-5;i++){let ok=true;for(const j of idx)if(!B[j][i]){ok=false;break;}
+      if(!ok)continue;
+      for(const h of HS){if(i>=N-h)continue;const r=cl[i+h]/cl[i]-1,o=st[h];o.n++;o.s+=r;if(r>0)o.w++;}}
+    const m=st[H]; if(m.n<20)return null;
+    const winRaw=m.w/m.n*100, win=shrTo(winRaw,m.n,base), edge=win-base;
+    const hz={};for(const h of HS){const o=st[h];hz[h]=o.n>=15?{win:shrTo(o.w/o.n*100,o.n,BASE[h]),n:o.n,avg:o.s/o.n*100}:null;}
+    return {idx,n:m.n,win,winRaw,edge,avg:m.s/m.n*100,hz,labels:idx.map(j=>CONDS[j].t)};
   };
   const combos=[];
   for(let a=0;a<CONDS.length;a++)for(let b=a+1;b<CONDS.length;b++){
@@ -3051,7 +3055,7 @@ function confluences(cl,oh){
   for(let j=0;j<CONDS.length;j++)if(B[j][today])activeIds.push(j);
   const active=combos.filter(c=>c.idx.every(j=>B[j][today])).sort((x,y)=>Math.abs(y.edge)-Math.abs(x.edge));
   const top=combos.filter(c=>c.n>=40&&Math.abs(c.edge)>=6).sort((x,y)=>Math.abs(y.edge)-Math.abs(x.edge)).slice(0,6);
-  return {base,H,years:+(N/365).toFixed(1),nCombos:combos.length,nConds:CONDS.length,
+  return {base,bases:BASE,H,years:+(N/365).toFixed(1),nCombos:combos.length,nConds:CONDS.length,
     activeConds:activeIds.map(j=>CONDS[j].t),active:active.slice(0,4),top};
 }
 
@@ -4952,6 +4956,14 @@ function QuantView({gFunding,nav}){
               <span className="mono" style={{fontSize:8,color:'var(--faint)'}}>n={co.n} veces en {cf.years} años · media {(co.avg>=0?'+':'')+co.avg.toFixed(1)}% a {cf.H}d</span>
               <span className="mono" style={{fontSize:8.5,fontWeight:800,color:col}}>{co.edge>=0?'+':''}{co.edge.toFixed(0)} pts vs base</span>
             </div>
+            {big&&co.hz&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:6,marginTop:7}}>
+              {[5,10,20].map(h=>{const z=co.hz[h];if(!z)return <div key={h}/>;
+                const zc=z.win>=(cf.bases?cf.bases[h]:cf.base)?'var(--up)':'var(--down)';
+                return(<div key={h} style={{background:'rgba(0,0,0,.28)',borderRadius:8,padding:'6px 3px',textAlign:'center'}}>
+                  <div className="mono" style={{fontSize:12.5,fontWeight:800,color:zc,lineHeight:1.1}}>{z.win.toFixed(0)}%</div>
+                  <div style={{fontSize:7,color:'var(--faint)',marginTop:2}}>a {h} días · {(z.avg>=0?'+':'')+z.avg.toFixed(1)}%</div>
+                </div>);})}
+            </div>}
           </div>);};
         return(
         <div style={panel({marginBottom:14,padding:16})}>
@@ -4973,7 +4985,7 @@ function QuantView({gFunding,nav}){
             <div style={{fontSize:8.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:1,fontWeight:700,margin:'10px 0 2px'}}>Los combos con más ventaja de la historia</div>
             {cf.top.map((co,i)=><Row key={i} co={co}/>)}
           </>}
-          <Fine>Cada combo exige que TODAS sus condiciones se den el mismo día (velas cerradas). El % es la probabilidad de que el precio esté MÁS ALTO {cf.H} días después, <b>encogida bayesianamente</b> hacia la base del {cf.base.toFixed(0)}% (fuerza 15) para que una muestra chica no venda humo: con pocas veces, el número se queda cerca de la base a propósito. "pts vs base" = ventaja sobre operar al azar cualquier día. Solo se listan combos con n≥20 (parejas) o n≥25 (tríos), y el top exige n≥40. Descriptivo, no es consejo financiero.</Fine>
+          <Fine>Cada combo exige que TODAS sus condiciones se den el mismo día (velas cerradas). El % es la probabilidad de que el precio esté MÁS ALTO ese nº de días después — los activos se miden a <b>5, 10 y 20 días</b> (cada horizonte contra SU base histórica); el % principal y las listas van a {cf.H} días. Todo va <b>encogido bayesianamente</b> hacia la base (fuerza 15) para que una muestra chica no venda humo: con pocas veces, el número se queda cerca de la base a propósito. "pts vs base" = ventaja sobre operar al azar cualquier día. Solo se listan combos con n≥20 (parejas) o n≥25 (tríos), y el top exige n≥40. Descriptivo, no es consejo financiero.</Fine>
         </div>);})()}
 
       {/* PATRONES GRÁFICOS (figuras clásicas estilo Binance, con estadística) */}
