@@ -697,6 +697,20 @@ function Lazy({children,est=1500}){
   return on?children:<div ref={ref} style={{minHeight:est}}/>;
 }
 
+// ── LETRA PEQUEÑA plegable: las explicaciones largas de pie de panel se esconden
+//    tras un "ℹ️ cómo se calcula" (cerrado por defecto) para limpiar la vista.
+//    Los avisos LEGALES no usan esto: siempre visibles. ──
+function Fine({children,label='ℹ️ cómo se calcula'}){
+  const [on,setOn]=useState(false);
+  return(<div style={{marginTop:8}}>
+    <span onClick={()=>setOn(o=>!o)} className="mono" role="button" tabIndex={0}
+      onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();setOn(o=>!o);}}}
+      style={{fontSize:9,fontWeight:700,color:on?'var(--dim)':'var(--accent)',cursor:'pointer',userSelect:'none'}}>
+      {on?'▲ ocultar detalle':label+' ▼'}</span>
+    {on&&<p style={{fontSize:9,color:'var(--faint)',marginTop:6,lineHeight:1.55}}>{children}</p>}
+  </div>);
+}
+
 // ── Bloque calculador por moneda ──
 function Calc({coin,data,source,sel}){
   const [rows,setRows]=useState(META.map(m=>({...m,funding:0,oi:1,mode:'auto',on:true,status:'idle'})));
@@ -1418,7 +1432,7 @@ function PosView({gFunding,cot}){
         </div>
       </div>)}
     </div>
-    <p style={{fontSize:8,color:'var(--faint)',lineHeight:1.6,marginBottom:14}}>Fuentes: Binance futures/data (ratios, taker, OI), OKX rubik, Bybit v5, CFTC (COT). Endpoints públicos oficiales, sin clave; histórico de ratios limitado a 30 días por Binance. Nada aquí es consejo financiero.</p>
+    <Fine label="ℹ️ fuentes de datos">Fuentes: Binance futures/data (ratios, taker, OI), OKX rubik, Bybit v5, CFTC (COT). Endpoints públicos oficiales, sin clave; histórico de ratios limitado a 30 días por Binance. Nada aquí es consejo financiero.</Fine>
   </div>);
 }
 
@@ -1841,7 +1855,7 @@ function CycleBTC(){
               <div style={{fontSize:9,color:'var(--faint)',marginTop:2}}>≈ halving {nextHalvingYr}</div>
             </div>
           </div>
-          <p style={{fontSize:9,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>La ruta discontinua aplica desde hoy la media ponderada de lo que hicieron los ciclos anteriores a partir de este mismo día del ciclo (más peso al más reciente, amortiguada un 30% porque cada ciclo rinde menos). <b style={{color:'var(--dim)'}}>Tiene en cuenta que cada ciclo dura más</b>: los techos llegaron el día {pkDays.map(d=>Math.round(d)).join(' → ')} de su ciclo, así que los previos se estiran al ritmo estimado (techo del actual ~día {Math.round(pNow)}). Histórico real Binance + Bitstamp desde 2011. No es una predicción ni consejo financiero.</p>
+          <Fine>La ruta discontinua aplica desde hoy la media ponderada de lo que hicieron los ciclos anteriores a partir de este mismo día del ciclo (más peso al más reciente, amortiguada un 30% porque cada ciclo rinde menos). <b style={{color:'var(--dim)'}}>Tiene en cuenta que cada ciclo dura más</b>: los techos llegaron el día {pkDays.map(d=>Math.round(d)).join(' → ')} de su ciclo, así que los previos se estiran al ritmo estimado (techo del actual ~día {Math.round(pNow)}). Histórico real Binance + Bitstamp desde 2011. No es una predicción ni consejo financiero.</Fine>
         </div>);
       })()}
 
@@ -1899,7 +1913,7 @@ function CycleBTC(){
           <div style={{display:'flex',justifyContent:'space-between',marginTop:3,fontSize:8,color:'var(--faint)'}} className="mono">
             {NAMES.map((n,j)=>(<span key={n} style={j===k?{color:ph.c,fontWeight:800}:null}>{n}</span>))}
           </div>
-          <p style={{fontSize:8.5,color:'var(--faint)',marginTop:6,lineHeight:1.5}}>Igual que el de ciclos pero a 1 semana: cada semana se alinea lunes→domingo (vs el cierre del domingo previo) y la actual se proyecta con la mediana histórica desde el día de hoy. Patrón estadístico, no es consejo financiero.</p>
+          <Fine>Igual que el de ciclos pero a 1 semana: cada semana se alinea lunes→domingo (vs el cierre del domingo previo) y la actual se proyecta con la mediana histórica desde el día de hoy. Patrón estadístico, no es consejo financiero.</Fine>
         </div>);
       })()}
 
@@ -1952,7 +1966,7 @@ function CycleBTC(){
                   </div>);})}
               </div>
             </div>);})()}
-          <p style={{fontSize:8,color:'var(--faint)',marginTop:8,lineHeight:1.5}}>Rendimiento MEDIO de cada mes natural sobre todo el histórico ({Math.round(cl.length/365)} años · verde = subió) y % de años en verde (columna derecha); abajo, la media por día de la semana. Patrón DESCRIPTIVO con pocas muestras por mes (~{Math.round(cl.length/365)}): útil como contexto, NO como predicción. No es consejo financiero.</p>
+          <Fine>Rendimiento MEDIO de cada mes natural sobre todo el histórico ({Math.round(cl.length/365)} años · verde = subió) y % de años en verde (columna derecha); abajo, la media por día de la semana. Patrón DESCRIPTIVO con pocas muestras por mes (~{Math.round(cl.length/365)}): útil como contexto, NO como predicción. No es consejo financiero.</Fine>
         </div>);
       })()}</Lazy>}
 
@@ -2134,7 +2148,7 @@ function CycleBTC(){
               </div>
               <div style={{...flx({justifyContent:'space-between'}),marginTop:2,fontSize:7.5,color:'var(--faint)'}} className="mono"><span>{x.lo}</span><span>{x.hi}</span></div>
             </div>);})}
-          <p style={{fontSize:9,color:'var(--faint)',lineHeight:1.5,marginTop:10}}>Cada indicador puntúa 0-100% cuán cerca del FONDO histórico está su valor actual; la probabilidad global es la <b>media ponderada por fiabilidad</b> (backtest de 15 años: precio/MA200sem pesa más por ser el más predictivo; el RSI semanal se quitó por tener correlación invertida con los fondos reales). On-chain de bitcoin-data.com + métricas de precio (Mayer, caída desde ATH, medias de 200 días y 200 semanas). Se actualiza solo. Orientativo, no es consejo financiero.</p>
+          <Fine>Cada indicador puntúa 0-100% cuán cerca del FONDO histórico está su valor actual; la probabilidad global es la <b>media ponderada por fiabilidad</b> (backtest de 15 años: precio/MA200sem pesa más por ser el más predictivo; el RSI semanal se quitó por tener correlación invertida con los fondos reales). On-chain de bitcoin-data.com + métricas de precio (Mayer, caída desde ATH, medias de 200 días y 200 semanas). Se actualiza solo. Orientativo, no es consejo financiero.</Fine>
         </div>);
       })()}</Lazy>
     </div>
@@ -4525,7 +4539,7 @@ function QuantView({gFunding,nav}){
                 {r.move.backed?'💪':'🕳️'} {r.move.expl}</div>}
             </div>);})}
 
-          <p style={{fontSize:8,color:'var(--faint)',marginTop:8,lineHeight:1.5}}>Naranja = precio · azul = CVD (delta acumulado de compras−ventas agresivas, Binance spot) · OI = interés abierto REAL de Binance Futures (histórico horario). La lectura combinada puntúa TODOS los indicadores a la vez (OI, funding, aperturas taker 24h, CVD, Coinbase premium, retail vs pros) y detecta los combos clásicos (OI↑ + funding negativo = setup de short squeeze, etc.). Los <b style={{color:'var(--txt)'}}>📊 Backtest</b> son estadística REAL de cada veredicto replicando esta misma clasificación sobre el histórico de Binance (15m: 90 días · 1h: 2 años · 4h y 1D: desde 2017 · horizonte 10 velas): la mayoría ronda el 50% — el veredicto te dice QUIÉN mueve el precio ahora; la ventaja direccional la dan los combos, patrones y el cono. Solo velas cerradas. Se actualiza solo cada 2 min. No es consejo financiero.</p>
+          <Fine>Naranja = precio · azul = CVD (delta acumulado de compras−ventas agresivas, Binance spot) · OI = interés abierto REAL de Binance Futures (histórico horario). La lectura combinada puntúa TODOS los indicadores a la vez (OI, funding, aperturas taker 24h, CVD, Coinbase premium, retail vs pros) y detecta los combos clásicos (OI↑ + funding negativo = setup de short squeeze, etc.). Los <b style={{color:'var(--txt)'}}>📊 Backtest</b> son estadística REAL de cada veredicto replicando esta misma clasificación sobre el histórico de Binance (15m: 90 días · 1h: 2 años · 4h y 1D: desde 2017 · horizonte 10 velas): la mayoría ronda el 50% — el veredicto te dice QUIÉN mueve el precio ahora; la ventaja direccional la dan los combos, patrones y el cono. Solo velas cerradas. Se actualiza solo cada 2 min. No es consejo financiero.</Fine>
         </div>);})()}
 
       {/* 📊 VISTA VELO: como una captura de velo.xyz — precio arriba y TODOS los
@@ -4590,7 +4604,7 @@ function QuantView({gFunding,nav}){
           <Pane title={'Interés abierto · Binance Futures'+(isD?' · últ. 30d (máx. publicado)':'')} a={oiSeg} col="#1FE0A0" fv={v=>'$'+v.toFixed(2)+'B'} dPct/>
           <Pane title={'Funding (pagos de 8h) · próximo en '+(()=>{const ms=28800000-(Date.now()%28800000),h2=Math.floor(ms/3600000),m2=Math.floor(ms%3600000/60000);return h2>0?h2+'h '+m2+'m':m2+'m';})()} a={fdSeg} col={fdSeg&&fdSeg[fdSeg.length-1]>=0?'#1FE0A0':'#FF5470'} fv={v=>(v>=0?'+':'')+v.toFixed(4)+'%'} zero dv={v=>(v>=0?'+':'')+v.toFixed(4)+' pts'}/>
           <Pane title="Premium futuros−spot" a={pmSeg} col={pmSeg&&pmSeg[pmSeg.length-1]>=0?'#1FE0A0':'#FF5470'} fv={v=>(v>=0?'+':'')+v.toFixed(3)+'%'} zero dv={v=>(v>=0?'+':'')+v.toFixed(3)+' pts'}/>
-          <p style={{fontSize:8,color:'var(--faint)',marginTop:4,lineHeight:1.5}}>Los mismos paneles apilados de velo.xyz, por temporalidad: precio, CVD, interés abierto, funding y premium futuros−spot. El chip <b style={{color:'var(--txt)'}}>Δ</b> es cuánto cambió cada serie en el tramo visible (% en precio y OI · delta neto en el resto). La <b style={{color:'var(--txt)'}}>línea de tendencia discontinua</b> une el mínimo y el máximo del tramo (verde ↗ si el mínimo vino antes = tendencia al alza · roja ↘ si el máximo vino antes = a la baja) — el trazo que dibujarías a mano. El OI, funding y premium son de Binance Futures (histórico real vía relé). La lectura automática está arriba, en "Análisis Velo". No es consejo financiero.</p>
+          <Fine>Los mismos paneles apilados de velo.xyz, por temporalidad: precio, CVD, interés abierto, funding y premium futuros−spot. El chip <b style={{color:'var(--txt)'}}>Δ</b> es cuánto cambió cada serie en el tramo visible (% en precio y OI · delta neto en el resto). La <b style={{color:'var(--txt)'}}>línea de tendencia discontinua</b> une el mínimo y el máximo del tramo (verde ↗ si el mínimo vino antes = tendencia al alza · roja ↘ si el máximo vino antes = a la baja) — el trazo que dibujarías a mano. El OI, funding y premium son de Binance Futures (histórico real vía relé). La lectura automática está arriba, en "Análisis Velo". No es consejo financiero.</Fine>
         </div>);})()}
 
       {/* (las "rutas" de línea de 7d y 30d se ELIMINARON a decisión del usuario: una ruta de
@@ -4745,7 +4759,7 @@ function QuantView({gFunding,nav}){
             </div>
           </div>
         )):<div style={{fontSize:11,color:'var(--faint)',textAlign:'center',padding:'6px 0'}}>Sin barridos, squeezes ni divergencias anómalas en los últimos 21 días.</div>}
-        <p style={{fontSize:9,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Busca manipulación en todos los sentidos: <b>barridos de stops</b> (mechas anómalas), <b>pump&dump / flash-crash</b> (movimiento extremo revertido), <b>vela de gran volumen absorbida</b>, <b>barrido en V</b>, <b>squeezes</b> (funding extremo) y <b>divergencias spot-futuros</b>. El <b>%</b> es el <b>acierto histórico real</b> de que ese tipo revierta a 7 días (backtest sobre BTC, n = nº de casos); solo los de acierto alto inclinan el sesgo del modelo, y con más fuerza cuanto mayor la ventaja.</p>
+        <Fine>Busca manipulación en todos los sentidos: <b>barridos de stops</b> (mechas anómalas), <b>pump&dump / flash-crash</b> (movimiento extremo revertido), <b>vela de gran volumen absorbida</b>, <b>barrido en V</b>, <b>squeezes</b> (funding extremo) y <b>divergencias spot-futuros</b>. El <b>%</b> es el <b>acierto histórico real</b> de que ese tipo revierta a 7 días (backtest sobre BTC, n = nº de casos); solo los de acierto alto inclinan el sesgo del modelo, y con más fuerza cuanto mayor la ventaja.</Fine>
       </div>
 
       {/* PATRONES CHARTISTAS (automático) */}
@@ -4826,7 +4840,7 @@ function QuantView({gFunding,nav}){
         );}):<div style={{fontSize:11,color:'var(--faint)',textAlign:'center',padding:'8px 0'}}>Sin patrones claros ahora mismo en ninguna temporalidad.</div>}
           {all.length>CAP&&<div onClick={()=>setShowAllPats(v=>!v)} style={{textAlign:'center',padding:'8px 0 2px',cursor:'pointer',fontSize:10,fontWeight:700,color:'var(--accent)'}}>{showAllPats?'▲ ver menos':'▼ ver los '+(all.length-CAP)+' patrones restantes'}</div>}
           </React.Fragment>);})()}
-        <p style={{fontSize:9,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Patrones detectados en <b>3 temporalidades</b>: <b style={{color:'#F3BA2F'}}>4h</b> (corto plazo, ~166 días de historia), <b>1D</b> (diario, ~8 años) y <b style={{color:'#8AA0FF'}}>SEMANAL</b> (~6 años). Cada uno se backtestea EN SU temporalidad: <b style={{color:'var(--txt)'}}>% = probabilidad de que se cumpla EN SU DIRECCIÓN</b> a 10 velas de esa escala (un patrón alcista mide cuántas veces SUBIÓ; uno bajista, cuántas veces BAJÓ — por eso ambos se leen igual: más alto = más fiable) · n = nº de veces que ocurrió. Los de 4h son más frecuentes pero más ruidosos; los semanales, raros pero de más peso. <b style={{color:'var(--txt)'}}>Ordenados del MÁS fiable al menos</b> (acierto en la dirección del patrón − medio margen de error; "pocos casos" al final). <b style={{color:'var(--txt)'}}>Solo velas CERRADAS</b>: la vela en curso no confirma un patrón hasta su cierre (puede des-formarse antes) — igual que el backtest, que siempre midió cierres. Solo el diario alimenta el modelo (evita doble-contar).</p>
+        <Fine>Patrones detectados en <b>3 temporalidades</b>: <b style={{color:'#F3BA2F'}}>4h</b> (corto plazo, ~166 días de historia), <b>1D</b> (diario, ~8 años) y <b style={{color:'#8AA0FF'}}>SEMANAL</b> (~6 años). Cada uno se backtestea EN SU temporalidad: <b style={{color:'var(--txt)'}}>% = probabilidad de que se cumpla EN SU DIRECCIÓN</b> a 10 velas de esa escala (un patrón alcista mide cuántas veces SUBIÓ; uno bajista, cuántas veces BAJÓ — por eso ambos se leen igual: más alto = más fiable) · n = nº de veces que ocurrió. Los de 4h son más frecuentes pero más ruidosos; los semanales, raros pero de más peso. <b style={{color:'var(--txt)'}}>Ordenados del MÁS fiable al menos</b> (acierto en la dirección del patrón − medio margen de error; "pocos casos" al final). <b style={{color:'var(--txt)'}}>Solo velas CERRADAS</b>: la vela en curso no confirma un patrón hasta su cierre (puede des-formarse antes) — igual que el backtest, que siempre midió cierres. Solo el diario alimenta el modelo (evita doble-contar).</Fine>
       </div>
 
       {/* PATRONES GRÁFICOS (figuras clásicas estilo Binance, con estadística) */}
@@ -4869,7 +4883,7 @@ function QuantView({gFunding,nav}){
         )):<div style={{fontSize:11,color:'var(--faint)',textAlign:'center',padding:'8px 0'}}>Sin figuras gráficas claras ahora mismo en ninguna temporalidad.</div>}
           {figsAll.length>CAPF&&<div onClick={()=>setShowAllFigs(v=>!v)} style={{textAlign:'center',padding:'8px 0 2px',cursor:'pointer',fontSize:10,fontWeight:700,color:'var(--accent)'}}>{showAllFigs?'▲ ver menos':'▼ ver las '+(figsAll.length-CAPF)+' figuras restantes'}</div>}
           </React.Fragment>);})()}
-        <p style={{fontSize:9,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Figuras detectadas por pivotes de swing (dobles/triples techos y suelos, hombro-cabeza-hombro, triángulos, rupturas de rango) en <b>3 temporalidades</b>: <b style={{color:'#F3BA2F'}}>4h</b>, <b>1D</b> y <b style={{color:'#8AA0FF'}}>SEMANAL</b> — cada una backtesteada EN SU escala (el % es a 10 velas de esa temporalidad). <b style={{color:'var(--up)'}}>✓ confirmada</b> = ya rompió (solo las del diario alimentan el modelo). <b style={{color:'#F3BA2F'}}>⏳ en formación</b> = la estructura está y el precio se acerca al disparo. <b>objetivo</b> = proyección por amplitud · <b>%</b> = acierto histórico ±margen. <b style={{color:'var(--down)'}}>⚠ no rentable</b> = la estadística contradice la teoría: no inclina el modelo. Las canceladas se retiran a las 3 velas.</p>
+        <Fine>Figuras detectadas por pivotes de swing (dobles/triples techos y suelos, hombro-cabeza-hombro, triángulos, rupturas de rango) en <b>3 temporalidades</b>: <b style={{color:'#F3BA2F'}}>4h</b>, <b>1D</b> y <b style={{color:'#8AA0FF'}}>SEMANAL</b> — cada una backtesteada EN SU escala (el % es a 10 velas de esa temporalidad). <b style={{color:'var(--up)'}}>✓ confirmada</b> = ya rompió (solo las del diario alimentan el modelo). <b style={{color:'#F3BA2F'}}>⏳ en formación</b> = la estructura está y el precio se acerca al disparo. <b>objetivo</b> = proyección por amplitud · <b>%</b> = acierto histórico ±margen. <b style={{color:'var(--down)'}}>⚠ no rentable</b> = la estadística contradice la teoría: no inclina el modelo. Las canceladas se retiran a las 3 velas.</Fine>
       </div>
 
       {/* (el CONO de probabilidad —30d y 7d— se ELIMINÓ a petición del usuario.
@@ -4931,39 +4945,9 @@ function QuantView({gFunding,nav}){
         <p style={{fontSize:9.5,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Prob. de <b style={{color:'var(--txt)'}}>TOCAR</b> cada nivel (±3/5/8/12%) en algún momento de los 30 días — no solo de cerrar ahí — y <b style={{color:'var(--txt)'}}>~días</b> = mediana de días hasta el primer toque (entre las simulaciones que lo tocan). Niveles cercanos y accionables: para objetivos concretos usa la calculadora de arriba.</p>
       </div>
 
-      {/* OPCIONES (Deribit) */}
-      {c.opt&&c.opt.pcr!=null&&(
-        <div style={panel({marginBottom:14,padding:16})}>
-          <div style={{...flx({justifyContent:'space-between'}),marginBottom:12}}>
-            <span style={eyebrow}>Opciones · calls / puts</span>
-            <span className="mono" style={{fontSize:9,color:'var(--faint)'}}>Deribit</span>
-          </div>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
-            {[['Put/Call',c.opt.pcr.toFixed(2),c.opt.pcr<0.7?'var(--up)':c.opt.pcr>1?'var(--down)':'#F3BA2F',c.opt.pcr<0.7?'sesgo alcista':c.opt.pcr>1?'cobertura/bajista':'neutral'],
-              ['Max Pain',money(c.opt.maxPain),'var(--accent)','imán de precio'],
-              ['OI opciones',(c.opt.oi/1000).toFixed(0)+'k','var(--txt)','BTC abiertos']].map((m,i)=>(
-              <div key={i} style={{background:'#0A0D14',borderRadius:9,padding:'11px 8px',textAlign:'center'}}>
-                <div className="mono" style={{fontSize:15,fontWeight:800,color:m[2],lineHeight:1.1}}>{m[1]}</div>
-                <div style={{fontSize:8.5,color:'var(--dim)',marginTop:4}}>{m[0]}</div>
-                <div style={{fontSize:8,color:'var(--faint)',marginTop:2}}>{m[3]}</div>
-              </div>
-            ))}
-          </div>
-          {c.optExp&&(
-            <div style={{...flx({justifyContent:'space-between'}),marginTop:12,paddingTop:12,borderTop:'1px solid var(--line2)'}}>
-              <div>
-                <div style={{fontSize:9,letterSpacing:1,color:'var(--faint)',textTransform:'uppercase',fontWeight:600}}>Próximo gran vencimiento</div>
-                <div className="mono" style={{fontSize:12.5,fontWeight:700,marginTop:2}}>{new Date(c.optExp.date).toLocaleDateString('es-ES',{day:'numeric',month:'short',year:'2-digit'})} <span style={{color:c.optExp.days<=3?'var(--down)':'var(--faint)'}}>· en {c.optExp.days}d</span></div>
-              </div>
-              <div style={{textAlign:'right'}}>
-                <div style={{fontSize:9,letterSpacing:1,color:'var(--faint)',textTransform:'uppercase',fontWeight:600}}>Max pain venc.</div>
-                <div className="mono" style={{fontSize:12.5,fontWeight:700,color:'var(--accent)',marginTop:2}}>{money(c.optExp.maxPain)}</div>
-              </div>
-            </div>
-          )}
-          <p style={{fontSize:9.5,color:'var(--faint)',marginTop:10}}>Put/Call &lt;0.7 = más calls (alcista) · &gt;1 = más puts (cobertura). En el vencimiento el precio tiende a imantarse al <b>max pain</b>; vencimientos grandes mueven el mercado.</p>
-        </div>
-      )}
+      {/* (el panel de OPCIONES del Cuantitativo se RETIRÓ por duplicado: la pestaña L/S
+          tiene el mismo dato mejor — max pain + put/call de BTC y ETH con distancia al
+          precio y vencimiento. El put/call SIGUE alimentando el sesgo del modelo.) */}
 
       {/* ESTADÍSTICAS (perezoso: mitad inferior de la vista — solo monta al acercarse) */}
       <Lazy est={250}>
@@ -5633,7 +5617,7 @@ function PIBView(){
               ))}
             </div>
           ))}
-          <p style={{fontSize:9,color:'var(--faint)',marginTop:8,lineHeight:1.5}}>Dato anual del Banco Mundial (con desfase). ▲ = empuja a riesgo-ON, ▼ = a riesgo-OFF. Esta fase y puntuación se <b>aplican como sesgo macro en la ruta cuantitativa de BTC</b>. Algunos indicadores (PMI, claims, nóminas…) no tienen fuente gratuita en vivo.</p>
+          <Fine>Dato anual del Banco Mundial (con desfase). ▲ = empuja a riesgo-ON, ▼ = a riesgo-OFF. Esta fase y puntuación se <b>aplican como sesgo macro en la ruta cuantitativa de BTC</b>. Algunos indicadores (PMI, claims, nóminas…) no tienen fuente gratuita en vivo.</Fine>
         </div>);
       })()}
 
