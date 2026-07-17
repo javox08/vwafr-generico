@@ -1899,8 +1899,8 @@ function CycleBTC(){
         </div>);
       })()}
 
-      {/* ESTACIONALIDAD · qué suele hacer BTC cada mes del año (histórico completo) */}
-      {hist&&Array.isArray(hist.cl)&&hist.cl.length>800&&Number.isFinite(hist.ts0)&&(()=>{
+      {/* ESTACIONALIDAD · qué suele hacer BTC cada mes del año (histórico completo) · perezoso */}
+      {hist&&Array.isArray(hist.cl)&&hist.cl.length>800&&Number.isFinite(hist.ts0)&&<Lazy est={430}>{(()=>{
         const cl=hist.cl, ts0=hist.ts0;
         // rendimiento por (año,mes) reconstruyendo la fecha de cada cierre diario
         const mret={}; // 'YYYY-M' → {first,last}
@@ -1950,9 +1950,10 @@ function CycleBTC(){
             </div>);})()}
           <p style={{fontSize:8,color:'var(--faint)',marginTop:8,lineHeight:1.5}}>Rendimiento MEDIO de cada mes natural sobre todo el histórico ({Math.round(cl.length/365)} años · verde = subió) y % de años en verde (columna derecha); abajo, la media por día de la semana. Patrón DESCRIPTIVO con pocas muestras por mes (~{Math.round(cl.length/365)}): útil como contexto, NO como predicción. No es consejo financiero.</p>
         </div>);
-      })()}
+      })()}</Lazy>}
 
-      {/* Niveles clave del modelo (compra/venta) */}
+      {/* Niveles clave + ciclos históricos + explicación (mitad inferior · perezosos) */}
+      <Lazy est={650}>
       <div style={panel({marginBottom:14,padding:16})}>
         <div style={{...flx({justifyContent:'space-between'}),marginBottom:12}}>
           <span style={eyebrow}>Niveles clave · proyección</span>
@@ -2012,8 +2013,10 @@ function CycleBTC(){
           No es una predicción ni consejo financiero. Cada ciclo es distinto.
         </p>
       </div>
+      </Lazy>
 
-      {/* On-chain MVRV / NUPL — señal de fondo de mercado y techo */}
+      {/* On-chain MVRV / NUPL — señal de fondo de mercado y techo · perezoso */}
+      <Lazy est={330}>
       <div style={panel({marginBottom:14,padding:16})}>
         <div style={{...flx({justifyContent:'space-between'}),marginBottom:12}}>
           <span style={eyebrow}>On-chain · señal de fondo / techo</span>
@@ -2040,9 +2043,10 @@ function CycleBTC(){
           <b>MVRV</b> &lt;1 = suelo de ciclo · &gt;4 = zona techo. <b>NUPL</b> &lt;0 = capitulación (suelo) · &gt;0.75 = euforia (techo). {oc&&oc.est?'Valores aproximados (fuente no disponible).':'Datos en vivo de bitcoin-data.com.'}
         </p>
       </div>
+      </Lazy>
 
-      {/* MVRV Z-SCORE · gráfico histórico con zonas de techo (≥7) y suelo (≤0) */}
-      {zsH&&zsH.length>100&&(()=>{const last=zsH[zsH.length-1];
+      {/* MVRV Z-SCORE · gráfico histórico con zonas de techo (≥7) y suelo (≤0) · perezoso */}
+      {zsH&&zsH.length>100&&<Lazy est={210}>{(()=>{const last=zsH[zsH.length-1];
         const zone=last>=7?{t:'ZONA TECHO',c:'var(--down)'}:last<=0?{t:'ZONA SUELO',c:'var(--up)'}:last>=5?{t:'caliente',c:'#F3BA2F'}:{t:'zona media',c:'var(--dim)'};
         return(
         <div style={panel({marginBottom:14,padding:16})}>
@@ -2056,10 +2060,10 @@ function CycleBTC(){
             fmt={v=>v.toFixed(1)} label={i=>''}/>
           <p style={{fontSize:9,color:'var(--faint)',marginTop:7,lineHeight:1.5}}>Z-Score = cuántas desviaciones típicas está el valor de mercado sobre el realizado. Fuente: bitcoin-data.com.</p>
         </div>);
-      })()}
+      })()}</Lazy>}
 
-      {/* ── TERMÓMETRO DE FONDO DE MERCADO: probabilidad combinada + indicadores ── */}
-      {(()=>{
+      {/* ── TERMÓMETRO DE FONDO DE MERCADO: probabilidad combinada + indicadores · perezoso ── */}
+      <Lazy est={620}>{(()=>{
         const H=hist&&Array.isArray(hist.cl)&&hist.cl.length>300?hist.cl:null;
         const price=(d&&Number.isFinite(d.price))?d.price:(H?H[H.length-1]:null);
         if(!price)return null;
@@ -2128,7 +2132,7 @@ function CycleBTC(){
             </div>);})}
           <p style={{fontSize:9,color:'var(--faint)',lineHeight:1.5,marginTop:10}}>Cada indicador puntúa 0-100% cuán cerca del FONDO histórico está su valor actual; la probabilidad global es la <b>media ponderada por fiabilidad</b> (backtest de 15 años: precio/MA200sem pesa más por ser el más predictivo; el RSI semanal se quitó por tener correlación invertida con los fondos reales). On-chain de bitcoin-data.com + métricas de precio (Mayer, caída desde ATH, medias de 200 días y 200 semanas). Se actualiza solo. Orientativo, no es consejo financiero.</p>
         </div>);
-      })()}
+      })()}</Lazy>
     </div>
   );
 }
@@ -6097,8 +6101,8 @@ function BotsView({gFunding}){
         </>)}
       </div>
 
-      {/* TRACK RECORD REAL (trades cerrados) · POR BOT (clave propia del bot fijado) */}
-      {(()=>{const dId=(c.driver&&c.driver.id)||'def';
+      {/* TRACK RECORD REAL (trades cerrados) · POR BOT (clave propia del bot fijado) · perezoso */}
+      <Lazy est={185}>{(()=>{const dId=(c.driver&&c.driver.id)||'def';
         let log=[];try{log=JSON.parse(localStorage.getItem('vwafr_trades_log_'+dId)||'[]');}catch(_){}
         if(!log.length)return(
           <div style={panel({marginBottom:14,padding:'12px 16px'})}>
@@ -6127,10 +6131,10 @@ function BotsView({gFunding}){
           </div>
           <p style={{fontSize:8.5,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Resultado REAL de los trades recomendados cerrados mientras usabas la web (no es backtest). Se guarda en tu navegador.</p>
         </div>);
-      })()}
+      })()}</Lazy>
 
-      {/* CARTERA DE BOTS (risk-parity): lo que de verdad operarías */}
-      {ev.portfolio&&(()=>{const pf=ev.portfolio;
+      {/* CARTERA DE BOTS (risk-parity): lo que de verdad operarías · perezoso */}
+      {ev.portfolio&&<Lazy est={430}>{(()=>{const pf=ev.portfolio;
         const cv=pf.eqCurve.map(x=>Math.log(Math.max(1e-6,x)));
         return(
         <div style={panel({marginBottom:14,padding:16,background:'radial-gradient(130% 80% at 50% 0%, rgba(110,139,255,.08) 0%, var(--panel) 55%)',borderColor:'rgba(110,139,255,.3)'})}>
@@ -6161,7 +6165,7 @@ function BotsView({gFunding}){
             </div>))}
           {pf.members.length>6&&<div style={{fontSize:8.5,color:'var(--faint)',marginTop:3}}>+{pf.members.length-6} más</div>}
         </div>);
-      })()}
+      })()}</Lazy>}
 
       {/* 🏅 BOT QUE LO APRUEBA TODO: pasa los 8 innegociables (auto-detectado) */}
       {(()=>{
@@ -6220,7 +6224,8 @@ function BotsView({gFunding}){
         </div>);
       })()}
 
-      {/* CLASIFICACIÓN: todos los bots */}
+      {/* CLASIFICACIÓN: todos los bots · perezoso (evalúa señal/trade de CADA bot al renderizar) */}
+      <Lazy est={640}>
       <div style={panel({marginBottom:14,padding:16})}>
         <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
           <span style={eyebrow}>Clasificación · todos los bots</span>
@@ -6308,6 +6313,7 @@ function BotsView({gFunding}){
           </div>);
         })}
       </div>
+      </Lazy>
 
       {/* GLOSARIO: qué significa cada métrica */}
       <div style={panel({marginBottom:14,padding:'12px 16px'})}>
