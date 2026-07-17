@@ -2982,7 +2982,7 @@ function dret(a){const r=[];for(let i=1;i<a.length;i++)r.push(Math.log(a[i]/a[i-
 //    ese día; se prueban todas las parejas y tríos entre FAMILIAS distintas
 //    (tendencia · momentum · extremos · volatilidad · rachas · velas/volumen) y el
 //    acierto se ENCOGE bayesianamente hacia la base para no vender humo con n chico. ──
-function confluences(cl,oh){
+function confluences(cl,oh,fngMap){
   const N=cl.length; if(N<600)return null;
   const H=10, START=250;
   const ohOK=oh&&oh.length===N;
@@ -3024,6 +3024,17 @@ function confluences(cl,oh){
   if(ohOK){
     CONDS.push({id:'wick',f:'f',t:'mecha inferior larga (barrido)',fn:i=>{const k=oh[i],rg=k.h-k.l;return rg>0&&(Math.min(k.o,k.c)-k.l)/rg>0.55;}});
     CONDS.push({id:'vol2',f:'f',t:'volumen ≥2× su media',fn:i=>volu20[i]!=null&&volu20[i]>0&&oh[i].v>=2*volu20[i]});
+  }
+  // familia SENTIMIENTO: histórico de Miedo y Codicia alineado por fecha con las velas
+  // (cubre menos años que el precio → n menor; el encogimiento bayesiano ya protege)
+  if(ohOK&&fngMap){
+    const fng=new Array(N).fill(null);let fCnt=0;
+    for(let i=0;i<N;i++){const v=fngMap.get(new Date(oh[i].T).toISOString().slice(0,10));
+      if(v!=null&&Number.isFinite(v)){fng[i]=v;fCnt++;}}
+    if(fCnt>=400){
+      CONDS.push({id:'fear',f:'g',t:'miedo extremo (F&G<20)',fn:i=>fng[i]!=null&&fng[i]<20});
+      CONDS.push({id:'greed',f:'g',t:'codicia extrema (F&G>75)',fn:i=>fng[i]!=null&&fng[i]>75});
+    }
   }
   // booleanas precalculadas
   const B=CONDS.map(c=>{const a=new Array(N).fill(false);for(let i=START;i<N;i++)a[i]=!!c.fn(i);return a;});
@@ -3582,7 +3593,8 @@ function QuantView({gFunding,nav}){
         jget('https://bitcoin-data.com/v1/mvrv-zscore/last').then(j=>{out.zscore=parseFloat(j.mvrvZscore);}),
         jget('https://bitcoin-data.com/v1/puell-multiple/last').then(j=>{out.puell=parseFloat(j.puellMultiple);}),
         jget('https://bitcoin-data.com/v1/sopr/last').then(j=>{out.sopr=parseFloat(j.sopr);}),
-        jget('https://api.alternative.me/fng/?limit=1').then(j=>{out.fng=parseInt(j.data[0].value);out.fngTxt=j.data[0].value_classification;}),
+        // F&G actual + HISTÓRICO COMPLETO (~años): alimenta la familia "sentimiento" de las confluencias
+        jget('https://api.alternative.me/fng/?limit=1200').then(j=>{out.fng=parseInt(j.data[0].value);out.fngTxt=j.data[0].value_classification;out.fngHist=j.data;}),
         jget('https://www.deribit.com/api/v2/public/get_book_summary_by_currency?currency=BTC&kind=option').then(j=>{out.opts=j.result;}),
         // MULTI-TEMPORALIDAD: semanal y 4h con OHLC COMPLETO (no solo cierres) para
         // detectar y backtestear los patrones de velas también en esas temporalidades.
@@ -3745,8 +3757,12 @@ function QuantView({gFunding,nav}){
     const ohD=closedOh(q.ohlc), oh4=closedOh(q.h4o), ohW=closedOh(q.wko);
     const patterns=analyzePatterns(cl).concat((ohD&&ohD.length>=60)?candlePatterns(ohD).map(p=>({...p,tf:'1D'})):[]);
     // CONFLUENCIAS: combos de condiciones backtesteados sobre velas CERRADAS (el
-    // OHLC diario cerrado da también mechas y volumen; si falta, solo precio)
-    const confl=(ohD&&ohD.length>=600)?confluences(ohD.map(k=>k.c),ohD):confluences(cl,null);
+    // OHLC diario cerrado da también mechas y volumen; si falta, solo precio).
+    // El F&G histórico se alinea POR FECHA con las velas (familia sentimiento).
+    const fngMap=(q.fngHist&&q.fngHist.length>400)?(()=>{const m2=new Map();
+      for(const r of q.fngHist){const ts=+r.timestamp;if(!Number.isFinite(ts))continue;
+        m2.set(new Date(ts*1000).toISOString().slice(0,10),+r.value);}return m2;})():null;
+    const confl=(ohD&&ohD.length>=600)?confluences(ohD.map(k=>k.c),ohD,fngMap):confluences(cl,null,null);
     // MULTI-TEMPORALIDAD: los mismos detectores de velas sobre 4h y SEMANAL, cada uno
     // backtesteado EN SU temporalidad (el % es el acierto a 10 velas de ESA temporalidad).
     // Solo informativo/visual: el cono sigue alimentándose del diario (no doble-contar).
@@ -4971,7 +4987,7 @@ function QuantView({gFunding,nav}){
             <span style={eyebrow}>🧬 Confluencias · cuando se juntan</span>
             <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>{cf.nCombos} combos · {cf.years} años</span>
           </div>
-          <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:10,lineHeight:1.5}}>Cruza <b style={{color:'var(--txt)'}}>{cf.nConds} condiciones reales</b> (tendencia · RSI · extremos · volatilidad · rachas · velas/volumen) en parejas y tríos, y mide <b style={{color:'var(--txt)'}}>qué pasó las veces que coincidieron</b> a {cf.H} días vista. Base histórica: sube el {cf.base.toFixed(0)}% de las veces.</div>
+          <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:10,lineHeight:1.5}}>Cruza <b style={{color:'var(--txt)'}}>{cf.nConds} condiciones reales</b> (tendencia · RSI · extremos · volatilidad · rachas · velas/volumen{cf.nConds>=17?' · miedo/codicia':''}) en parejas y tríos, y mide <b style={{color:'var(--txt)'}}>qué pasó las veces que coincidieron</b> a {cf.H} días vista. Base histórica: sube el {cf.base.toFixed(0)}% de las veces.</div>
           {cf.active.length?(<>
             <div style={{fontSize:8.5,color:'var(--accent)',textTransform:'uppercase',letterSpacing:1,fontWeight:800,marginBottom:7}}>⚡ Activas AHORA MISMO</div>
             {cf.active.map((co,i)=><Row key={i} co={co} big/>)}
@@ -4985,7 +5001,7 @@ function QuantView({gFunding,nav}){
             <div style={{fontSize:8.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:1,fontWeight:700,margin:'10px 0 2px'}}>Los combos con más ventaja de la historia</div>
             {cf.top.map((co,i)=><Row key={i} co={co}/>)}
           </>}
-          <Fine>Cada combo exige que TODAS sus condiciones se den el mismo día (velas cerradas). El % es la probabilidad de que el precio esté MÁS ALTO ese nº de días después — los activos se miden a <b>5, 10 y 20 días</b> (cada horizonte contra SU base histórica); el % principal y las listas van a {cf.H} días. Todo va <b>encogido bayesianamente</b> hacia la base (fuerza 15) para que una muestra chica no venda humo: con pocas veces, el número se queda cerca de la base a propósito. "pts vs base" = ventaja sobre operar al azar cualquier día. Solo se listan combos con n≥20 (parejas) o n≥25 (tríos), y el top exige n≥40. Descriptivo, no es consejo financiero.</Fine>
+          <Fine>Cada combo exige que TODAS sus condiciones se den el mismo día (velas cerradas). El % es la probabilidad de que el precio esté MÁS ALTO ese nº de días después — los activos se miden a <b>5, 10 y 20 días</b> (cada horizonte contra SU base histórica); el % principal y las listas van a {cf.H} días. Todo va <b>encogido bayesianamente</b> hacia la base (fuerza 15) para que una muestra chica no venda humo: con pocas veces, el número se queda cerca de la base a propósito. "pts vs base" = ventaja sobre operar al azar cualquier día. Solo se listan combos con n≥20 (parejas) o n≥25 (tríos), y el top exige n≥40. Las condiciones de miedo/codicia (alternative.me) cubren menos años que el precio, así que sus combos tienen n menor. Descriptivo, no es consejo financiero.</Fine>
         </div>);})()}
 
       {/* PATRONES GRÁFICOS (figuras clásicas estilo Binance, con estadística) */}

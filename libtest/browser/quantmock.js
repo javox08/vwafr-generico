@@ -47,7 +47,12 @@
       if(u.indexOf('/klines')>=0)return J(klines(u));
       if(u.indexOf('api.binance.com/api/v3/ticker/price')>=0)return J({price:'60000'});
       if(u.indexOf('coinbase.com/products/BTC-USD/ticker')>=0)return J({price:'60040'});
-      if(u.indexOf('alternative.me')>=0)return J({data:[{value:'45',value_classification:'Fear'}]});
+      if(u.indexOf('alternative.me')>=0){
+        var nf=+((u.match(/limit=(\d+)/)||[])[1]||1),fd=[];
+        for(var f2=0;f2<nf;f2++)fd.push({value:''+Math.round(15+Math.abs(Math.sin(f2/40))*70),value_classification:'Fear',
+          timestamp:''+Math.floor((Date.now()-f2*864e5)/1000)});
+        return J({data:fd});
+      }
       if(u.indexOf('bitcoin-data.com/v1/mvrv/last')>=0)return J({mvrv:'1.21'});
       if(u.indexOf('bitcoin-data.com/v1/nupl/last')>=0)return J({nupl:'0.16'});
       if(u.indexOf('bitcoin-data.com/v1/mvrv-zscore/last')>=0)return J({mvrvZscore:'1.9'});
