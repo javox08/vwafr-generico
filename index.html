@@ -2976,6 +2976,85 @@ function pearson(a,b){const n=Math.min(a.length,b.length);if(n<5)return null;
   for(let i=0;i<n;i++){const ax=x[i]-mx,ay=y[i]-my;num+=ax*ay;dx+=ax*ax;dy+=ay*ay;}
   return(dx&&dy)?num/Math.sqrt(dx*dy):null;}
 function dret(a){const r=[];for(let i=1;i<a.length;i++)r.push(Math.log(a[i]/a[i-1]));return r;}
+// ── MOTOR DE CONFLUENCIAS: combos de condiciones que COINCIDIERON en el pasado y
+//    qué pasó después. "Cuando esto Y esto se juntaron, el precio subió el X% de
+//    las veces a 10 días". Point-in-time real: cada condición usa SOLO datos hasta
+//    ese día; se prueban todas las parejas y tríos entre FAMILIAS distintas
+//    (tendencia · momentum · extremos · volatilidad · rachas · velas/volumen) y el
+//    acierto se ENCOGE bayesianamente hacia la base para no vender humo con n chico. ──
+function confluences(cl,oh){
+  const N=cl.length; if(N<600)return null;
+  const H=10, START=250;
+  const ohOK=oh&&oh.length===N;
+  // indicadores precalculados O(N)
+  const ma=w=>{const out=new Array(N).fill(null);let s=0;for(let i=0;i<N;i++){s+=cl[i];if(i>=w)s-=cl[i-w];if(i>=w-1)out[i]=s/w;}return out;};
+  const ma50=ma(50),ma200=ma(200);
+  const rsi=new Array(N).fill(50);{let g=0,l=0;for(let i=1;i<N;i++){const ch=cl[i]-cl[i-1],up=Math.max(ch,0),dn=Math.max(-ch,0);
+    if(i<=14){g+=up;l+=dn;if(i===14){g/=14;l/=14;}}else{g=(g*13+up)/14;l=(l*13+dn)/14;}
+    if(i>=14)rsi[i]=l===0?100:100-100/(1+g/l);}}
+  const vol20=new Array(N).fill(null);{let s2=0;const r2=[];
+    for(let i=1;i<N;i++){const r=Math.log(cl[i]/cl[i-1]);r2.push(r*r);s2+=r*r;if(r2.length>20)s2-=r2[r2.length-21];
+      if(r2.length>=20)vol20[i]=Math.sqrt(s2/20);}}
+  // rango de la vol en el último año (percentil aproximado por ventana 250)
+  const volRank=new Array(N).fill(null);
+  for(let i=START;i<N;i++){if(vol20[i]==null)continue;let lo=0,tot=0;
+    for(let k=i-249;k<=i;k++){if(vol20[k]==null)continue;tot++;if(vol20[k]<vol20[i])lo++;}
+    if(tot>100)volRank[i]=lo/tot;}
+  const min30=new Array(N).fill(false),max30=new Array(N).fill(false);
+  for(let i=30;i<N;i++){let mn=Infinity,mx=-Infinity;for(let k=i-29;k<=i;k++){if(cl[k]<mn)mn=cl[k];if(cl[k]>mx)mx=cl[k];}
+    min30[i]=cl[i]<=mn; max30[i]=cl[i]>=mx;}
+  const volu20=ohOK?(()=>{const o2=new Array(N).fill(null);let s=0;
+    for(let i=0;i<N;i++){s+=oh[i].v;if(i>=20)s-=oh[i-20].v;if(i>=19)o2[i]=s/20;}return o2;})():null;
+  // FAMILIAS de condiciones (a = tendencia, b = momentum, c = extremos, d = vol, e = rachas, f = velas/volumen)
+  const CONDS=[
+    {id:'t+',f:'a',t:'sobre la MA200',fn:i=>ma200[i]!=null&&cl[i]>ma200[i]},
+    {id:'t-',f:'a',t:'bajo la MA200',fn:i=>ma200[i]!=null&&cl[i]<ma200[i]},
+    {id:'ext+',f:'a',t:'estirado +25% sobre MA50',fn:i=>ma50[i]!=null&&cl[i]/ma50[i]>1.25},
+    {id:'rsi-',f:'b',t:'RSI en sobreventa (<30)',fn:i=>rsi[i]<30},
+    {id:'rsi+',f:'b',t:'RSI en sobrecompra (>70)',fn:i=>rsi[i]>70},
+    {id:'w-',f:'b',t:'caída semanal ≥10%',fn:i=>i>=7&&cl[i]/cl[i-7]-1<=-0.10},
+    {id:'w+',f:'b',t:'subida semanal ≥10%',fn:i=>i>=7&&cl[i]/cl[i-7]-1>=0.10},
+    {id:'lo30',f:'c',t:'mínimo de 30 días',fn:i=>min30[i]},
+    {id:'hi30',f:'c',t:'máximo de 30 días',fn:i=>max30[i]},
+    {id:'vhi',f:'d',t:'volatilidad alta (top 20% del año)',fn:i=>volRank[i]!=null&&volRank[i]>0.8},
+    {id:'vlo',f:'d',t:'volatilidad baja (fondo 20%)',fn:i=>volRank[i]!=null&&volRank[i]<0.2},
+    {id:'r3',f:'e',t:'3+ días rojos seguidos',fn:i=>i>=3&&cl[i]<cl[i-1]&&cl[i-1]<cl[i-2]&&cl[i-2]<cl[i-3]},
+    {id:'g3',f:'e',t:'3+ días verdes seguidos',fn:i=>i>=3&&cl[i]>cl[i-1]&&cl[i-1]>cl[i-2]&&cl[i-2]>cl[i-3]},
+  ];
+  if(ohOK){
+    CONDS.push({id:'wick',f:'f',t:'mecha inferior larga (barrido)',fn:i=>{const k=oh[i],rg=k.h-k.l;return rg>0&&(Math.min(k.o,k.c)-k.l)/rg>0.55;}});
+    CONDS.push({id:'vol2',f:'f',t:'volumen ≥2× su media',fn:i=>volu20[i]!=null&&volu20[i]>0&&oh[i].v>=2*volu20[i]});
+  }
+  // booleanas precalculadas
+  const B=CONDS.map(c=>{const a=new Array(N).fill(false);for(let i=START;i<N;i++)a[i]=!!c.fn(i);return a;});
+  // base: % de veces que el precio estuvo más alto H días después (mismo tramo)
+  let bN=0,bW=0;for(let i=START;i<N-H;i++){bN++;if(cl[i+H]>cl[i])bW++;}
+  const base=bN?bW/bN*100:55;
+  const K=15, shr=(w,n)=>(w*n+base*K)/(n+K); // encogimiento bayesiano hacia la base
+  const evalCombo=idx=>{let n=0,w=0,s=0;
+    for(let i=START;i<N-H;i++){let ok=true;for(const j of idx)if(!B[j][i]){ok=false;break;}
+      if(!ok)continue;n++;const r=cl[i+H]/cl[i]-1;s+=r;if(r>0)w++;}
+    if(n<20)return null;
+    const winRaw=w/n*100, win=shr(winRaw,n), edge=win-base;
+    return {idx,n,win,winRaw,edge,avg:s/n*100,labels:idx.map(j=>CONDS[j].t)};
+  };
+  const combos=[];
+  for(let a=0;a<CONDS.length;a++)for(let b=a+1;b<CONDS.length;b++){
+    if(CONDS[a].f===CONDS[b].f)continue; // familias distintas: una racha+su gemela no es confluencia
+    const r=evalCombo([a,b]); if(r)combos.push(r);
+    for(let c2=b+1;c2<CONDS.length;c2++){
+      if(CONDS[c2].f===CONDS[a].f||CONDS[c2].f===CONDS[b].f)continue;
+      const r3=evalCombo([a,b,c2]); if(r3&&r3.n>=25)combos.push(r3);
+    }
+  }
+  const today=N-1, activeIds=[];
+  for(let j=0;j<CONDS.length;j++)if(B[j][today])activeIds.push(j);
+  const active=combos.filter(c=>c.idx.every(j=>B[j][today])).sort((x,y)=>Math.abs(y.edge)-Math.abs(x.edge));
+  const top=combos.filter(c=>c.n>=40&&Math.abs(c.edge)>=6).sort((x,y)=>Math.abs(y.edge)-Math.abs(x.edge)).slice(0,6);
+  return {base,H,years:+(N/365).toFixed(1),nCombos:combos.length,nConds:CONDS.length,
+    activeConds:activeIds.map(j=>CONDS[j].t),active:active.slice(0,4),top};
+}
+
 // Motor de patrones: precalcula indicadores, backtestea cada señal sobre el
 // histórico real (% acierto + retorno medio a 10d) y devuelve los ACTIVOS hoy.
 function analyzePatterns(cl){
@@ -3661,6 +3740,9 @@ function QuantView({gFunding,nav}){
     const closedOh=oh=>(oh&&oh.length&&Number.isFinite(oh[oh.length-1].T)&&oh[oh.length-1].T>Date.now())?oh.slice(0,-1):oh;
     const ohD=closedOh(q.ohlc), oh4=closedOh(q.h4o), ohW=closedOh(q.wko);
     const patterns=analyzePatterns(cl).concat((ohD&&ohD.length>=60)?candlePatterns(ohD).map(p=>({...p,tf:'1D'})):[]);
+    // CONFLUENCIAS: combos de condiciones backtesteados sobre velas CERRADAS (el
+    // OHLC diario cerrado da también mechas y volumen; si falta, solo precio)
+    const confl=(ohD&&ohD.length>=600)?confluences(ohD.map(k=>k.c),ohD):confluences(cl,null);
     // MULTI-TEMPORALIDAD: los mismos detectores de velas sobre 4h y SEMANAL, cada uno
     // backtesteado EN SU temporalidad (el % es el acierto a 10 velas de ESA temporalidad).
     // Solo informativo/visual: el cono sigue alimentándose del diario (no doble-contar).
@@ -4174,7 +4256,7 @@ function QuantView({gFunding,nav}){
       return {active:best,ref};
     })();
     return {price,annVol,rsi,ma200,ma50,ma200w,mc,probUp,probUp15,probDn15,var99,cvar99,coneBT,hiConf,
-      fair,lo,hi,valPct,realized,models,plSup,plRes,H,regime,fund,gf,opt,levels,cyc,patterns,corrE,corrS,corrG,corrAvg,liq,usdLiq,gold:q.gold,ritual,optExp,
+      fair,lo,hi,valPct,realized,models,plSup,plRes,H,regime,fund,gf,opt,levels,cyc,patterns,confl,corrE,corrS,corrG,corrAvg,liq,usdLiq,gold:q.gold,ritual,optExp,
       route,tomorrow,tomPct,sig10,pdrift,trap,swingHi,swingLo,routes,biases,chartPats,chartPatsMTF,patsMTF,veloTF,drift,drift30,shutdown,pctLong,pctLongM,lsrZ,lsStrength,lsSrcLbl,manip:manipList,
       cal,volScale,sigTarget,dvol:q.dvol,obImb:q.obImb,impDaily,closes:cl,db,skill};
   },[q,gFunding]);
@@ -4852,6 +4934,47 @@ function QuantView({gFunding,nav}){
           </React.Fragment>);})()}
         <Fine>Patrones detectados en <b>3 temporalidades</b>: <b style={{color:'#F3BA2F'}}>4h</b> (corto plazo, ~166 días de historia), <b>1D</b> (diario, ~8 años) y <b style={{color:'#8AA0FF'}}>SEMANAL</b> (~6 años). Cada uno se backtestea EN SU temporalidad: <b style={{color:'var(--txt)'}}>% = probabilidad de que se cumpla EN SU DIRECCIÓN</b> a 10 velas de esa escala (un patrón alcista mide cuántas veces SUBIÓ; uno bajista, cuántas veces BAJÓ — por eso ambos se leen igual: más alto = más fiable) · n = nº de veces que ocurrió. Los de 4h son más frecuentes pero más ruidosos; los semanales, raros pero de más peso. <b style={{color:'var(--txt)'}}>Ordenados del MÁS fiable al menos</b> (acierto en la dirección del patrón − medio margen de error; "pocos casos" al final). <b style={{color:'var(--txt)'}}>Solo velas CERRADAS</b>: la vela en curso no confirma un patrón hasta su cierre (puede des-formarse antes) — igual que el backtest, que siempre midió cierres. Solo el diario alimenta el modelo (evita doble-contar).</Fine>
       </div>
+
+      {/* 🧬 CONFLUENCIAS: combos de condiciones históricas — "cuando esto y esto se
+          juntaron, pasó X" — con TODAS las parejas y tríos entre familias medidos
+          sobre el histórico real. Se recalcula solo en cada refresco (2 min). */}
+      {c.confl&&(()=>{const cf=c.confl;
+        const Row=({co,big})=>{const up=co.edge>=0, col=up?'var(--up)':'var(--down)';
+          return(
+          <div style={{padding:big?'10px 12px':'8px 0',borderRadius:big?10:0,marginBottom:big?8:0,
+            background:big?`radial-gradient(120% 100% at 50% 0%, ${tint(col,9)} 0%, #0A0D14 70%)`:'transparent',
+            border:big?`1px solid ${tint(col,25)}`:'none',borderTop:big?undefined:'1px solid #12151F'}}>
+            <div style={{...flx({justifyContent:'space-between',gap:8})}}>
+              <span style={{fontSize:big?11:10.5,fontWeight:700,lineHeight:1.35,flex:1}}>{co.labels.join(' + ')}</span>
+              <span className="mono" style={{fontSize:big?15:12.5,fontWeight:800,color:col,flexShrink:0}}>{co.win.toFixed(0)}%<span style={{fontSize:8,color:'var(--dim)'}}> sube</span></span>
+            </div>
+            <div style={{...flx({justifyContent:'space-between'}),marginTop:3}}>
+              <span className="mono" style={{fontSize:8,color:'var(--faint)'}}>n={co.n} veces en {cf.years} años · media {(co.avg>=0?'+':'')+co.avg.toFixed(1)}% a {cf.H}d</span>
+              <span className="mono" style={{fontSize:8.5,fontWeight:800,color:col}}>{co.edge>=0?'+':''}{co.edge.toFixed(0)} pts vs base</span>
+            </div>
+          </div>);};
+        return(
+        <div style={panel({marginBottom:14,padding:16})}>
+          <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
+            <span style={eyebrow}>🧬 Confluencias · cuando se juntan</span>
+            <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>{cf.nCombos} combos · {cf.years} años</span>
+          </div>
+          <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:10,lineHeight:1.5}}>Cruza <b style={{color:'var(--txt)'}}>{cf.nConds} condiciones reales</b> (tendencia · RSI · extremos · volatilidad · rachas · velas/volumen) en parejas y tríos, y mide <b style={{color:'var(--txt)'}}>qué pasó las veces que coincidieron</b> a {cf.H} días vista. Base histórica: sube el {cf.base.toFixed(0)}% de las veces.</div>
+          {cf.active.length?(<>
+            <div style={{fontSize:8.5,color:'var(--accent)',textTransform:'uppercase',letterSpacing:1,fontWeight:800,marginBottom:7}}>⚡ Activas AHORA MISMO</div>
+            {cf.active.map((co,i)=><Row key={i} co={co} big/>)}
+          </>):(
+            <div style={{textAlign:'center',padding:'10px',borderRadius:10,background:'#0A0D14',marginBottom:8}}>
+              <div style={{fontSize:10.5,color:'var(--dim)'}}>Hoy no coincide ningún combo con ventaja medida</div>
+              <div style={{fontSize:8.5,color:'var(--faint)',marginTop:3}}>la mayoría del tiempo el mercado no da señal — decirlo también es información</div>
+            </div>)}
+          {cf.activeConds.length>0&&<div style={{fontSize:8.5,color:'var(--dim)',margin:'2px 0 10px',lineHeight:1.5}}>Condiciones sueltas activas hoy: {cf.activeConds.join(' · ')}</div>}
+          {cf.top.length>0&&<>
+            <div style={{fontSize:8.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:1,fontWeight:700,margin:'10px 0 2px'}}>Los combos con más ventaja de la historia</div>
+            {cf.top.map((co,i)=><Row key={i} co={co}/>)}
+          </>}
+          <Fine>Cada combo exige que TODAS sus condiciones se den el mismo día (velas cerradas). El % es la probabilidad de que el precio esté MÁS ALTO {cf.H} días después, <b>encogida bayesianamente</b> hacia la base del {cf.base.toFixed(0)}% (fuerza 15) para que una muestra chica no venda humo: con pocas veces, el número se queda cerca de la base a propósito. "pts vs base" = ventaja sobre operar al azar cualquier día. Solo se listan combos con n≥20 (parejas) o n≥25 (tríos), y el top exige n≥40. Descriptivo, no es consejo financiero.</Fine>
+        </div>);})()}
 
       {/* PATRONES GRÁFICOS (figuras clásicas estilo Binance, con estadística) */}
       <div id="sec-figuras" style={panel({marginBottom:14,padding:16})}>

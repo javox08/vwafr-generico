@@ -3,7 +3,8 @@
 Web de **análisis cripto 100% automático en español**, gratuita y sin registro:
 funding en vivo de 17 exchanges, análisis multi-temporalidad estilo Velo (CVD,
 interés abierto, funding, premium) que explica POR QUÉ sube o baja Bitcoin,
-mapa de liquidaciones con volumen real, patrones backtesteados, probabilidades
+mapa de liquidaciones con volumen real, patrones backtesteados, confluencias
+(combos de condiciones históricas con su probabilidad medida), probabilidades
 Monte Carlo de tocar niveles, noticias cripto con filtro político, calendario
 económico estilo Investing (IPC/IPP/empleo), ciclo por halving, bots con
 backtest de 9 años y ciclo macro mundial.
