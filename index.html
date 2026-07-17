@@ -4362,6 +4362,108 @@ function QuantView({gFunding,nav}){
         </div>);
       })()}
 
+      {/* 🧭 RUTA MÁS PROBABLE · fusiona TODAS las señales de la web (patrones, tendencia,
+          on-chain, ciclo, funding, sentimiento, flujo, posicionamiento…) en una sola ruta
+          a 30 días con su probabilidad. El % grande sale del Monte Carlo (que ya integra
+          todo vía la deriva ponderada); el consenso y la analogía histórica lo explican. */}
+      {c.mc&&c.mc.bands&&c.biases&&c.biases.length&&(()=>{
+        const p=c.price, bd=c.mc.bands, b7=bd[7], b30=bd[30];
+        const pUp=c.probUp, pUp15=c.probUp15, pDn15=c.probDn15;
+        // 4 escenarios (fracción de caminos del Monte Carlo que acaba en cada tramo)
+        const segSU=Math.round(pUp15), segU=Math.max(0,Math.round(pUp-pUp15)), segSD=Math.round(pDn15), segD=Math.max(0,100-segSU-segU-segSD);
+        const dir=pUp>=55?1:pUp<=45?-1:0, col=dir>0?'var(--up)':dir<0?'var(--down)':'#F3BA2F';
+        const dirTxt=dir>0?'ALCISTA':dir<0?'BAJISTA':'LATERAL';
+        // CONSENSO de todas las señales: voto ponderado por su fiabilidad medida
+        const EFF=c.biases.map(x=>({k:x.k,why:x.why,e:x.v*(x.w==null?0.5:x.w)}));
+        const TINY=2e-5; let bull=0,bear=0,nB=0,nBe=0,nN=0;
+        for(const x of EFF){if(x.e>TINY){bull+=x.e;nB++;}else if(x.e<-TINY){bear+=-x.e;nBe++;}else nN++;}
+        const tot2=bull+bear, agree=tot2>0?Math.round(Math.abs(bull-bear)/tot2*100):0;
+        const drivers=EFF.slice().sort((a,b)=>Math.abs(b.e)-Math.abs(a.e)).slice(0,3);
+        const conf=(c.confl&&c.confl.active&&c.confl.active.length)?c.confl.active:null;
+        const confAvg=conf?Math.round(conf.reduce((a,x)=>a+x.win,0)/conf.length):null;
+        const bt=(c.coneBT&&c.coneBT.d30)?c.coneBT.d30:null;
+        const nS=c.biases.length;
+        // sparkline de la ruta: mediana + banda del 50% (p25–p75) del Monte Carlo
+        const W=300,Hs=68,P2=4, med=[],lo=[],hi=[];
+        for(let d=0;d<=30;d++){med.push(bd[d].p50);lo.push(bd[d].p25);hi.push(bd[d].p75);}
+        const allv=med.concat(lo,hi,[p]), mn=Math.min(...allv),mx=Math.max(...allv),rg=(mx-mn)||1;
+        const X=i=>P2+i/30*(W-2*P2), Y=v=>Hs-P2-(v-mn)/rg*(Hs-2*P2);
+        const line=a=>'M '+a.map((v,i)=>X(i).toFixed(1)+' '+Y(v).toFixed(1)).join(' L ');
+        const bandArea='M '+hi.map((v,i)=>X(i).toFixed(1)+' '+Y(v).toFixed(1)).join(' L ')+' L '+med.map((_,i)=>X(30-i).toFixed(1)+' '+Y(lo[30-i]).toFixed(1)).join(' L ')+' Z';
+        const money=v=>'$'+Math.round(v).toLocaleString('es-ES'), pctOf=v=>(v/p-1)*100;
+        const concord=(confAvg==null)?null:((confAvg>=50)===(pUp>=50));
+        return(
+        <div style={panel({marginBottom:14,padding:16,background:`radial-gradient(130% 95% at 50% 0%, ${tint(col,11)} 0%, var(--panel) 62%)`,borderColor:`${tint(col,30)}`})}>
+          <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
+            <span style={eyebrow}>🧭 Ruta más probable · todo combinado</span>
+            <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>{nS} señales + Monte Carlo</span>
+          </div>
+          <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:12,lineHeight:1.5}}>Funde <b style={{color:'var(--txt)'}}>todo</b> lo que mide la web — patrones, tendencia, on-chain, ciclo, funding, sentimiento, flujo y posicionamiento — en una sola ruta a 30 días y su probabilidad.</div>
+          {/* HERO */}
+          <div style={{textAlign:'center',padding:'2px 0 10px'}}>
+            <div className="mono" style={{fontSize:44,fontWeight:800,color:col,lineHeight:1,textShadow:`0 0 34px ${tint(col,27)}`}}>{Math.round(pUp)}%</div>
+            <div style={{fontSize:14,fontWeight:800,color:col,marginTop:6}}>{dir>0?'▲':dir<0?'▼':'◆'} Ruta {dirTxt}</div>
+            <div style={{fontSize:9.5,color:'var(--dim)',marginTop:3}}>probabilidad de que BTC esté MÁS ALTO en 30 días según todo el análisis combinado</div>
+          </div>
+          {/* 4 escenarios */}
+          <div style={{display:'flex',height:9,borderRadius:5,overflow:'hidden',margin:'6px 0 5px'}}>
+            <div style={{width:segSU+'%',background:'var(--up)'}}/><div style={{width:segU+'%',background:tint('var(--up)',42)}}/>
+            <div style={{width:segD+'%',background:tint('var(--down)',42)}}/><div style={{width:segSD+'%',background:'var(--down)'}}/>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:4,marginBottom:12}}>
+            {[['sube +15%',segSU,'var(--up)'],['sube 0-15%',segU,'var(--up)'],['baja 0-15%',segD,'var(--down)'],['baja -15%',segSD,'var(--down)']].map((s,i)=>(
+              <div key={i} style={{textAlign:'center'}}>
+                <div className="mono" style={{fontSize:12,fontWeight:800,color:s[2]}}>{s[1]}%</div>
+                <div style={{fontSize:7,color:'var(--faint)',marginTop:1}}>{s[0]}</div>
+              </div>))}
+          </div>
+          {/* LA RUTA: gráfico + objetivos */}
+          <div style={{background:'#0A0D14',borderRadius:10,padding:'10px 12px',marginBottom:12}}>
+            <svg viewBox={`0 0 ${W} ${Hs}`} width="100%" style={{display:'block'}}>
+              <path d={bandArea} fill={tint(col,14)} stroke="none"/>
+              <path d={line(med)} fill="none" stroke={col} strokeWidth="2"/>
+              <line x1={X(0)} y1={Y(p)} x2={X(30)} y2={Y(p)} stroke="var(--faint)" strokeWidth="1" strokeDasharray="3 3"/>
+            </svg>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8}}>
+              {[['En 7 días',b7],['En 30 días',b30]].map(([lbl,bb],i)=>{const pc=pctOf(bb.p50);
+                return(<div key={i} style={{textAlign:'center',padding:'7px 4px',borderRadius:8,background:'rgba(0,0,0,.28)'}}>
+                  <div style={{fontSize:7.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.5}}>{lbl}</div>
+                  <div className="mono" style={{fontSize:13.5,fontWeight:800,color:pc>=0?'var(--up)':'var(--down)',marginTop:2}}>{money(bb.p50)}</div>
+                  <div className="mono" style={{fontSize:8,color:'var(--dim)',marginTop:1}}>{pc>=0?'+':''}{pc.toFixed(1)}% · {money(bb.p25)}–{money(bb.p75)}</div>
+                </div>);})}
+            </div>
+          </div>
+          {/* CONSENSO de señales */}
+          <div style={{fontSize:8.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:1,fontWeight:700,marginBottom:6}}>Consenso de las {nS} señales</div>
+          <div style={{display:'flex',height:8,borderRadius:5,overflow:'hidden',marginBottom:5}}>
+            <div style={{width:(nB/nS*100)+'%',background:'var(--up)',opacity:.82}}/>
+            <div style={{width:(nN/nS*100)+'%',background:'var(--faint)',opacity:.4}}/>
+            <div style={{width:(nBe/nS*100)+'%',background:'var(--down)',opacity:.82}}/>
+          </div>
+          <div style={{...flx({justifyContent:'space-between'}),fontSize:9,marginBottom:11}} className="mono">
+            <span style={{color:'var(--up)',fontWeight:700}}>▲ {nB} alcistas</span>
+            <span style={{color:'var(--faint)'}}>◆ {nN} neutrales</span>
+            <span style={{color:'var(--down)',fontWeight:700}}>{nBe} bajistas ▼</span>
+          </div>
+          {/* LO QUE MÁS INCLINA */}
+          <div style={{fontSize:8.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:1,fontWeight:700,marginBottom:6}}>Lo que más inclina la ruta</div>
+          {drivers.map((d,i)=>{const up=d.e>=0;
+            return(<div key={i} style={{...flx({gap:8}),padding:'5px 0',borderTop:i?'1px solid #12151F':'none'}}>
+              <span className="mono" style={{fontSize:11,fontWeight:800,color:up?'var(--up)':'var(--down)',flexShrink:0,width:12}}>{up?'▲':'▼'}</span>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:10.5,fontWeight:700,color:'var(--txt)'}}>{d.k}</div>
+                <div style={{fontSize:8.5,color:'var(--faint)',lineHeight:1.4}}>{d.why}</div>
+              </div>
+            </div>);})}
+          {/* CONTRASTE histórico + fiabilidad */}
+          {(confAvg!=null||bt)&&<div style={{marginTop:11,padding:'9px 11px',borderRadius:9,background:'#0A0D14',fontSize:9.5,lineHeight:1.55,color:'var(--dim)'}}>
+            {confAvg!=null&&<div style={{marginBottom:bt?5:0}}>🧬 Analogía histórica: cuando estas condiciones coincidieron en el pasado, BTC subió el <b style={{color:confAvg>=55?'var(--up)':confAvg<=45?'var(--down)':'var(--txt)'}}>{confAvg}%</b> de las veces a 10 días {concord?'— concuerda con la ruta ✓':'— matiza la ruta ⚠'}.</div>}
+            {bt&&<div>🎯 Fiabilidad: el motor direccional acierta el <b style={{color:'var(--txt)'}}>{bt.hit}%</b> a 30 días en 9 años de backtest (IC {bt.ic>=0?'+':''}{bt.ic} · vs {bt.base}% de "siempre sube"). Hoy las señales están <b style={{color:agree>=50?'var(--up)':agree>=25?'#F3BA2F':'var(--down)'}}>{agree>=50?'muy de acuerdo':agree>=25?'moderadamente de acuerdo':'divididas'}</b> ({agree}% de consenso neto).</div>}
+          </div>}
+          <Fine>La probabilidad grande sale del Monte Carlo (700 caminos a 30 días) alimentado por la deriva que combina TODAS las señales ponderadas por su fiabilidad medida; los 4 escenarios son la fracción de caminos que acaba en cada tramo. El consenso cuenta cuántas señales apuntan a cada lado. La analogía histórica viene de las confluencias (combos de condiciones backtesteados). El % de acierto y el IC son del backtest walk-forward de 9 años. Todo se recalcula solo cada 2 minutos. Descriptivo y probabilístico — no es consejo financiero.</Fine>
+        </div>);
+      })()}
+
       {/* SEÑAL DE ALTA PROBABILIDAD (selectiva, con acierto real backtesteado) */}
       {c.hiConf&&(()=>{const a=c.hiConf.active, ref=c.hiConf.ref;
         // ACIERTO CONSERVADOR: un 100% con n=34 engaña (muestras pequeñas dan extremos por
