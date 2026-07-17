@@ -182,6 +182,10 @@
     @keyframes vwIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
     .viewwrap{animation:vwIn .3s ease both}
     button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+    /* tacto del nav: hover con vida en escritorio y "pulsación" al tocar */
+    @media(hover:hover){.mainnav button:not(.nav-glow):hover{color:var(--txt)!important;
+      border-color:rgba(110,139,255,.55)!important;background:rgba(110,139,255,.08)!important;transform:translateY(-1px)}}
+    .mainnav button:active{transform:scale(.95)}
     /* pie de página */
     .ftr{max-width:540px;margin:26px auto 8px;padding:18px 16px 8px;border-top:1px solid var(--line);
       color:var(--dim);font-size:11px;line-height:1.7;text-align:center;position:relative;z-index:1}
@@ -4594,39 +4598,9 @@ function QuantView({gFunding,nav}){
           se conserva: el cono de BANDAS calibradas, las probabilidades de tocar niveles y
           la calculadora "¿tocará mi precio?".) */}
 
-      {/* CONTEXTO: régimen + ciclo + funding */}
-      <div style={panel({marginBottom:14,padding:16})}>
-        <div style={{...eyebrow,marginBottom:12}}>Contexto de mercado</div>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
-          {[['Régimen',c.regime.t,c.regime.c,'Hurst '+c.H.toFixed(2)],
-            ['Ciclo',c.cyc.phase.t,c.cyc.phase.c,'semana '+c.cyc.weeks],
-            ['Funding',c.fund.t,c.fund.c,(c.gf>=0?'+':'')+c.gf.toFixed(4)+'%']].map((m,i)=>(
-            <div key={i} style={{background:'#0A0D14',borderRadius:9,padding:'11px 9px',textAlign:'center'}}>
-              <div style={{fontSize:8.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:1,fontWeight:600,marginBottom:5}}>{m[0]}</div>
-              <div style={{fontSize:11.5,fontWeight:800,color:m[2],lineHeight:1.15,minHeight:28}}>{m[1]}</div>
-              <div className="mono" style={{fontSize:8.5,color:'var(--dim)',marginTop:4}}>{m[3]}</div>
-            </div>
-          ))}
-        </div>
-        {c.pctLong!=null&&(()=>{const pl=c.pctLongM!=null?c.pctLongM:c.pctLong;
-          return(
-          <div style={{marginTop:12,paddingTop:11,borderTop:'1px solid var(--line2)'}}>
-            <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
-              <span className="mono" style={{fontSize:10,fontWeight:800,color:'var(--up)'}}>▲ LONG {(pl*100).toFixed(0)}%</span>
-              <span style={{fontSize:8,color:'var(--faint)'}}>{c.pctLongM!=null?'DINERO en futuros (top traders '+(c.lsSrcLbl||'OKX')+')':'cuentas en futuros (OKX+Bybit+Binance)'}{c.lsStrength?' · '+c.lsStrength:''}</span>
-              <span className="mono" style={{fontSize:10,fontWeight:800,color:'var(--down)'}}>{((1-pl)*100).toFixed(0)}% SHORT ▼</span>
-            </div>
-            <div style={{display:'flex',height:7,borderRadius:5,overflow:'hidden'}}>
-              <div style={{width:(pl*100)+'%',background:'var(--up)',opacity:.75}}/>
-              <div style={{flex:1,background:'var(--down)',opacity:.75}}/>
-            </div>
-            <div style={{fontSize:8.5,color:'var(--dim)',marginTop:5,lineHeight:1.5}}>
-              {c.gf>0.0005?('Funding positivo: los longs pagan a los shorts (presión compradora apalancada)'+(c.pctLong!=null&&c.pctLong>0.52?' — además el '+(c.pctLong*100).toFixed(0)+'% de cuentas está long':'')+'.'):c.gf<-0.0005?('Funding negativo: los shorts pagan a los longs (presión vendedora apalancada)'+(c.pctLong!=null&&c.pctLong<0.48?' — además solo el '+(c.pctLong*100).toFixed(0)+'% de cuentas está long':'')+'.'):'Funding casi neutro: posicionamiento repartido.'}
-              {c.lsStrength?' Posicionamiento '+c.lsStrength+' (z-score '+(c.lsrZ!=null?c.lsrZ.toFixed(1):'—')+' vs su media reciente).':''}
-              {' '}Esta lectura entra en el modelo como <b>señal contraria</b> — cuanto más fuerte, más inclina: multitud muy cargada de un lado = riesgo de squeeze al otro.
-            </div>
-          </div>);})()}
-      </div>
+      {/* (el panel "Contexto de mercado" se RETIRÓ por redundante: régimen y ciclo ya
+          salen en el Veredicto del día, el funding tiene su pestaña y el posicionamiento
+          long/short tiene la pestaña L/S con mucho más detalle.) */}
 
       {/* SCORECARD GO / NO-GO */}
       <div style={panel({marginBottom:14,padding:16})}>
@@ -6336,25 +6310,8 @@ function BotsView({gFunding}){
         </div>}
       </div>
 
-      {/* NUMÉRICO CHICO: rentabilidad del mega bot (operación de arriba del todo) */}
-      {(()=>{
-        let log=[];try{log=JSON.parse(localStorage.getItem('vwafr_trades_def_log')||'[]');}catch(_){}
-        const cum=log.length?(log.reduce((a,x)=>a*(1+x.pnl/100),1)-1)*100:null;
-        const cagr=c.defCagr;
-        return(
-        <div style={{...flx({justifyContent:'center',gap:18}),marginBottom:10,padding:'10px 14px',borderRadius:10,
-          background:'#0A0D14',border:'1px solid var(--line2)'}}>
-          <div style={{textAlign:'center'}}>
-            <div className="mono" style={{fontSize:16,fontWeight:800,color:cagr==null?'var(--faint)':cagr>=0?'var(--up)':'var(--down)'}}>{cagr==null?'—':(cagr>=0?'+':'')+cagr.toFixed(0)+'%'}</div>
-            <div style={{fontSize:7.5,color:'var(--dim)',marginTop:1}}>mega bot · backtest/año</div>
-          </div>
-          <div style={{width:1,alignSelf:'stretch',background:'var(--line2)'}}/>
-          <div style={{textAlign:'center'}}>
-            <div className="mono" style={{fontSize:16,fontWeight:800,color:cum==null?'var(--faint)':cum>=0?'var(--up)':'var(--down)'}}>{cum==null?'—':(cum>=0?'+':'')+cum.toFixed(1)+'%'}</div>
-            <div style={{fontSize:7.5,color:'var(--dim)',marginTop:1}}>en vivo{log.length?' · '+log.length+' ops':''}</div>
-          </div>
-        </div>);
-      })()}
+      {/* (el "numérico chico" del mega bot se RETIRÓ: duplicaba el CAGR que ya sale
+          arriba en la operación definitiva y el acumulado en vivo del track record.) */}
 
       <div style={{textAlign:'center',padding:'12px 14px',marginBottom:8,borderRadius:10,
         background:'rgba(255,84,112,.07)',border:'1px solid rgba(255,84,112,.25)'}}>
