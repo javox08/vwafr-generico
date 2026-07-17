@@ -10,7 +10,7 @@ const jf = (u, ms = 4500) => { const c = new AbortController(); const t = setTim
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 's-maxage=120, stale-while-revalidate=300');
-  const out = { t: Date.now(), coins: [], btc: {} };
+  const out = { t: Date.now(), v: 'ls-20260717a', coins: [], btc: {} };
   // SECUENCIAL por moneda (OKX limita las peticiones simultáneas), pero los 3
   // exchanges de cada moneda en paralelo. Bybit/Binance pueden estar geo-
   // bloqueados según la región del servidor: si fallan, queda la media del resto.
