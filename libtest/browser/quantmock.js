@@ -79,7 +79,17 @@
         });
         return J([{page:1,pages:1,per_page:rows2.length,total:rows2.length},rows2]);
       }
-      if(u.indexOf('frankfurter')>=0){var rt={'2025-07-01':{EUR:0.90,JPY:152,GBP:0.78},'2026-07-01':{EUR:0.91,JPY:149,GBP:0.79}};return J({rates:rt});}
+      // CoinGecko market_chart (BTC/ETH/SOL/oro): series diarias para correlaciones y liquidez-dólar
+      if(u.indexOf('market_chart')>=0){
+        var base=u.indexOf('pax-gold')>=0?2400:u.indexOf('ethereum')>=0?1900:u.indexOf('solana')>=0?150:60000;
+        var nd=+((u.match(/days=(\d+)/)||[])[1]||120),pr=[],pv=base;
+        for(var d5=nd;d5>=0;d5--){pv*=1+(Math.random()-0.495)*0.02;pr.push([Date.now()-d5*864e5,pv]);}
+        return J({prices:pr});
+      }
+      if(u.indexOf('frankfurter')>=0){var rt={};
+        for(var d6=180;d6>=0;d6--){var dt=new Date(Date.now()-d6*864e5).toISOString().slice(0,10);
+          rt[dt]={EUR:+(0.90+Math.sin(d6/30)*0.01).toFixed(4),JPY:+(150+Math.sin(d6/25)*2).toFixed(2),GBP:+(0.78+Math.cos(d6/40)*0.008).toFixed(4)};}
+        return J({rates:rt});}
       return J({});
     }catch(e){return J({});}
   };
