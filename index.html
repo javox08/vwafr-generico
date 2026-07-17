@@ -2982,7 +2982,7 @@ function dret(a){const r=[];for(let i=1;i<a.length;i++)r.push(Math.log(a[i]/a[i-
 //    ese día; se prueban todas las parejas y tríos entre FAMILIAS distintas
 //    (tendencia · momentum · extremos · volatilidad · rachas · velas/volumen) y el
 //    acierto se ENCOGE bayesianamente hacia la base para no vender humo con n chico. ──
-function confluences(cl,oh,fngMap){
+function confluences(cl,oh,fngMap,ohW){
   const N=cl.length; if(N<600)return null;
   const H=10, START=250;
   const ohOK=oh&&oh.length===N;
@@ -3036,6 +3036,21 @@ function confluences(cl,oh,fngMap){
       CONDS.push({id:'greed',f:'g',t:'codicia extrema (F&G>75)',fn:i=>fng[i]!=null&&fng[i]>75});
     }
   }
+  // familia MACRO-SEMANAL: RSI de la temporalidad semanal, SIN lookahead — cada día
+  // hereda el RSI de la última semana CERRADA en o antes del cierre de ese día.
+  if(ohOK&&ohW&&ohW.length>=40){
+    const wrs=new Array(ohW.length).fill(null);{let g=0,l=0;
+      for(let k=1;k<ohW.length;k++){const ch=ohW[k].c-ohW[k-1].c,up=Math.max(ch,0),dn=Math.max(-ch,0);
+        if(k<=14){g+=up;l+=dn;if(k===14){g/=14;l/=14;}}else{g=(g*13+up)/14;l=(l*13+dn)/14;}
+        if(k>=14)wrs[k]=l===0?100:100-100/(1+g/l);}}
+    const wRsi=new Array(N).fill(null);let wi=-1;
+    for(let i=0;i<N;i++){
+      while(wi+1<ohW.length&&Number.isFinite(ohW[wi+1].T)&&ohW[wi+1].T<=oh[i].T)wi++;
+      if(wi>=0&&wrs[wi]!=null)wRsi[i]=wrs[wi];
+    }
+    CONDS.push({id:'wrsi-',f:'h',t:'RSI SEMANAL en sobreventa (<35)',fn:i=>wRsi[i]!=null&&wRsi[i]<35});
+    CONDS.push({id:'wrsi+',f:'h',t:'RSI SEMANAL en sobrecompra (>70)',fn:i=>wRsi[i]!=null&&wRsi[i]>70});
+  }
   // booleanas precalculadas
   const B=CONDS.map(c=>{const a=new Array(N).fill(false);for(let i=START;i<N;i++)a[i]=!!c.fn(i);return a;});
   // bases por HORIZONTE: % de veces que el precio estuvo más alto h días después
@@ -3067,6 +3082,7 @@ function confluences(cl,oh,fngMap){
   const active=combos.filter(c=>c.idx.every(j=>B[j][today])).sort((x,y)=>Math.abs(y.edge)-Math.abs(x.edge));
   const top=combos.filter(c=>c.n>=40&&Math.abs(c.edge)>=6).sort((x,y)=>Math.abs(y.edge)-Math.abs(x.edge)).slice(0,6);
   return {base,bases:BASE,H,years:+(N/365).toFixed(1),nCombos:combos.length,nConds:CONDS.length,
+    hasFng:CONDS.some(c2=>c2.f==='g'),hasWk:CONDS.some(c2=>c2.f==='h'),
     activeConds:activeIds.map(j=>CONDS[j].t),active:active.slice(0,4),top};
 }
 
@@ -3762,7 +3778,7 @@ function QuantView({gFunding,nav}){
     const fngMap=(q.fngHist&&q.fngHist.length>400)?(()=>{const m2=new Map();
       for(const r of q.fngHist){const ts=+r.timestamp;if(!Number.isFinite(ts))continue;
         m2.set(new Date(ts*1000).toISOString().slice(0,10),+r.value);}return m2;})():null;
-    const confl=(ohD&&ohD.length>=600)?confluences(ohD.map(k=>k.c),ohD,fngMap):confluences(cl,null,null);
+    const confl=(ohD&&ohD.length>=600)?confluences(ohD.map(k=>k.c),ohD,fngMap,ohW):confluences(cl,null,null,null);
     // MULTI-TEMPORALIDAD: los mismos detectores de velas sobre 4h y SEMANAL, cada uno
     // backtesteado EN SU temporalidad (el % es el acierto a 10 velas de ESA temporalidad).
     // Solo informativo/visual: el cono sigue alimentándose del diario (no doble-contar).
@@ -4987,7 +5003,7 @@ function QuantView({gFunding,nav}){
             <span style={eyebrow}>🧬 Confluencias · cuando se juntan</span>
             <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>{cf.nCombos} combos · {cf.years} años</span>
           </div>
-          <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:10,lineHeight:1.5}}>Cruza <b style={{color:'var(--txt)'}}>{cf.nConds} condiciones reales</b> (tendencia · RSI · extremos · volatilidad · rachas · velas/volumen{cf.nConds>=17?' · miedo/codicia':''}) en parejas y tríos, y mide <b style={{color:'var(--txt)'}}>qué pasó las veces que coincidieron</b> a {cf.H} días vista. Base histórica: sube el {cf.base.toFixed(0)}% de las veces.</div>
+          <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:10,lineHeight:1.5}}>Cruza <b style={{color:'var(--txt)'}}>{cf.nConds} condiciones reales</b> (tendencia · RSI · extremos · volatilidad · rachas · velas/volumen{cf.hasFng?' · miedo/codicia':''}{cf.hasWk?' · RSI semanal':''}) en parejas y tríos, y mide <b style={{color:'var(--txt)'}}>qué pasó las veces que coincidieron</b> a {cf.H} días vista. Base histórica: sube el {cf.base.toFixed(0)}% de las veces.</div>
           {cf.active.length?(<>
             <div style={{fontSize:8.5,color:'var(--accent)',textTransform:'uppercase',letterSpacing:1,fontWeight:800,marginBottom:7}}>⚡ Activas AHORA MISMO</div>
             {cf.active.map((co,i)=><Row key={i} co={co} big/>)}
