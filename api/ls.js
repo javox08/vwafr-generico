@@ -10,7 +10,7 @@ const jf = (u, ms = 4500) => { const c = new AbortController(); const t = setTim
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 's-maxage=120, stale-while-revalidate=300');
-  const out = { t: Date.now(), v: 'ls-20260717a', coins: [], btc: {} };
+  const out = { t: Date.now(), v: 'ls-20260718a', coins: [], btc: {} };
   // SECUENCIAL por moneda (OKX limita las peticiones simultáneas), pero los 3
   // exchanges de cada moneda en paralelo. Bybit/Binance pueden estar geo-
   // bloqueados según la región del servidor: si fallan, queda la media del resto.
@@ -353,6 +353,26 @@ module.exports = async (req, res) => {
       const hn = []; for (let i = 0; i < 6 && i + 2 < sn.length; i++) hn.push(chg(i));
       if (hn.length >= 4) out.jobs.nfp.hist = hn.reverse();
       if (Array.isArray(su) && su.length >= 2) { const vu = i => parseFloat(su[i].value); out.jobs.unemp = { act: vu(0), prev: vu(1) }; }
+    }
+  } catch (e) {}
+  // TIPOS DE LA FED (FRED, oficial, sin clave): rango objetivo superior (DFEDTARU).
+  // Solo cambia en las reuniones del FOMC → detectamos la ÚLTIMA decisión (subió /
+  // mantuvo / bajó) y la trayectoria de ~6 meses, para dar veredicto al FOMC igual
+  // que al resto de datos del calendario.
+  try {
+    const cosd = new Date(Date.now() - 420 * 864e5).toISOString().slice(0, 10);
+    const txt = await fetch('https://fred.stlouisfed.org/graph/fredgraph.csv?id=DFEDTARU&cosd=' + cosd, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; VWAFR/1.0)', 'Accept': 'text/csv,*/*' }
+    }).then(r => r.text());
+    const rows = txt.trim().split('\n').slice(1).map(l => l.split(',')).filter(r => r[1] && r[1] !== '.' && Number.isFinite(+r[1]));
+    if (rows.length > 5) {
+      const cur = parseFloat(rows[rows.length - 1][1]);
+      let prev = cur, changeDate = null;
+      for (let i = rows.length - 2; i >= 0; i--) { const v = parseFloat(rows[i][1]); if (Math.abs(v - cur) > 0.01) { prev = v; changeDate = rows[i + 1][0]; break; } }
+      const cut6 = new Date(Date.now() - 185 * 864e5).toISOString().slice(0, 10);
+      const past = rows.find(r => r[0] >= cut6);
+      const past6 = past ? parseFloat(past[1]) : cur;
+      out.fed = { rate: cur, prev, dir: cur > prev + 0.01 ? 'hike' : cur < prev - 0.01 ? 'cut' : 'hold', changeDate, traj6: +(cur - past6).toFixed(2) };
     }
   } catch (e) {}
   // VOLUMEN 24h FUTUROS vs SPOT (mismo exchange = comparable): Binance BTC+ETH.

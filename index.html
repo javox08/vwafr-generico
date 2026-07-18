@@ -3668,8 +3668,9 @@ function QuantView({gFunding,nav}){
   const [cpiReal,setCpiReal]=useState(null);
   const [jobsReal,setJobsReal]=useState(null); // empleo EE.UU. (NFP + paro) para el calendario
   const [ppiReal,setPpiReal]=useState(null);   // IPP (inflación mayorista) para el calendario
+  const [fedReal,setFedReal]=useState(null);   // tipos de la Fed (FRED) para el veredicto del FOMC
   useEffect(()=>{let a=true;(async()=>{try{
-    const j=await fetchLS();if(a&&j){if(j.cpi&&Number.isFinite(j.cpi.yoy))setCpiReal(j.cpi);if(j.jobs&&j.jobs.nfp&&Number.isFinite(j.jobs.nfp.act))setJobsReal(j.jobs);if(j.ppi&&Number.isFinite(j.ppi.yoy))setPpiReal(j.ppi);}
+    const j=await fetchLS();if(a&&j){if(j.cpi&&Number.isFinite(j.cpi.yoy))setCpiReal(j.cpi);if(j.jobs&&j.jobs.nfp&&Number.isFinite(j.jobs.nfp.act))setJobsReal(j.jobs);if(j.ppi&&Number.isFinite(j.ppi.yoy))setPpiReal(j.ppi);if(j.fed&&Number.isFinite(j.fed.rate))setFedReal(j.fed);}
   }catch(_){}})();return()=>{a=false;};},[]);
   const [veloTfSel,setVeloTfSel]=useState('4h'); // temporalidad de la Vista Velo (gráficos apilados)
   const [veloCopied,setVeloCopied]=useState(false); // feedback del botón "copiar análisis"
@@ -5468,6 +5469,19 @@ function QuantView({gFunding,nav}){
             :cool?('salió POR DEBAJO de lo previsto ('+s+'pp) → 🟢 positivo para cripto')
             :'salió EN LÍNEA con lo previsto → 🟡 impacto pequeño';
           return(<div style={{fontSize:9,color:'var(--dim)',marginBottom:10,marginTop:-6,padding:'6px 9px',borderRadius:8,background:'#0A0D14',border:'1px solid var(--line2)'}} className="mono">📊 Último IPC EE.UU. REAL (BLS · oficial): <b style={{color:vc}}>{cpiReal.yoy}% interanual</b> · {cpiReal.mom>=0?'+':''}{cpiReal.mom}% mensual <span style={{color:'var(--faint)'}}>({cpiReal.month})</span> · {verd}{!defl&&cpiReal.yoy>=2.5?' · sigue sobre el objetivo 2% de la Fed':''}</div>);
+        })()}
+        {fedReal&&(()=>{
+          // VEREDICTO del FOMC con el dato REAL de tipos (FRED): la última decisión
+          // (subió/mantuvo/bajó) y la trayectoria de 6 meses → bueno/malo para cripto.
+          const f=fedReal, hike=f.dir==='hike', cut=f.dir==='cut';
+          const easing=f.traj6<-0.1, tightening=f.traj6>0.1;
+          const vc=hike?'var(--down)':cut?'var(--up)':easing?'var(--up)':tightening?'var(--down)':'#F3BA2F';
+          const verd=hike?'SUBIÓ tipos → dinero más caro → 🔴 negativo para cripto'
+            :cut?'BAJÓ tipos → más liquidez → 🟢 positivo para cripto'
+            :easing?('mantiene, pero en ciclo de BAJADAS (−'+Math.abs(f.traj6).toFixed(2)+'pp/6m) → 🟢 viento de cola')
+            :tightening?('mantiene, aún en ciclo de SUBIDAS (+'+f.traj6.toFixed(2)+'pp/6m) → 🔴 presión')
+            :'mantiene los tipos → 🟡 manda el tono de Powell (pistas del futuro)';
+          return(<div style={{fontSize:9,color:'var(--dim)',marginBottom:10,marginTop:-4,padding:'6px 9px',borderRadius:8,background:'#0A0D14',border:'1px solid var(--line2)'}} className="mono">🏦 Tipo de la Fed REAL (FRED · oficial): <b style={{color:vc}}>{f.rate.toFixed(2)}%</b> <span style={{color:'var(--faint)'}}>(rango superior)</span> · {verd}</div>);
         })()}
         {evNext.map((e,i)=>{
           const days=Math.ceil((e.d-now)/D), past=days<0;
