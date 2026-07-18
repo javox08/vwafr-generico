@@ -10,7 +10,7 @@ const jf = (u, ms = 4500) => { const c = new AbortController(); const t = setTim
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 's-maxage=120, stale-while-revalidate=300');
-  const out = { t: Date.now(), v: 'ls-20260718a', coins: [], btc: {} };
+  const out = { t: Date.now(), v: 'ls-20260718b', coins: [], btc: {} };
   // SECUENCIAL por moneda (OKX limita las peticiones simultáneas), pero los 3
   // exchanges de cada moneda en paralelo. Bybit/Binance pueden estar geo-
   // bloqueados según la región del servidor: si fallan, queda la media del resto.
@@ -355,37 +355,9 @@ module.exports = async (req, res) => {
       if (Array.isArray(su) && su.length >= 2) { const vu = i => parseFloat(su[i].value); out.jobs.unemp = { act: vu(0), prev: vu(1) }; }
     }
   } catch (e) {}
-  // TIPOS DE LA FED (FRED, oficial, sin clave): rango objetivo superior (DFEDTARU).
-  // Solo cambia en las reuniones del FOMC → detectamos la ÚLTIMA decisión (subió /
-  // mantuvo / bajó) y la trayectoria de ~6 meses, para dar veredicto al FOMC igual
-  // que al resto de datos del calendario.
-  try {
-    const cosd = new Date(Date.now() - 420 * 864e5).toISOString().slice(0, 10);
-    // TIMEOUT DURO (3.5s): si FRED no responde, NO puede colgar el relé entero.
-    const grab = async id => {
-      const c = new AbortController(); const t = setTimeout(() => c.abort(), 3500);
-      try {
-        const r = await fetch('https://fred.stlouisfed.org/graph/fredgraph.csv?id=' + id + '&cosd=' + cosd, {
-          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; VWAFR/1.0)', 'Accept': 'text/csv,*/*' }, signal: c.signal
-        });
-        const txt = await r.text();
-        return txt.replace(/^﻿/, '').trim().split(/\r?\n/).slice(1)
-          .map(l => l.split(',')).filter(x => x[1] && x[1] !== '.' && Number.isFinite(+x[1])).map(x => [x[0], +x[1]]);
-      } finally { clearTimeout(t); }
-    };
-    // los 3 en PARALELO; se usa el primero (por preferencia) que traiga datos
-    const [a, b2, c2] = await Promise.all(['DFEDTARU', 'DFF', 'FEDFUNDS'].map(id => grab(id).catch(() => null)));
-    const rows = (a && a.length > 3) ? a : (b2 && b2.length > 3) ? b2 : (c2 && c2.length > 3) ? c2 : null;
-    if (rows) {
-      const cur = rows[rows.length - 1][1];
-      let prev = cur, changeDate = null;
-      for (let i = rows.length - 2; i >= 0; i--) { if (Math.abs(rows[i][1] - cur) > 0.01) { prev = rows[i][1]; changeDate = rows[i + 1][0]; break; } }
-      const cut6 = new Date(Date.now() - 185 * 864e5).toISOString().slice(0, 10);
-      const past = rows.find(x => x[0] >= cut6);
-      const past6 = past ? past[1] : cur;
-      out.fed = { rate: cur, prev, dir: cur > prev + 0.01 ? 'hike' : cur < prev - 0.01 ? 'cut' : 'hold', changeDate, traj6: +(cur - past6).toFixed(2) };
-    }
-  } catch (e) {}
+  // (Los tipos de la Fed via FRED se retiraron: fred.stlouisfed.org NO es alcanzable
+  // desde el edge de Vercel —la petición se resetea y colgaba el relé—. El veredicto
+  // del FOMC se INFIERE en el cliente desde el IPC y el empleo REALES, que sí llegan.)
   // VOLUMEN 24h FUTUROS vs SPOT (mismo exchange = comparable): Binance BTC+ETH.
   // Futuros = derivados apalancados; spot = compra/venta real. Ratio del mercado.
   {
