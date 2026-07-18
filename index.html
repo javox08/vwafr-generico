@@ -2976,12 +2976,24 @@ function pearson(a,b){const n=Math.min(a.length,b.length);if(n<5)return null;
   for(let i=0;i<n;i++){const ax=x[i]-mx,ay=y[i]-my;num+=ax*ay;dx+=ax*ax;dy+=ay*ay;}
   return(dx&&dy)?num/Math.sqrt(dx*dy):null;}
 function dret(a){const r=[];for(let i=1;i<a.length;i++)r.push(Math.log(a[i]/a[i-1]));return r;}
+// Intervalo de Wilson para una proporción (w éxitos de n). Devuelve [lb,ub] en %.
+// Es el rango REAL donde está la probabilidad con la confianza z (z=1.64 → 90%):
+// con pocas muestras el rango es ancho → el límite inferior baja mucho → no se
+// puede vender un % alto que en realidad es ruido. Es la clave para NO inflar.
+function wilson(w,n,z){
+  if(!n)return [0,100];
+  const p=w/n, z2=z*z, d=1+z2/n;
+  const c=(p+z2/(2*n))/d, m=z*Math.sqrt(p*(1-p)/n+z2/(4*n*n))/d;
+  return [Math.max(0,c-m)*100, Math.min(1,c+m)*100];
+}
 // ── MOTOR DE CONFLUENCIAS: combos de condiciones que COINCIDIERON en el pasado y
 //    qué pasó después. "Cuando esto Y esto se juntaron, el precio subió el X% de
 //    las veces a 10 días". Point-in-time real: cada condición usa SOLO datos hasta
 //    ese día; se prueban todas las parejas y tríos entre FAMILIAS distintas
 //    (tendencia · momentum · extremos · volatilidad · rachas · velas/volumen) y el
-//    acierto se ENCOGE bayesianamente hacia la base para no vender humo con n chico. ──
+//    acierto se ENCOGE bayesianamente hacia la base. Los combos se ordenan y filtran
+//    por su LÍMITE INFERIOR de Wilson (no por el punto óptimo) para corregir el sesgo
+//    de selección: probar miles de combos y quedarse con el mejor infla el número. ──
 function confluences(cl,oh,fngMap,ohW){
   const N=cl.length; if(N<600)return null;
   const H=10, START=250;
@@ -3051,6 +3063,34 @@ function confluences(cl,oh,fngMap,ohW){
     CONDS.push({id:'wrsi-',f:'h',t:'RSI SEMANAL en sobreventa (<35)',fn:i=>wRsi[i]!=null&&wRsi[i]<35});
     CONDS.push({id:'wrsi+',f:'h',t:'RSI SEMANAL en sobrecompra (>70)',fn:i=>wRsi[i]!=null&&wRsi[i]>70});
   }
+  // familia PATRONES DE VELA: los mismos detectores del panel de patrones, ahora como
+  // condiciones → combos "patrón de vela + condición de mercado" medidos de verdad
+  // (p.ej. martillo + sobreventa + miedo extremo). Una vela no puede ser 2 patrones a la
+  // vez, por eso van en la MISMA familia (no se combinan entre sí, sí con el resto).
+  if(ohOK){
+    const bd=i=>Math.abs(oh[i].c-oh[i].o), rn=i=>oh[i].h-oh[i].l;
+    const uw=i=>oh[i].h-Math.max(oh[i].o,oh[i].c), lw=i=>Math.min(oh[i].o,oh[i].c)-oh[i].l;
+    const bu=i=>oh[i].c>oh[i].o, be=i=>oh[i].c<oh[i].o;
+    const ab=i=>{let s=0,c=0;for(let m=Math.max(1,i-14);m<i;m++){s+=Math.abs(oh[m].c-oh[m].o);c++;}return c?s/c:0;};
+    CONDS.push({id:'ham',f:'v',t:'vela martillo (giro alcista)',fn:i=>i>=3&&rn(i)>0&&lw(i)>2*bd(i)&&uw(i)<bd(i)&&oh[i-1].c<oh[i-3].c});
+    CONDS.push({id:'star',f:'v',t:'estrella fugaz (giro bajista)',fn:i=>i>=3&&rn(i)>0&&uw(i)>2*bd(i)&&lw(i)<bd(i)&&oh[i-1].c>oh[i-3].c});
+    CONDS.push({id:'engB',f:'v',t:'envolvente alcista',fn:i=>i>=1&&bu(i)&&be(i-1)&&oh[i].c>=oh[i-1].o&&oh[i].o<=oh[i-1].c});
+    CONDS.push({id:'engR',f:'v',t:'envolvente bajista',fn:i=>i>=1&&be(i)&&bu(i-1)&&oh[i].o>=oh[i-1].c&&oh[i].c<=oh[i-1].o});
+    CONDS.push({id:'doji',f:'v',t:'doji (indecisión)',fn:i=>rn(i)>0&&bd(i)<0.1*rn(i)});
+    CONDS.push({id:'maruB',f:'v',t:'marubozu alcista (fuerza)',fn:i=>bu(i)&&bd(i)>ab(i)*1.6&&uw(i)<0.1*bd(i)&&lw(i)<0.1*bd(i)});
+    CONDS.push({id:'maruR',f:'v',t:'marubozu bajista (debilidad)',fn:i=>be(i)&&bd(i)>ab(i)*1.6&&uw(i)<0.1*bd(i)&&lw(i)<0.1*bd(i)});
+    CONDS.push({id:'bigR',f:'v',t:'vela de gran rango (impulso)',fn:i=>bd(i)>0&&rn(i)>ab(i)*2.2&&bd(i)>ab(i)*1.4});
+  }
+  // familia ESTRUCTURA DE GRÁFICO (aprox. figuras): compresión del rango — la anchura
+  // de las últimas 20 velas cae al 20% más estrecho del año → consolidación previa a
+  // ruptura (triángulos, banderas, rangos). Barata y sin lookahead.
+  {
+    const rw=new Array(N).fill(null);
+    for(let i=20;i<N;i++){let hh=-Infinity,ll=Infinity;for(let k=i-19;k<=i;k++){if(cl[k]>hh)hh=cl[k];if(cl[k]<ll)ll=cl[k];}rw[i]=ll>0?(hh-ll)/ll:null;}
+    const sqz=new Array(N).fill(false);
+    for(let i=START;i<N;i++){if(rw[i]==null)continue;let lo=0,tot=0;for(let k=Math.max(0,i-249);k<=i;k++){if(rw[k]==null)continue;tot++;if(rw[k]<rw[i])lo++;}if(tot>100&&lo/tot<0.2)sqz[i]=true;}
+    CONDS.push({id:'sqz',f:'i',t:'compresión de rango (pre-ruptura · triángulo/bandera)',fn:i=>sqz[i]});
+  }
   // booleanas precalculadas
   const B=CONDS.map(c=>{const a=new Array(N).fill(false);for(let i=START;i<N;i++)a[i]=!!c.fn(i);return a;});
   // bases por HORIZONTE: % de veces que el precio estuvo más alto h días después
@@ -3065,8 +3105,15 @@ function confluences(cl,oh,fngMap,ohW){
       for(const h of HS){if(i>=N-h)continue;const r=cl[i+h]/cl[i]-1,o=st[h];o.n++;o.s+=r;if(r>0)o.w++;}}
     const m=st[H]; if(m.n<20)return null;
     const winRaw=m.w/m.n*100, win=shrTo(winRaw,m.n,base), edge=win-base;
+    // PROBABILIDAD REAL con su incertidumbre: intervalo de Wilson al 90% sobre el dato
+    // CRUDO (sin encoger). sig = ventaja que SOBREVIVE al intervalo (0 si el rango cruza
+    // la base → estadísticamente indistinguible del azar). Ordenar/filtrar por |sig|
+    // corrige el sesgo de selección: un combo con n chico y % alto por suerte tiene el
+    // límite inferior bajo y NO sube al top.
+    const [lb,ub]=wilson(m.w,m.n,1.64);
+    const sig=lb>base?lb-base:ub<base?ub-base:0;
     const hz={};for(const h of HS){const o=st[h];hz[h]=o.n>=15?{win:shrTo(o.w/o.n*100,o.n,BASE[h]),n:o.n,avg:o.s/o.n*100}:null;}
-    return {idx,n:m.n,win,winRaw,edge,avg:m.s/m.n*100,hz,labels:idx.map(j=>CONDS[j].t)};
+    return {idx,n:m.n,win,winRaw,edge,lb,ub,sig,avg:m.s/m.n*100,hz,labels:idx.map(j=>CONDS[j].t)};
   };
   const combos=[];
   for(let a=0;a<CONDS.length;a++)for(let b=a+1;b<CONDS.length;b++){
@@ -3079,11 +3126,17 @@ function confluences(cl,oh,fngMap,ohW){
   }
   const today=N-1, activeIds=[];
   for(let j=0;j<CONDS.length;j++)if(B[j][today])activeIds.push(j);
-  const active=combos.filter(c=>c.idx.every(j=>B[j][today])).sort((x,y)=>Math.abs(y.edge)-Math.abs(x.edge));
-  const top=combos.filter(c=>c.n>=40&&Math.abs(c.edge)>=6).sort((x,y)=>Math.abs(y.edge)-Math.abs(x.edge)).slice(0,6);
-  return {base,bases:BASE,H,years:+(N/365).toFixed(1),nCombos:combos.length,nConds:CONDS.length,
+  // ORDEN HONESTO: por |sig| (ventaja que sobrevive al intervalo de Wilson), no por el
+  // punto óptimo. Así los combos con n chico y % alto por suerte NO encabezan la lista.
+  const active=combos.filter(c=>c.idx.every(j=>B[j][today])).sort((x,y)=>Math.abs(y.sig)-Math.abs(x.sig)||Math.abs(y.edge)-Math.abs(x.edge));
+  // el TOP solo admite combos ESTADÍSTICAMENTE significativos (el intervalo del 90% no
+  // toca la base) y con n≥40 → nada de ventajas que son ruido.
+  const nSig=combos.filter(c=>c.sig!==0).length;
+  const top=combos.filter(c=>c.n>=40&&c.sig!==0).sort((x,y)=>Math.abs(y.sig)-Math.abs(x.sig)).slice(0,6);
+  return {base,bases:BASE,H,years:+(N/365).toFixed(1),nCombos:combos.length,nSig,nConds:CONDS.length,
     hasFng:CONDS.some(c2=>c2.f==='g'),hasWk:CONDS.some(c2=>c2.f==='h'),
-    activeConds:activeIds.map(j=>CONDS[j].t),active:active.slice(0,4),top};
+    hasVela:CONDS.some(c2=>c2.f==='v'),hasFig:CONDS.some(c2=>c2.f==='i'),
+    activeConds:activeIds.map(j=>CONDS[j].t),active:active.slice(0,8),top};
 }
 
 // Motor de patrones: precalcula indicadores, backtestea cada señal sobre el
@@ -3592,6 +3645,7 @@ function QuantView({gFunding,nav}){
   const [veloCopied,setVeloCopied]=useState(false); // feedback del botón "copiar análisis"
   const [showAllPats,setShowAllPats]=useState(false); // ver todos los patrones (la lista se capa a 12)
   const [showAllFigs,setShowAllFigs]=useState(false); // ver todas las figuras (capa a 10)
+  const [showAllRoute,setShowAllRoute]=useState(false); // Ruta más probable: ver TODAS las señales y combinaciones
   const longRef=React.useRef(null); // caché del histórico largo (no se re-pagina en cada refresco)
   const ohlcLongRef=React.useRef(null); // caché del OHLC largo (para backtests de velas fiables)
   const macroRef=React.useRef(null); // caché del ciclo económico (dato anual)
@@ -4380,7 +4434,12 @@ function QuantView({gFunding,nav}){
         const tot2=bull+bear, agree=tot2>0?Math.round(Math.abs(bull-bear)/tot2*100):0;
         const drivers=EFF.slice().sort((a,b)=>Math.abs(b.e)-Math.abs(a.e)).slice(0,3);
         const conf=(c.confl&&c.confl.active&&c.confl.active.length)?c.confl.active:null;
-        const confAvg=conf?Math.round(conf.reduce((a,x)=>a+x.win,0)/conf.length):null;
+        // para la analogía histórica prioriza los combos FIABLES (rango del 90% que no
+        // toca la base); si hoy no hay ninguno fiable, cae a todos los activos
+        const confRel=conf?conf.filter(x=>x.sig!==0):null;
+        const confUse=(confRel&&confRel.length)?confRel:conf;
+        const confAvg=confUse?Math.round(confUse.reduce((a,x)=>a+x.win,0)/confUse.length):null;
+        const confFiable=!!(confRel&&confRel.length);
         const bt=(c.coneBT&&c.coneBT.d30)?c.coneBT.d30:null;
         const nS=c.biases.length;
         // sparkline de la ruta: mediana + banda del 50% (p25–p75) del Monte Carlo
@@ -4447,17 +4506,33 @@ function QuantView({gFunding,nav}){
           </div>
           {/* LO QUE MÁS INCLINA */}
           <div style={{fontSize:8.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:1,fontWeight:700,marginBottom:6}}>Lo que más inclina la ruta</div>
-          {drivers.map((d,i)=>{const up=d.e>=0;
+          {(showAllRoute?EFF.slice().sort((a,b)=>Math.abs(b.e)-Math.abs(a.e)):drivers).map((d,i)=>{const up=d.e>TINY,dn=d.e<-TINY;
             return(<div key={i} style={{...flx({gap:8}),padding:'5px 0',borderTop:i?'1px solid #12151F':'none'}}>
-              <span className="mono" style={{fontSize:11,fontWeight:800,color:up?'var(--up)':'var(--down)',flexShrink:0,width:12}}>{up?'▲':'▼'}</span>
+              <span className="mono" style={{fontSize:11,fontWeight:800,color:up?'var(--up)':dn?'var(--down)':'var(--faint)',flexShrink:0,width:12}}>{up?'▲':dn?'▼':'◆'}</span>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{fontSize:10.5,fontWeight:700,color:'var(--txt)'}}>{d.k}</div>
                 <div style={{fontSize:8.5,color:'var(--faint)',lineHeight:1.4}}>{d.why}</div>
               </div>
             </div>);})}
+          {/* VER TODO: despliega las N señales completas + las combinaciones activas */}
+          <div onClick={()=>setShowAllRoute(v=>!v)} className="qnav" role="button" tabIndex={0}
+            onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();setShowAllRoute(v=>!v);}}}
+            style={{...flx({justifyContent:'center',gap:6}),marginTop:9,padding:'9px',borderRadius:9,cursor:'pointer',
+              background:'var(--panel2)',border:'1px solid var(--line2)'}}>
+            <span className="mono" style={{fontSize:10,fontWeight:800,color:'var(--accent)'}}>{showAllRoute?'▲ ver menos':'🔎 ver TODO · las '+nS+' señales y las combinaciones activas'}</span>
+          </div>
+          {showAllRoute&&conf&&conf.length>0&&<div style={{marginTop:11}}>
+            <div style={{fontSize:8.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:1,fontWeight:700,marginBottom:6}}>Combinaciones activas ahora ({conf.length})</div>
+            {conf.map((co,i)=>{const up=co.edge>=0,fi=co.sig!==0,cc=fi?(up?'var(--up)':'var(--down)'):'var(--faint)';
+              return(<div key={i} style={{...flx({justifyContent:'space-between',gap:8}),padding:'6px 0',borderTop:i?'1px solid #12151F':'none',opacity:fi?1:.75}}>
+                <span style={{fontSize:9.5,fontWeight:600,lineHeight:1.35,flex:1,color:'var(--dim)'}}>{co.labels.join(' + ')}</span>
+                <span className="mono" style={{fontSize:11,fontWeight:800,color:cc,flexShrink:0,textAlign:'right'}}>{co.win.toFixed(0)}%<span style={{fontSize:7,color:'var(--faint)',fontWeight:600}}> ({co.lb.toFixed(0)}–{co.ub.toFixed(0)}%)</span><div style={{fontSize:6.5,fontWeight:700,color:cc}}>{fi?'fiable · n='+co.n:'ruido · n='+co.n}</div></span>
+              </div>);})}
+            <div style={{fontSize:8,color:'var(--faint)',marginTop:6,lineHeight:1.5}}>Cada combinación es un grupo de condiciones (patrones de vela, tendencia, RSI, extremos, volatilidad, rachas, miedo/codicia, figuras…) que coinciden HOY; el % es cuántas veces subió BTC a 10 días cuando coincidieron en el pasado, con su <b>rango real (90%)</b>. "fiable" = el rango no toca la base (no es azar). Más detalle en el panel de Confluencias.</div>
+          </div>}
           {/* CONTRASTE histórico + fiabilidad */}
           {(confAvg!=null||bt)&&<div style={{marginTop:11,padding:'9px 11px',borderRadius:9,background:'#0A0D14',fontSize:9.5,lineHeight:1.55,color:'var(--dim)'}}>
-            {confAvg!=null&&<div style={{marginBottom:bt?5:0}}>🧬 Analogía histórica: cuando estas condiciones coincidieron en el pasado, BTC subió el <b style={{color:confAvg>=55?'var(--up)':confAvg<=45?'var(--down)':'var(--txt)'}}>{confAvg}%</b> de las veces a 10 días {concord?'— concuerda con la ruta ✓':'— matiza la ruta ⚠'}.</div>}
+            {confAvg!=null&&<div style={{marginBottom:bt?5:0}}>🧬 Analogía histórica ({confFiable?'combos fiables':'sin combo fiable hoy'}): cuando estas condiciones coincidieron en el pasado, BTC subió el <b style={{color:confAvg>=55?'var(--up)':confAvg<=45?'var(--down)':'var(--txt)'}}>{confAvg}%</b> de las veces a 10 días {concord?'— concuerda con la ruta ✓':'— matiza la ruta ⚠'}.</div>}
             {bt&&<div>🎯 Fiabilidad: el motor direccional acierta el <b style={{color:'var(--txt)'}}>{bt.hit}%</b> a 30 días en 9 años de backtest (IC {bt.ic>=0?'+':''}{bt.ic} · vs {bt.base}% de "siempre sube"). Hoy las señales están <b style={{color:agree>=50?'var(--up)':agree>=25?'#F3BA2F':'var(--down)'}}>{agree>=50?'muy de acuerdo':agree>=25?'moderadamente de acuerdo':'divididas'}</b> ({agree}% de consenso neto).</div>}
           </div>}
           <Fine>La probabilidad grande sale del Monte Carlo (700 caminos a 30 días) alimentado por la deriva que combina TODAS las señales ponderadas por su fiabilidad medida; los 4 escenarios son la fracción de caminos que acaba en cada tramo. El consenso cuenta cuántas señales apuntan a cada lado. La analogía histórica viene de las confluencias (combos de condiciones backtesteados). El % de acierto y el IC son del backtest walk-forward de 9 años. Todo se recalcula solo cada 2 minutos. Descriptivo y probabilístico — no es consejo financiero.</Fine>
@@ -5078,17 +5153,18 @@ function QuantView({gFunding,nav}){
           sobre el histórico real. Se recalcula solo en cada refresco (2 min). */}
       {c.confl&&(()=>{const cf=c.confl;
         const Row=({co,big})=>{const up=co.edge>=0, col=up?'var(--up)':'var(--down)';
+          const fiable=co.sig!==0; // el intervalo del 90% NO cruza la base
           return(
           <div style={{padding:big?'10px 12px':'8px 0',borderRadius:big?10:0,marginBottom:big?8:0,
-            background:big?`radial-gradient(120% 100% at 50% 0%, ${tint(col,9)} 0%, #0A0D14 70%)`:'transparent',
-            border:big?`1px solid ${tint(col,25)}`:'none',borderTop:big?undefined:'1px solid #12151F'}}>
+            background:big?`radial-gradient(120% 100% at 50% 0%, ${tint(col,fiable?9:4)} 0%, #0A0D14 70%)`:'transparent',
+            border:big?`1px solid ${tint(col,fiable?25:12)}`:'none',borderTop:big?undefined:'1px solid #12151F',opacity:fiable?1:.82}}>
             <div style={{...flx({justifyContent:'space-between',gap:8})}}>
               <span style={{fontSize:big?11:10.5,fontWeight:700,lineHeight:1.35,flex:1}}>{co.labels.join(' + ')}</span>
               <span className="mono" style={{fontSize:big?15:12.5,fontWeight:800,color:col,flexShrink:0}}>{co.win.toFixed(0)}%<span style={{fontSize:8,color:'var(--dim)'}}> sube</span></span>
             </div>
             <div style={{...flx({justifyContent:'space-between'}),marginTop:3}}>
-              <span className="mono" style={{fontSize:8,color:'var(--faint)'}}>n={co.n} veces en {cf.years} años · media {(co.avg>=0?'+':'')+co.avg.toFixed(1)}% a {cf.H}d</span>
-              <span className="mono" style={{fontSize:8.5,fontWeight:800,color:col}}>{co.edge>=0?'+':''}{co.edge.toFixed(0)} pts vs base</span>
+              <span className="mono" style={{fontSize:8,color:'var(--faint)'}}>n={co.n} en {cf.years} años · real {co.lb.toFixed(0)}–{co.ub.toFixed(0)}% (90%)</span>
+              <span className="mono" style={{fontSize:8.5,fontWeight:800,color:fiable?col:'var(--faint)'}}>{fiable?((co.sig>=0?'+':'')+co.sig.toFixed(0)+' pts fiable ✓'):'sin ventaja fiable'}</span>
             </div>
             {big&&co.hz&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:6,marginTop:7}}>
               {[5,10,20].map(h=>{const z=co.hz[h];if(!z)return <div key={h}/>;
@@ -5103,23 +5179,23 @@ function QuantView({gFunding,nav}){
         <div style={panel({marginBottom:14,padding:16})}>
           <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
             <span style={eyebrow}>🧬 Confluencias · cuando se juntan</span>
-            <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>{cf.nCombos} combos · {cf.years} años</span>
+            <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>{cf.nCombos} combos · {cf.nSig} fiables · {cf.years} años</span>
           </div>
-          <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:10,lineHeight:1.5}}>Cruza <b style={{color:'var(--txt)'}}>{cf.nConds} condiciones reales</b> (tendencia · RSI · extremos · volatilidad · rachas · velas/volumen{cf.hasFng?' · miedo/codicia':''}{cf.hasWk?' · RSI semanal':''}) en parejas y tríos, y mide <b style={{color:'var(--txt)'}}>qué pasó las veces que coincidieron</b> a {cf.H} días vista. Base histórica: sube el {cf.base.toFixed(0)}% de las veces.</div>
+          <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:10,lineHeight:1.5}}>Cruza <b style={{color:'var(--txt)'}}>{cf.nConds} condiciones reales</b> (tendencia · RSI · extremos · volatilidad · rachas · volumen{cf.hasVela?' · patrones de vela':''}{cf.hasFig?' · figuras (compresión)':''}{cf.hasFng?' · miedo/codicia':''}{cf.hasWk?' · RSI semanal':''}) en parejas y tríos, y mide <b style={{color:'var(--txt)'}}>qué pasó las veces que coincidieron</b> a {cf.H} días vista. El % es la <b style={{color:'var(--txt)'}}>probabilidad real</b> con su rango de confianza, no un número inflado. Base histórica: sube el {cf.base.toFixed(0)}% de las veces.</div>
           {cf.active.length?(<>
             <div style={{fontSize:8.5,color:'var(--accent)',textTransform:'uppercase',letterSpacing:1,fontWeight:800,marginBottom:7}}>⚡ Activas AHORA MISMO</div>
-            {cf.active.map((co,i)=><Row key={i} co={co} big/>)}
+            {cf.active.slice(0,4).map((co,i)=><Row key={i} co={co} big/>)}
           </>):(
             <div style={{textAlign:'center',padding:'10px',borderRadius:10,background:'#0A0D14',marginBottom:8}}>
               <div style={{fontSize:10.5,color:'var(--dim)'}}>Hoy no coincide ningún combo con ventaja medida</div>
               <div style={{fontSize:8.5,color:'var(--faint)',marginTop:3}}>la mayoría del tiempo el mercado no da señal — decirlo también es información</div>
             </div>)}
           {cf.activeConds.length>0&&<div style={{fontSize:8.5,color:'var(--dim)',margin:'2px 0 10px',lineHeight:1.5}}>Condiciones sueltas activas hoy: {cf.activeConds.join(' · ')}</div>}
-          {cf.top.length>0&&<>
-            <div style={{fontSize:8.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:1,fontWeight:700,margin:'10px 0 2px'}}>Los combos con más ventaja de la historia</div>
+          {cf.top.length>0?<>
+            <div style={{fontSize:8.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:1,fontWeight:700,margin:'10px 0 2px'}}>Los combos MÁS FIABLES de la historia</div>
             {cf.top.map((co,i)=><Row key={i} co={co}/>)}
-          </>}
-          <Fine>Cada combo exige que TODAS sus condiciones se den el mismo día (velas cerradas). El % es la probabilidad de que el precio esté MÁS ALTO ese nº de días después — los activos se miden a <b>5, 10 y 20 días</b> (cada horizonte contra SU base histórica); el % principal y las listas van a {cf.H} días. Todo va <b>encogido bayesianamente</b> hacia la base (fuerza 15) para que una muestra chica no venda humo: con pocas veces, el número se queda cerca de la base a propósito. "pts vs base" = ventaja sobre operar al azar cualquier día. Solo se listan combos con n≥20 (parejas) o n≥25 (tríos), y el top exige n≥40. Las condiciones de miedo/codicia (alternative.me) cubren menos años que el precio, así que sus combos tienen n menor. Descriptivo, no es consejo financiero.</Fine>
+          </>:<div style={{fontSize:8.5,color:'var(--faint)',marginTop:10,lineHeight:1.5}}>Ningún combo supera hoy el filtro de fiabilidad (rango del 90% sin tocar la base). Preferimos no enseñar ventajas que son ruido.</div>}
+          <Fine>Cada combo exige que TODAS sus condiciones se den el mismo día (velas cerradas). El % es la probabilidad de que el precio esté MÁS ALTO ese nº de días después — los activos se miden a <b>5, 10 y 20 días</b> (cada horizonte contra SU base histórica); el % principal va a {cf.H} días. <b>Para no inflar números</b>: (1) el % se <b>encoge bayesianamente</b> hacia la base con muestras chicas; (2) se muestra el <b>rango REAL de Wilson al 90%</b> (con pocos casos el rango es ancho); (3) el orden y el top usan el <b>límite inferior</b> de ese rango, no el punto óptimo — así un combo con n chico y % alto por suerte NO encabeza la lista (corrección del sesgo de selección al probar {cf.nCombos} combos). "fiable ✓" = el rango del 90% no toca la base; "sin ventaja fiable" = indistinguible del azar. <b>Todo se recalcula solo cada 2 min</b> con el histórico completo, que crece cada día → los % se actualizan con el tiempo. Descriptivo, no es consejo financiero.</Fine>
         </div>);})()}
 
       {/* PATRONES GRÁFICOS (figuras clásicas estilo Binance, con estadística) */}
