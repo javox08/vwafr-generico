@@ -361,20 +361,32 @@ module.exports = async (req, res) => {
   // que al resto de datos del calendario.
   try {
     const cosd = new Date(Date.now() - 420 * 864e5).toISOString().slice(0, 10);
-    const txt = await fetch('https://fred.stlouisfed.org/graph/fredgraph.csv?id=DFEDTARU&cosd=' + cosd, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; VWAFR/1.0)', 'Accept': 'text/csv,*/*' }
-    }).then(r => r.text());
-    const rows = txt.trim().split('\n').slice(1).map(l => l.split(',')).filter(r => r[1] && r[1] !== '.' && Number.isFinite(+r[1]));
-    if (rows.length > 5) {
-      const cur = parseFloat(rows[rows.length - 1][1]);
+    const grab = async id => {
+      const r = await fetch('https://fred.stlouisfed.org/graph/fredgraph.csv?id=' + id + '&cosd=' + cosd, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; VWAFR/1.0)', 'Accept': 'text/csv,*/*' }
+      });
+      const txt = await r.text();
+      const rows = txt.replace(/^﻿/, '').trim().split(/\r?\n/).slice(1)
+        .map(l => l.split(',')).filter(x => x[1] && x[1] !== '.' && Number.isFinite(+x[1]))
+        .map(x => [x[0], +x[1]]);
+      return { status: r.status, n: rows.length, rows };
+    };
+    let rows = null, dbg = [];
+    for (const id of ['DFEDTARU', 'DFF', 'FEDFUNDS']) {
+      try { const g = await grab(id); dbg.push(id + ':' + g.status + '/' + g.n); if (g.n > 3) { rows = g.rows; break; } }
+      catch (e) { dbg.push(id + ':err'); }
+    }
+    out.fedDbg = dbg.join(' ');
+    if (rows && rows.length > 3) {
+      const cur = rows[rows.length - 1][1];
       let prev = cur, changeDate = null;
-      for (let i = rows.length - 2; i >= 0; i--) { const v = parseFloat(rows[i][1]); if (Math.abs(v - cur) > 0.01) { prev = v; changeDate = rows[i + 1][0]; break; } }
+      for (let i = rows.length - 2; i >= 0; i--) { if (Math.abs(rows[i][1] - cur) > 0.01) { prev = rows[i][1]; changeDate = rows[i + 1][0]; break; } }
       const cut6 = new Date(Date.now() - 185 * 864e5).toISOString().slice(0, 10);
-      const past = rows.find(r => r[0] >= cut6);
-      const past6 = past ? parseFloat(past[1]) : cur;
+      const past = rows.find(x => x[0] >= cut6);
+      const past6 = past ? past[1] : cur;
       out.fed = { rate: cur, prev, dir: cur > prev + 0.01 ? 'hike' : cur < prev - 0.01 ? 'cut' : 'hold', changeDate, traj6: +(cur - past6).toFixed(2) };
     }
-  } catch (e) {}
+  } catch (e) { out.fedDbg = 'throw:' + (e && e.message || e); }
   // VOLUMEN 24h FUTUROS vs SPOT (mismo exchange = comparable): Binance BTC+ETH.
   // Futuros = derivados apalancados; spot = compra/venta real. Ratio del mercado.
   {
