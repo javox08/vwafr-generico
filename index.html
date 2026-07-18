@@ -5470,18 +5470,31 @@ function QuantView({gFunding,nav}){
             :'salió EN LÍNEA con lo previsto → 🟡 impacto pequeño';
           return(<div style={{fontSize:9,color:'var(--dim)',marginBottom:10,marginTop:-6,padding:'6px 9px',borderRadius:8,background:'#0A0D14',border:'1px solid var(--line2)'}} className="mono">📊 Último IPC EE.UU. REAL (BLS · oficial): <b style={{color:vc}}>{cpiReal.yoy}% interanual</b> · {cpiReal.mom>=0?'+':''}{cpiReal.mom}% mensual <span style={{color:'var(--faint)'}}>({cpiReal.month})</span> · {verd}{!defl&&cpiReal.yoy>=2.5?' · sigue sobre el objetivo 2% de la Fed':''}</div>);
         })()}
-        {fedReal&&(()=>{
-          // VEREDICTO del FOMC con el dato REAL de tipos (FRED): la última decisión
-          // (subió/mantuvo/bajó) y la trayectoria de 6 meses → bueno/malo para cripto.
-          const f=fedReal, hike=f.dir==='hike', cut=f.dir==='cut';
-          const easing=f.traj6<-0.1, tightening=f.traj6>0.1;
-          const vc=hike?'var(--down)':cut?'var(--up)':easing?'var(--up)':tightening?'var(--down)':'#F3BA2F';
-          const verd=hike?'SUBIÓ tipos → dinero más caro → 🔴 negativo para cripto'
-            :cut?'BAJÓ tipos → más liquidez → 🟢 positivo para cripto'
-            :easing?('mantiene, pero en ciclo de BAJADAS (−'+Math.abs(f.traj6).toFixed(2)+'pp/6m) → 🟢 viento de cola')
-            :tightening?('mantiene, aún en ciclo de SUBIDAS (+'+f.traj6.toFixed(2)+'pp/6m) → 🔴 presión')
-            :'mantiene los tipos → 🟡 manda el tono de Powell (pistas del futuro)';
-          return(<div style={{fontSize:9,color:'var(--dim)',marginBottom:10,marginTop:-4,padding:'6px 9px',borderRadius:8,background:'#0A0D14',border:'1px solid var(--line2)'}} className="mono">🏦 Tipo de la Fed REAL (FRED · oficial): <b style={{color:vc}}>{f.rate.toFixed(2)}%</b> <span style={{color:'var(--faint)'}}>(rango superior)</span> · {verd}</div>);
+        {(fedReal||cpiReal)&&(()=>{
+          // VEREDICTO del FOMC. Preferencia: dato REAL de tipos (FRED). Si el relé no lo
+          // trae, se INFIERE el sesgo probable de la Fed desde el IPC y el empleo reales
+          // (marcado como "probable"), para que el FOMC nunca se quede sin lectura.
+          if(fedReal){
+            const f=fedReal, hike=f.dir==='hike', cut=f.dir==='cut';
+            const easing=f.traj6<-0.1, tightening=f.traj6>0.1;
+            const vc=hike?'var(--down)':cut?'var(--up)':easing?'var(--up)':tightening?'var(--down)':'#F3BA2F';
+            const verd=hike?'SUBIÓ tipos → dinero más caro → 🔴 negativo para cripto'
+              :cut?'BAJÓ tipos → más liquidez → 🟢 positivo para cripto'
+              :easing?('mantiene, pero en ciclo de BAJADAS (−'+Math.abs(f.traj6).toFixed(2)+'pp/6m) → 🟢 viento de cola')
+              :tightening?('mantiene, aún en ciclo de SUBIDAS (+'+f.traj6.toFixed(2)+'pp/6m) → 🔴 presión')
+              :'mantiene los tipos → 🟡 manda el tono de Powell (pistas del futuro)';
+            return(<div style={{fontSize:9,color:'var(--dim)',marginBottom:10,marginTop:-4,padding:'6px 9px',borderRadius:8,background:'#0A0D14',border:'1px solid var(--line2)'}} className="mono">🏦 Tipo de la Fed REAL (FRED · oficial): <b style={{color:vc}}>{f.rate.toFixed(2)}%</b> <span style={{color:'var(--faint)'}}>(rango superior)</span> · {verd}</div>);
+          }
+          // inferencia desde datos reales (IPC + empleo)
+          const infl=Number.isFinite(cpiReal.yoy)?cpiReal.yoy:null;
+          const cooling=Number.isFinite(cpiReal.estLastYoy)&&(cpiReal.yoy-cpiReal.estLastYoy)<-0.05;
+          const hot=Number.isFinite(cpiReal.estLastYoy)&&(cpiReal.yoy-cpiReal.estLastYoy)>0.05;
+          const weakJobs=jobsReal&&jobsReal.nfp&&Number.isFinite(jobsReal.nfp.act)&&Number.isFinite(jobsReal.nfp.estLast)&&(jobsReal.nfp.act-jobsReal.nfp.estLast)<-30;
+          let vc,txt;
+          if((cooling||weakJobs)&&(infl==null||infl<3.5)){vc='var(--up)';txt='sesgo probable BLANDO (inflación cediendo'+(weakJobs?' y empleo flojo':'')+') → 🟢 favorable a cripto';}
+          else if(hot||(infl!=null&&infl>=3.5)){vc='var(--down)';txt='sesgo probable DURO (inflación '+(hot?'caliente':'aún alta')+') → 🔴 presión para cripto';}
+          else{vc='#F3BA2F';txt='sesgo probable NEUTRAL → 🟡 manda el tono de Powell';}
+          return(<div style={{fontSize:9,color:'var(--dim)',marginBottom:10,marginTop:-4,padding:'6px 9px',borderRadius:8,background:'#0A0D14',border:'1px solid var(--line2)'}} className="mono">🏦 Sesgo de la Fed (según IPC y empleo reales): <b style={{color:vc}}>{txt}</b></div>);
         })()}
         {evNext.map((e,i)=>{
           const days=Math.ceil((e.d-now)/D), past=days<0;
