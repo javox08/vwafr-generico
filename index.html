@@ -5458,14 +5458,16 @@ function QuantView({gFunding,nav}){
           // VEREDICTO por la SORPRESA (actual vs previsión), NO por el nivel absoluto:
           // el mercado reacciona a si sale por encima/debajo de lo esperado. Así esta
           // nota y la tarjeta del dato de abajo dicen SIEMPRE lo mismo (no se contradicen).
+          const defl=Number.isFinite(cpiReal.yoy)&&cpiReal.yoy<0;
           const s=Number.isFinite(cpiReal.estLastYoy)?+(cpiReal.yoy-cpiReal.estLastYoy).toFixed(1):null;
           const hot=s!=null&&s>0.05, cool=s!=null&&s<-0.05;
-          const vc=hot?'var(--down)':cool?'var(--up)':s==null?'var(--dim)':'#F3BA2F';
-          const verd=s==null?'(sin previsión con la que comparar)'
+          const vc=(defl||hot)?'var(--down)':cool?'var(--up)':s==null?'var(--dim)':'#F3BA2F';
+          const verd=defl?'inflación NEGATIVA → 🔴 riesgo de deflación (no es alivio)'
+            :s==null?'(sin previsión con la que comparar)'
             :hot?('salió POR ENCIMA de lo previsto ('+(s>=0?'+':'')+s+'pp) → 🔴 negativo para cripto')
             :cool?('salió POR DEBAJO de lo previsto ('+s+'pp) → 🟢 positivo para cripto')
             :'salió EN LÍNEA con lo previsto → 🟡 impacto pequeño';
-          return(<div style={{fontSize:9,color:'var(--dim)',marginBottom:10,marginTop:-6,padding:'6px 9px',borderRadius:8,background:'#0A0D14',border:'1px solid var(--line2)'}} className="mono">📊 Último IPC EE.UU. REAL (BLS · oficial): <b style={{color:vc}}>{cpiReal.yoy}% interanual</b> · {cpiReal.mom>=0?'+':''}{cpiReal.mom}% mensual <span style={{color:'var(--faint)'}}>({cpiReal.month})</span> · {verd}{cpiReal.yoy>=2.5?' · sigue sobre el objetivo 2% de la Fed':''}</div>);
+          return(<div style={{fontSize:9,color:'var(--dim)',marginBottom:10,marginTop:-6,padding:'6px 9px',borderRadius:8,background:'#0A0D14',border:'1px solid var(--line2)'}} className="mono">📊 Último IPC EE.UU. REAL (BLS · oficial): <b style={{color:vc}}>{cpiReal.yoy}% interanual</b> · {cpiReal.mom>=0?'+':''}{cpiReal.mom}% mensual <span style={{color:'var(--faint)'}}>({cpiReal.month})</span> · {verd}{!defl&&cpiReal.yoy>=2.5?' · sigue sobre el objetivo 2% de la Fed':''}</div>);
         })()}
         {evNext.map((e,i)=>{
           const days=Math.ceil((e.d-now)/D), past=days<0;
@@ -5508,6 +5510,7 @@ function QuantView({gFunding,nav}){
           let evBox=null;
           if(e.t==='CPI'&&cpiReal&&(isLast||isNext)){const rel=isLast;
             evBox={rel,unit:'%',dec:1,thr:0.05,
+              defl:rel&&Number.isFinite(cpiReal.yoy)&&cpiReal.yoy<0, // deflación = riesgo, no alivio
               ant: rel?cpiReal.prevYoy:cpiReal.yoy,       antM: rel?cpiReal.prevMom:cpiReal.mom,
               prev:rel?cpiReal.estLastYoy:cpiReal.estYoy, prevM:rel?cpiReal.estLastMom:cpiReal.estMom,
               act: rel?cpiReal.yoy:null,                  actM: rel?cpiReal.mom:null,
@@ -5515,6 +5518,7 @@ function QuantView({gFunding,nav}){
               rHot:'inflación más alta de lo esperado → Fed más dura',rCool:'inflación cede → Fed más blanda'};}
           else if(e.t==='IPP'&&ppiReal&&(isLast||isNext)){const rel=isLast;
             evBox={rel,unit:'%',dec:1,thr:0.05,
+              defl:rel&&Number.isFinite(ppiReal.yoy)&&ppiReal.yoy<0,
               ant: rel?ppiReal.prevYoy:ppiReal.yoy,       antM: rel?ppiReal.prevMom:ppiReal.mom,
               prev:rel?ppiReal.estLastYoy:ppiReal.estYoy, prevM:rel?ppiReal.estLastMom:ppiReal.estMom,
               act: rel?ppiReal.yoy:null,                  actM: rel?ppiReal.mom:null,
@@ -5523,7 +5527,8 @@ function QuantView({gFunding,nav}){
           else if(e.t==='EMPLEO'&&jobsReal&&(isLast||isNext)){const rel=isLast,J=jobsReal;
             // RECESIÓN: empleo MUY débil (se destruye empleo, o falla la previsión por
             // mucho) NO es bueno para cripto aunque implique Fed más blanda → risk-off.
-            const rec=rel&&Number.isFinite(J.nfp.act)&&(J.nfp.act<0||(Number.isFinite(J.nfp.estLast)&&(J.nfp.act-J.nfp.estLast)<-125));
+            const unJump=J.unemp&&Number.isFinite(J.unemp.act)&&Number.isFinite(J.unemp.prev)?(J.unemp.act-J.unemp.prev):null;
+            const rec=rel&&((Number.isFinite(J.nfp.act)&&(J.nfp.act<0||(Number.isFinite(J.nfp.estLast)&&(J.nfp.act-J.nfp.estLast)<-125)))||(unJump!=null&&unJump>=0.3));
             evBox={rel,unit:'k',dec:0,thr:10,rec,
               ant: rel?J.nfp.prev:J.nfp.act, antM:null,
               prev:rel?J.nfp.estLast:J.nfp.est, prevM:null,
@@ -5556,6 +5561,7 @@ function QuantView({gFunding,nav}){
                 let vc,vt,vd;
                 if(cb.act!=null){
                   if(cb.rec){vc='var(--down)';vt='🔴 NEGATIVO para cripto (miedo a recesión)';vd='empleo MUY débil ('+su+') → aunque la Fed pueda bajar tipos, el miedo a RECESIÓN manda → risk-off: cae todo, también cripto (dólar y bonos hacen de refugio)';}
+                  else if(cb.defl){vc='var(--down)';vt='🔴 NEGATIVO para cripto (deflación)';vd='inflación NEGATIVA ('+fu(cb.act)+') → señal de parón de la demanda / deflación, no de alivio → risk-off, malo también para cripto';}
                   else if(hot){vc='var(--down)';vt='🔴 NEGATIVO para cripto';vd='salió POR ENCIMA de lo previsto ('+su+') → '+cb.rHot+' · 🔴 cripto y bolsa · 🟢 dólar';}
                   else if(cool){vc='var(--up)';vt='🟢 POSITIVO para cripto';vd='salió POR DEBAJO de lo previsto ('+su+') → '+cb.rCool+' · 🟢 cripto y bolsa · 🔴 dólar';}
                   else{vc='#F3BA2F';vt='🟡 En línea con lo previsto';vd='sin apenas sorpresa → impacto limitado; manda la reacción propia del mercado';}
@@ -5615,7 +5621,7 @@ function QuantView({gFunding,nav}){
             </span>
           </div>);})()}
         <p style={{fontSize:9.5,color:'var(--faint)',lineHeight:1.5,marginTop:10}}>
-          <b style={{color:'var(--txt)'}}>🟢 = bueno · 🔴 = malo</b> para cada activo según el resultado (el mercado reacciona a la SORPRESA: dato real vs lo previo/esperado). Ej.: IPC más alto de lo esperado → la Fed sube/mantiene tipos → malo para cripto y bolsa, bueno para el dólar. El <b>número que salió</b> del IPC es oficial (BLS); el <b>esperado</b> es una estimación por tendencia (media de 6 meses) — <b>no</b> el consenso de mercado, que no tiene API pública gratis. Se mantienen 5 días tras el evento para ver el resultado. <b style={{color:'var(--txt)'}}>Dos datos pueden apuntar en direcciones opuestas</b> (p. ej. IPC caliente → 🔴 y empleo débil → 🟢) y NO es un error: cada uno se compara con SU previsión, y ambos influyen en la Fed por caminos distintos — el mercado pondera el conjunto. <b style={{color:'var(--txt)'}}>Todo se actualiza solo</b>: los números salen de BLS en cuanto se publican y el calendario se auto-extiende (IPC ~día 12 · IPP ~día 13 · empleo 1er viernes · FOMC 8 reuniones/año). En las 48h alrededor la volatilidad se dispara: el modelo fuerza <b style={{color:'var(--down)'}}>NO-GO</b>. Los <b>cierres de gobierno</b> de EE.UU. retrasan datos macro.
+          <b style={{color:'var(--txt)'}}>🟢 = bueno · 🔴 = malo</b> para cada activo según el resultado (el mercado reacciona a la SORPRESA: dato real vs lo previo/esperado). Ej.: IPC más alto de lo esperado → la Fed sube/mantiene tipos → malo para cripto y bolsa, bueno para el dólar. El <b>número que salió</b> del IPC es oficial (BLS); el <b>esperado</b> es una estimación por tendencia (media de 6 meses) — <b>no</b> el consenso de mercado, que no tiene API pública gratis. Se mantienen 5 días tras el evento para ver el resultado. <b style={{color:'var(--txt)'}}>Dos datos pueden apuntar en direcciones opuestas</b> (p. ej. IPC caliente → 🔴 y empleo algo débil → 🟢) y NO es un error: cada uno se compara con SU previsión, y ambos influyen en la Fed por caminos distintos — el mercado pondera el conjunto. <b style={{color:'var(--txt)'}}>Ojo al matiz clave</b>: un dato débil suele ser 🟢 (la Fed baja tipos), pero si es <b>MUY</b> débil se vuelve 🔴 — empleo que destruye puestos o paro que se dispara = miedo a <b>recesión</b>; inflación negativa = <b>deflación</b>. En esos extremos el "malo pero bueno" pasa a ser malo de verdad (risk-off), y así lo marca la tarjeta. <b style={{color:'var(--txt)'}}>Todo se actualiza solo</b>: los números salen de BLS en cuanto se publican y el calendario se auto-extiende (IPC ~día 12 · IPP ~día 13 · empleo 1er viernes · FOMC 8 reuniones/año). En las 48h alrededor la volatilidad se dispara: el modelo fuerza <b style={{color:'var(--down)'}}>NO-GO</b>. Los <b>cierres de gobierno</b> de EE.UU. retrasan datos macro.
         </p>
       </div>
 
