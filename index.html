@@ -5454,7 +5454,19 @@ function QuantView({gFunding,nav}){
               border:'1px solid '+(hot2?'rgba(255,84,112,.35)':'rgba(110,139,255,.3)'),
               animation:hot2?'breathe 2s ease infinite':'none'}}>{hot2?'⚠ ':'⏰ '}{nx.t} {dd===0?'HOY':'en '+dd+'d'}{hot2?' · volatilidad':''}</span>);})()}
         </div>
-        {cpiReal&&<div style={{fontSize:9,color:'var(--dim)',marginBottom:10,marginTop:-6,padding:'6px 9px',borderRadius:8,background:'#0A0D14',border:'1px solid var(--line2)'}} className="mono">📊 Último IPC EE.UU. REAL (BLS · oficial): <b style={{color:cpiReal.yoy>=3?'var(--down)':'var(--up)'}}>{cpiReal.yoy}% interanual</b> · {cpiReal.mom>=0?'+':''}{cpiReal.mom}% mensual <span style={{color:'var(--faint)'}}>({cpiReal.month})</span> {cpiReal.yoy>=3?'· inflación aún alta → presión para tipos altos (🔴 cripto)':'· inflación contenida → margen para bajar tipos (🟢 cripto)'}</div>}
+        {cpiReal&&(()=>{
+          // VEREDICTO por la SORPRESA (actual vs previsión), NO por el nivel absoluto:
+          // el mercado reacciona a si sale por encima/debajo de lo esperado. Así esta
+          // nota y la tarjeta del dato de abajo dicen SIEMPRE lo mismo (no se contradicen).
+          const s=Number.isFinite(cpiReal.estLastYoy)?+(cpiReal.yoy-cpiReal.estLastYoy).toFixed(1):null;
+          const hot=s!=null&&s>0.05, cool=s!=null&&s<-0.05;
+          const vc=hot?'var(--down)':cool?'var(--up)':s==null?'var(--dim)':'#F3BA2F';
+          const verd=s==null?'(sin previsión con la que comparar)'
+            :hot?('salió POR ENCIMA de lo previsto ('+(s>=0?'+':'')+s+'pp) → 🔴 negativo para cripto')
+            :cool?('salió POR DEBAJO de lo previsto ('+s+'pp) → 🟢 positivo para cripto')
+            :'salió EN LÍNEA con lo previsto → 🟡 impacto pequeño';
+          return(<div style={{fontSize:9,color:'var(--dim)',marginBottom:10,marginTop:-6,padding:'6px 9px',borderRadius:8,background:'#0A0D14',border:'1px solid var(--line2)'}} className="mono">📊 Último IPC EE.UU. REAL (BLS · oficial): <b style={{color:vc}}>{cpiReal.yoy}% interanual</b> · {cpiReal.mom>=0?'+':''}{cpiReal.mom}% mensual <span style={{color:'var(--faint)'}}>({cpiReal.month})</span> · {verd}{cpiReal.yoy>=2.5?' · sigue sobre el objetivo 2% de la Fed':''}</div>);
+        })()}
         {evNext.map((e,i)=>{
           const days=Math.ceil((e.d-now)/D), past=days<0;
           // GUÍA DE IMPACTO según el resultado, para cripto/dólar/acciones (🟢 bueno · 🔴 malo).
@@ -5509,12 +5521,15 @@ function QuantView({gFunding,nav}){
               hist:ppiReal.hist||null,
               rHot:'costes de producción al alza → anticipan IPC alto → Fed más dura',rCool:'inflación mayorista cede → el IPC vendrá más suave'};}
           else if(e.t==='EMPLEO'&&jobsReal&&(isLast||isNext)){const rel=isLast,J=jobsReal;
-            evBox={rel,unit:'k',dec:0,thr:10,
+            // RECESIÓN: empleo MUY débil (se destruye empleo, o falla la previsión por
+            // mucho) NO es bueno para cripto aunque implique Fed más blanda → risk-off.
+            const rec=rel&&Number.isFinite(J.nfp.act)&&(J.nfp.act<0||(Number.isFinite(J.nfp.estLast)&&(J.nfp.act-J.nfp.estLast)<-125));
+            evBox={rel,unit:'k',dec:0,thr:10,rec,
               ant: rel?J.nfp.prev:J.nfp.act, antM:null,
               prev:rel?J.nfp.estLast:J.nfp.est, prevM:null,
               act: rel?J.nfp.act:null, actM:null,
               hist:J.nfp.hist||null,
-              rHot:'economía fuerte (más empleo) → Fed más dura',rCool:'empleo más débil → Fed más blanda (si es MUY débil, ojo recesión)',
+              rHot:'economía fuerte (más empleo) → Fed más dura',rCool:'empleo algo más débil → Fed más blanda',
               sub:J.unemp?(rel?('Paro: '+J.unemp.prev+'% → '+J.unemp.act+'%'):('Paro actual: '+J.unemp.act+'%')):null};}
           return(
             <div key={i} style={{padding:'9px 0',borderTop:i?'1px solid #12151F':'none',opacity:past?.9:1}}>
@@ -5540,7 +5555,8 @@ function QuantView({gFunding,nav}){
                 const actCol=cb.act==null?'var(--txt)':hot?'var(--down)':cool?'var(--up)':'#F3BA2F';
                 let vc,vt,vd;
                 if(cb.act!=null){
-                  if(hot){vc='var(--down)';vt='🔴 NEGATIVO para cripto';vd='salió POR ENCIMA de lo previsto ('+su+') → '+cb.rHot+' · 🔴 cripto y bolsa · 🟢 dólar';}
+                  if(cb.rec){vc='var(--down)';vt='🔴 NEGATIVO para cripto (miedo a recesión)';vd='empleo MUY débil ('+su+') → aunque la Fed pueda bajar tipos, el miedo a RECESIÓN manda → risk-off: cae todo, también cripto (dólar y bonos hacen de refugio)';}
+                  else if(hot){vc='var(--down)';vt='🔴 NEGATIVO para cripto';vd='salió POR ENCIMA de lo previsto ('+su+') → '+cb.rHot+' · 🔴 cripto y bolsa · 🟢 dólar';}
                   else if(cool){vc='var(--up)';vt='🟢 POSITIVO para cripto';vd='salió POR DEBAJO de lo previsto ('+su+') → '+cb.rCool+' · 🟢 cripto y bolsa · 🔴 dólar';}
                   else{vc='#F3BA2F';vt='🟡 En línea con lo previsto';vd='sin apenas sorpresa → impacto limitado; manda la reacción propia del mercado';}
                 }else{vc='var(--accent)';vt='📊 Cuando salga el dato:';vd=(cb.prev!=null?'si sale POR ENCIMA de ~'+fu(cb.prev)+' → 🔴 cripto y bolsa / 🟢 dólar · si queda POR DEBAJO → 🟢 cripto y bolsa / 🔴 dólar':'dato alto → 🔴 cripto · dato bajo → 🟢 cripto');}
