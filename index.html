@@ -1200,7 +1200,7 @@ function PosView({gFunding,cot}){
             </div>
             <span className="mono" style={{fontSize:9,fontWeight:800,width:48,flexShrink:0,textAlign:'right',color:col}}>{(x.cons*100).toFixed(0)}·{((1-x.cons)*100).toFixed(0)}</span>
           </div>);})}
-        <div style={{fontSize:7.5,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>El <b style={{color:'var(--txt)'}}>$ long/$ short</b> es el interés abierto REAL (sumando {hasD?exCount:'los'} exchanges del relé) repartido por el sesgo de cohortes de cada moneda — la misma idea que la columna de $ de Coinglass (es una estimación: en derivados el notional largo = corto = OI, lo que cambia es de qué lado está cada grupo). Cifras a la derecha = % long · % short. El detalle por exchange (Binance·OKX·Bybit) está más abajo, solo para BTC.</div>
+        <div style={{fontSize:7.5,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>El <b style={{color:'var(--txt)'}}>$ long/$ short</b> es el interés abierto REAL en dólares (sumando {hasD?exCount:'los'} exchanges y <b style={{color:'var(--txt)'}}>todos los contratos: perp USDT + USDC + inverse/coin-margined</b> donde el exchange lo publica), repartido por el sesgo de cohortes de cada moneda — la misma idea que la columna de $ de Coinglass (es una estimación: en derivados el notional largo = corto = OI, lo que cambia es de qué lado está cada grupo). Cifras a la derecha = % long · % short. El detalle por exchange (Binance·OKX·Bybit) está más abajo, solo para BTC.</div>
       </div>);
     })()}
     {/* qué se puede medir y qué no */}

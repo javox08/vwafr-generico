@@ -15,7 +15,7 @@ const jf = (u, ms = 4000) => { const c = new AbortController(); const t = setTim
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
-  const out = { t: Date.now(), ex: { Gate: {}, MEXC: {}, Binance: {}, Bybit: {}, Bitget: {},
+  const out = { t: Date.now(), v: 'fr-20260718a', ex: { Gate: {}, MEXC: {}, Binance: {}, Bybit: {}, Bitget: {},
     Kraken: {}, HTX: {}, CoinEx: {}, Bitfinex: {}, dYdX: {}, WhiteBIT: {}, Phemex: {}, Deribit: {}, Hyperliquid: {} } };
   for (const c of COINS) {
     try {
@@ -37,26 +37,44 @@ module.exports = async (req, res) => {
       if (Number.isFinite(f) && Number.isFinite(oi) && oi > 0) out.ex.MEXC[m[1]] = { f: +(f * 100).toFixed(4), oi: +(oi / 1e9).toFixed(3) };
     }
   } catch (e) {}
-  // ── Binance (fapi): funding (premiumIndex bulk) + OI (por moneda, en paralelo). ──
+  // ── Binance: funding (premiumIndex bulk) + OI en $ de TODOS los contratos: perp USDT,
+  //    perp USDC y coin-margined/inverse (dapi) para BTC/ETH → todo sumado y en dólares. ──
   try {
-    const pi = await jf('https://fapi.binance.com/fapi/v1/premiumIndex');
+    const [pi, dpi] = await Promise.all([
+      jf('https://fapi.binance.com/fapi/v1/premiumIndex'),
+      jf('https://dapi.binance.com/dapi/v1/premiumIndex').catch(() => null)
+    ]);
     const pm = {}; if (Array.isArray(pi)) for (const t of pi) pm[t.symbol] = t;
+    const dm = {}; if (Array.isArray(dpi)) for (const t of dpi) dm[t.symbol] = t;
+    const cval = { BTC: 100, ETH: 10 }; // valor de contrato coin-M (USD)
     await Promise.all(COINS.map(async c => {
       const s = c + 'USDT', p = pm[s]; if (!p) return;
       const f = parseFloat(p.lastFundingRate); if (!Number.isFinite(f)) return;
-      let oi = 0; const o = await jf('https://fapi.binance.com/fapi/v1/openInterest?symbol=' + s);
-      const v = parseFloat(o && o.openInterest) * parseFloat(p.markPrice);
-      if (Number.isFinite(v) && v > 0) oi = +(v / 1e9).toFixed(3);
-      out.ex.Binance[c] = { f: +(f * 100).toFixed(4), oi };
+      let v = 0;
+      const o = await jf('https://fapi.binance.com/fapi/v1/openInterest?symbol=' + s);
+      const vu = parseFloat(o && o.openInterest) * parseFloat(p.markPrice);
+      if (Number.isFinite(vu) && vu > 0) v += vu;
+      if (c === 'BTC' || c === 'ETH') { // USDC + coin-margined (los que mueven OI de verdad)
+        try { const pc = pm[c + 'USDC']; if (pc) { const oc = await jf('https://fapi.binance.com/fapi/v1/openInterest?symbol=' + c + 'USDC'); const vc = parseFloat(oc && oc.openInterest) * parseFloat(pc.markPrice); if (Number.isFinite(vc) && vc > 0) v += vc; } } catch (e) {}
+        try { const od = await jf('https://dapi.binance.com/dapi/v1/openInterest?symbol=' + c + 'USD_PERP'); const cn = parseFloat(od && od.openInterest); if (Number.isFinite(cn) && cn > 0) v += cn * (cval[c] || 0); } catch (e) {}
+      }
+      out.ex.Binance[c] = { f: +(f * 100).toFixed(4), oi: v > 0 ? +(v / 1e9).toFixed(3) : 0 };
     }));
   } catch (e) {}
-  // ── Bybit (v5): funding + OI en 1 llamada bulk. ──
+  // ── Bybit (v5): perp USDT + perp USDC (BTCPERP…) + inverse (BTCUSD) → todo en $. ──
   try {
-    const r = await jf('https://api.bybit.com/v5/market/tickers?category=linear');
-    const m = {}; for (const t of ((r && r.result && r.result.list) || [])) m[t.symbol] = t;
+    const [rl, ri] = await Promise.all([
+      jf('https://api.bybit.com/v5/market/tickers?category=linear'),
+      jf('https://api.bybit.com/v5/market/tickers?category=inverse').catch(() => null)
+    ]);
+    const m = {}; for (const t of ((rl && rl.result && rl.result.list) || [])) m[t.symbol] = t;
+    const mi = {}; for (const t of ((ri && ri.result && ri.result.list) || [])) mi[t.symbol] = t;
     for (const c of COINS) { const t = m[c + 'USDT']; if (!t) continue;
-      const f = parseFloat(t.fundingRate), oi = parseFloat(t.openInterestValue);
-      if (Number.isFinite(f)) out.ex.Bybit[c] = { f: +(f * 100).toFixed(4), oi: Number.isFinite(oi) && oi > 0 ? +(oi / 1e9).toFixed(3) : 0 };
+      const f = parseFloat(t.fundingRate);
+      let oi = parseFloat(t.openInterestValue) || 0;
+      const tu = m[c + 'PERP']; if (tu) { const vu = parseFloat(tu.openInterestValue); if (Number.isFinite(vu) && vu > 0) oi += vu; } // USDC perp
+      const ti = mi[c + 'USD']; if (ti) { const vi = parseFloat(ti.openInterestValue); if (Number.isFinite(vi) && vi > 0) oi += vi; } // inverse
+      if (Number.isFinite(f)) out.ex.Bybit[c] = { f: +(f * 100).toFixed(4), oi: oi > 0 ? +(oi / 1e9).toFixed(3) : 0 };
     }
   } catch (e) {}
   // ── Bitget (v2 mix): funding + OI en 1 llamada bulk. ──
