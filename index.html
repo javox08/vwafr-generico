@@ -1141,6 +1141,39 @@ function PosView({gFunding,cot}){
         <div style={{...eyebrow,fontSize:9}}>datos oficiales por cohortes · opciones BTC y ETH</div>
       </div>
     </div>
+    {/* 🪙 TODAS LAS MONEDAS capturadas · sesgo L/S de un vistazo (arriba del todo) */}
+    {d&&d.coins&&d.coins.length>0&&(()=>{
+      const tk=d.taker&&Number.isFinite(d.taker.pl)?d.taker.pl:null;
+      const consOf=x=>{const isBtc=x.c==='BTC';
+        const masa=isBtc?d.masaAgg:((Number.isFinite(x.r)&&x.r>0)?x.r/(1+x.r):null);
+        const pros=isBtc?d.prosAgg:((Number.isFinite(x.rp)&&x.rp>0)?x.rp/(1+x.rp):null);
+        const parts=[];if(masa!=null)parts.push(masa);if(pros!=null){parts.push(pros);parts.push(pros);}
+        if(isBtc&&tk!=null)parts.push(tk);
+        return parts.length?parts.reduce((a,v)=>a+v,0)/parts.length:null;};
+      const rows=d.coins.map(x=>({c:x.c,cons:consOf(x)})).filter(x=>x.cons!=null).sort((a,b)=>b.cons-a.cons);
+      if(!rows.length)return null;
+      const nLong=rows.filter(x=>x.cons>0.5).length;
+      return(
+      <div style={panel({marginBottom:14,padding:16})}>
+        <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
+          <span style={eyebrow}>🪙 Todas las monedas · sesgo L/S</span>
+          <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>{rows.length} monedas · 1H auto</span>
+        </div>
+        <div style={{fontSize:9,color:'var(--faint)',marginBottom:10,lineHeight:1.5}}>Todo lo que la web tiene capturado, de un vistazo: el sesgo largo/corto de cada moneda (consenso de cuentas retail + top traders, dato OFICIAL). <b style={{color:nLong>rows.length/2?'var(--up)':'var(--down)'}}>{nLong}/{rows.length}</b> con la multitud del lado largo. Ordenadas de más larga a más corta.</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'7px 16px'}}>
+          {rows.map((x,i)=>{const bull=x.cons>0.52,bear=x.cons<0.48,col=bull?'var(--up)':bear?'var(--down)':'#F3BA2F';
+            return(<div key={x.c} style={{...flx({gap:7})}}>
+              <span className="mono" style={{fontSize:8,color:'var(--faint)',width:14,flexShrink:0,textAlign:'right'}}>{i+1}</span>
+              <span className="mono" style={{fontSize:10,fontWeight:800,width:42,flexShrink:0,color:'var(--txt)'}}>{x.c}</span>
+              <div style={{flex:1,display:'flex',height:6,borderRadius:4,overflow:'hidden',minWidth:24}}>
+                <div style={{width:(x.cons*100)+'%',background:'var(--up)',opacity:.82}}/><div style={{flex:1,background:'var(--down)',opacity:.82}}/>
+              </div>
+              <span className="mono" style={{fontSize:8.5,fontWeight:800,width:56,flexShrink:0,textAlign:'right',color:col}}>{(x.cons*100).toFixed(0)}·{((1-x.cons)*100).toFixed(0)}</span>
+            </div>);})}
+        </div>
+        <div style={{fontSize:7.5,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Cifras = % long · % short. Mide el SESGO por cohortes (quién está en cada lado), no dinero neto — en derivados el $ largo = $ corto = OI siempre. Igual que el «Long/Short» oficial de Coinglass, por cohorte. El detalle por exchange (Binance·OKX·Bybit) está más abajo, solo para BTC.</div>
+      </div>);
+    })()}
     {/* qué se puede medir y qué no */}
     <div style={panel({marginBottom:14,padding:16})}>
       <div style={{...flx({justifyContent:'space-between'}),marginBottom:6}}>
@@ -1204,26 +1237,7 @@ function PosView({gFunding,cot}){
           <Row icon="🟡" lbl="Binance" src="takerlongshortRatio 24h" v={d.taker.pl}/>
         </React.Fragment>)}
         <div style={{fontSize:8.5,color:'var(--faint)',marginTop:8,lineHeight:1.6}}>{z!=null?('Extremosidad (OKX cuentas vs sus 72h): z-score '+z.toFixed(1)+(Math.abs(z)>=1.5?' → posicionamiento EXTREMO: históricamente funciona como CONTRAINDICADOR (multitud muy cargada de un lado = riesgo de squeeze al otro).':' → dentro de lo normal; el ratio de cuentas solo aporta señal en extremos.')):''} El ratio de cuentas NO es dinero: si hay más cuentas long, el lado corto tiene posiciones más grandes (ballenas).</div>
-        {(()=>{ // sesgo L/S del resto del top: masa (cuentas OKX+Bybit+Binance) + pros (top-traders OKX) por moneda, del mismo relé
-          const cs=((d&&d.coins)||[]).filter(x=>x.c!=='BTC').map(x=>{
-            const masa=(Number.isFinite(x.r)&&x.r>0)?x.r/(1+x.r):null;
-            const pros=(Number.isFinite(x.rp)&&x.rp>0)?x.rp/(1+x.rp):null;
-            const parts=[];if(masa!=null)parts.push(masa);if(pros!=null){parts.push(pros);parts.push(pros);}
-            return{c:x.c,cons:parts.length?parts.reduce((a,v)=>a+v,0)/parts.length:null};
-          }).filter(x=>x.cons!=null);
-          if(!cs.length)return null;
-          return(<div style={{marginTop:12,paddingTop:11,borderTop:'1px solid var(--line2)'}}>
-            <div style={{fontSize:8,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.6,fontWeight:700,marginBottom:7}}>🪙 Otras monedas — sesgo L/S (masa + pros ×2)</div>
-            {cs.map(x=>{const bull=x.cons>0.52,bear=x.cons<0.48;
-              return(<div key={x.c} style={{...flx({gap:8}),marginBottom:6}}>
-                <span className="mono" style={{fontSize:9.5,fontWeight:800,width:38,flexShrink:0,color:'var(--txt)'}}>{x.c}</span>
-                <div style={{flex:1,display:'flex',height:6,borderRadius:4,overflow:'hidden'}}>
-                  <div style={{width:(x.cons*100)+'%',background:'var(--up)',opacity:.8}}/><div style={{flex:1,background:'var(--down)',opacity:.8}}/>
-                </div>
-                <span className="mono" style={{fontSize:9,fontWeight:800,width:74,flexShrink:0,textAlign:'right',color:bull?'var(--up)':bear?'var(--down)':'var(--dim)'}}>{(x.cons*100).toFixed(0)}%L·{((1-x.cons)*100).toFixed(0)}%S</span>
-              </div>);})}
-            <div style={{fontSize:8,color:'var(--faint)',marginTop:5,lineHeight:1.5}}>Misma fórmula que el ⭐ sesgo de BTC, aplicada a cada moneda con los ratios oficiales del relé (mide cohortes, no dinero neto). Detalle por exchange: por ahora solo en BTC.</div>
-          </div>);})()}
+        {/* (el desglose por moneda se movió ARRIBA del todo: "🪙 Todas las monedas · sesgo L/S") */}
       </React.Fragment>):(
         <div style={{padding:'4px 0'}}>{[85,65,75,55,70].map((w,i)=><div key={i} className="sk" style={{width:w+'%'}}/>)}
           <div style={{fontSize:8.5,color:'var(--faint)',textAlign:'center',marginTop:6}}>cargando los ratios oficiales…</div></div>)}
