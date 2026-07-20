@@ -1094,6 +1094,11 @@ function PosView({gFunding,cot}){
     if(!Array.isArray(kk)||kk.length<120)return;
     // OI agregado de todos los exchanges del relé (para BTC), en $B → factor de escala
     let oiAgg=0; if(fr&&fr.ex)for(const ex in fr.ex){const v=fr.ex[ex]&&fr.ex[ex].BTC; if(v&&v.oi>0)oiAgg+=v.oi;}
+    // OI por MONEDA sumando TODOS los exchanges (en $B) → para el $ long/$ short por moneda
+    const oiC={}; let exCount=0;
+    if(fr&&fr.ex){const seen=new Set();for(const ex in fr.ex){const exd=fr.ex[ex];if(!exd)continue;
+      for(const cn in exd){const v=exd[cn];if(v&&v.oi>0){oiC[cn]=(oiC[cn]||0)+v.oi;seen.add(ex);}}}
+      exCount=seen.size;}
     const rec=kk.map(x=>({h:+x[2],l:+x[3],c:+x[4],v:+x[5],tb:+x[9]}));
     const price=rec[rec.length-1].c, n2=rec.length;
     const minA=new Array(n2).fill(Infinity),maxA=new Array(n2).fill(-Infinity);
@@ -1114,7 +1119,7 @@ function PosView({gFunding,cot}){
     // al OI total (todo el OI está apalancado y es liquidable en algún nivel)
     const sumW=totS+totL, scale=(oiAgg>0&&sumW>0)?(oiAgg*1e9)/sumW:1;
     if(a)setLm({above:above.sort((x,y)=>y.p-x.p),below:below.sort((x,y)=>y.p-x.p),price,
-      totS:totS*scale,totL:totL*scale,oiAgg,exN:fr&&fr.ex?Object.keys(fr.ex).filter(e=>fr.ex[e]&&fr.ex[e].BTC).length:1});
+      totS:totS*scale,totL:totL*scale,oiAgg,oiC,exCount,exN:fr&&fr.ex?Object.keys(fr.ex).filter(e=>fr.ex[e]&&fr.ex[e].BTC).length:1});
   }catch(_){}})();return()=>{a=false;};},[]);
   const pct=r=>Number.isFinite(r)&&r>0?r/(1+r):null;
   const Row=({icon,lbl,src,v,extreme})=>{if(v==null)return null;
@@ -1141,7 +1146,7 @@ function PosView({gFunding,cot}){
         <div style={{...eyebrow,fontSize:9}}>datos oficiales por cohortes · opciones BTC y ETH</div>
       </div>
     </div>
-    {/* 🪙 TODAS LAS MONEDAS capturadas · sesgo L/S de un vistazo (arriba del todo) */}
+    {/* 🪙 TODAS LAS MONEDAS capturadas · Long/Short en $ (todos los exchanges) — arriba del todo */}
     {d&&d.coins&&d.coins.length>0&&(()=>{
       const tk=d.taker&&Number.isFinite(d.taker.pl)?d.taker.pl:null;
       const consOf=x=>{const isBtc=x.c==='BTC';
@@ -1150,28 +1155,52 @@ function PosView({gFunding,cot}){
         const parts=[];if(masa!=null)parts.push(masa);if(pros!=null){parts.push(pros);parts.push(pros);}
         if(isBtc&&tk!=null)parts.push(tk);
         return parts.length?parts.reduce((a,v)=>a+v,0)/parts.length:null;};
-      const rows=d.coins.map(x=>({c:x.c,cons:consOf(x)})).filter(x=>x.cons!=null).sort((a,b)=>b.cons-a.cons);
+      const oiC=(lm&&lm.oiC)||null, exCount=(lm&&lm.exCount)||0;
+      const fB=v=>v==null?'—':v>=1?('$'+v.toFixed(2)+'B'):('$'+Math.round(v*1000)+'M');
+      let rows=d.coins.map(x=>{const cons=consOf(x);const oi=(oiC&&Number.isFinite(oiC[x.c]))?oiC[x.c]:null;
+        return{c:x.c,cons,oi,lng:(oi!=null&&cons!=null)?oi*cons:null,sht:(oi!=null&&cons!=null)?oi*(1-cons):null};})
+        .filter(x=>x.cons!=null);
       if(!rows.length)return null;
-      const nLong=rows.filter(x=>x.cons>0.5).length;
+      const hasD=rows.some(x=>x.oi!=null);
+      rows=hasD?rows.sort((a,b)=>(b.oi||0)-(a.oi||0)):rows.sort((a,b)=>b.cons-a.cons);
+      const totL=rows.reduce((s,x)=>s+(x.lng||0),0), totS=rows.reduce((s,x)=>s+(x.sht||0),0), tot=totL+totS;
+      const tPct=tot>0?totL/tot:null;
       return(
       <div style={panel({marginBottom:14,padding:16})}>
-        <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
-          <span style={eyebrow}>🪙 Todas las monedas · sesgo L/S</span>
-          <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>{rows.length} monedas · 1H auto</span>
+        <div style={{...flx({justifyContent:'space-between'}),marginBottom:8}}>
+          <span style={eyebrow}>🪙 Todas las monedas · Long/Short</span>
+          <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>{rows.length} monedas{hasD?' · '+exCount+' exchanges':''} · auto</span>
         </div>
-        <div style={{fontSize:9,color:'var(--faint)',marginBottom:10,lineHeight:1.5}}>Todo lo que la web tiene capturado, de un vistazo: el sesgo largo/corto de cada moneda (consenso de cuentas retail + top traders, dato OFICIAL). <b style={{color:nLong>rows.length/2?'var(--up)':'var(--down)'}}>{nLong}/{rows.length}</b> con la multitud del lado largo. Ordenadas de más larga a más corta.</div>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'7px 16px'}}>
-          {rows.map((x,i)=>{const bull=x.cons>0.52,bear=x.cons<0.48,col=bull?'var(--up)':bear?'var(--down)':'#F3BA2F';
-            return(<div key={x.c} style={{...flx({gap:7})}}>
-              <span className="mono" style={{fontSize:8,color:'var(--faint)',width:14,flexShrink:0,textAlign:'right'}}>{i+1}</span>
-              <span className="mono" style={{fontSize:10,fontWeight:800,width:42,flexShrink:0,color:'var(--txt)'}}>{x.c}</span>
-              <div style={{flex:1,display:'flex',height:6,borderRadius:4,overflow:'hidden',minWidth:24}}>
+        {/* TOTAL en $ agregando TODOS los exchanges (OI × sesgo) */}
+        {hasD&&tot>0&&(()=>{const bull=tPct>0.5;
+          return(<div style={{marginBottom:12,padding:'11px 12px',borderRadius:11,background:bull?'rgba(31,224,160,.07)':'rgba(255,84,112,.07)',border:'1px solid '+(bull?'rgba(31,224,160,.3)':'rgba(255,84,112,.3)')}}>
+            <div style={{...flx({justifyContent:'space-between'}),marginBottom:5}}>
+              <span style={{fontSize:8.5,fontWeight:800,color:'var(--accent)',letterSpacing:.4}}>💰 TOTAL · TODOS LOS EXCHANGES</span>
+              <span style={{fontSize:7.5,color:'var(--faint)'}}>OI × sesgo · estimación</span>
+            </div>
+            <div style={{...flx({justifyContent:'space-between'}),marginBottom:5}}>
+              <span className="mono" style={{fontSize:16,fontWeight:800,color:'var(--up)'}}>▲ {fB(totL)} <span style={{fontSize:9,color:'var(--dim)'}}>long</span></span>
+              <span className="mono" style={{fontSize:16,fontWeight:800,color:'var(--down)'}}><span style={{fontSize:9,color:'var(--dim)'}}>short</span> {fB(totS)} ▼</span>
+            </div>
+            <div style={{display:'flex',height:8,borderRadius:5,overflow:'hidden'}}>
+              <div style={{width:(tPct*100)+'%',background:'var(--up)',opacity:.85}}/><div style={{flex:1,background:'var(--down)',opacity:.85}}/>
+            </div>
+            <div style={{fontSize:7.5,color:'var(--faint)',marginTop:5}}>Interés abierto total ≈ {fB(tot)} en {exCount} exchanges, repartido por el sesgo de cada cohorte. {(tPct*100).toFixed(0)}% del dinero del lado largo.</div>
+          </div>);})()}
+        {/* por moneda */}
+        <div style={{fontSize:8,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.6,fontWeight:700,marginBottom:6}}>Por moneda {hasD?'· ordenadas por tamaño (OI)':'· sesgo L/S'}</div>
+        {rows.map((x,i)=>{const bull=x.cons>0.52,bear=x.cons<0.48,col=bull?'var(--up)':bear?'var(--down)':'#F3BA2F';
+          return(<div key={x.c} style={{...flx({gap:8}),padding:'5px 0',borderTop:i?'1px solid #12151F':'none'}}>
+            <span className="mono" style={{fontSize:10,fontWeight:800,width:42,flexShrink:0,color:'var(--txt)'}}>{x.c}</span>
+            <div style={{flex:1,minWidth:24}}>
+              <div style={{display:'flex',height:6,borderRadius:4,overflow:'hidden'}}>
                 <div style={{width:(x.cons*100)+'%',background:'var(--up)',opacity:.82}}/><div style={{flex:1,background:'var(--down)',opacity:.82}}/>
               </div>
-              <span className="mono" style={{fontSize:8.5,fontWeight:800,width:56,flexShrink:0,textAlign:'right',color:col}}>{(x.cons*100).toFixed(0)}·{((1-x.cons)*100).toFixed(0)}</span>
-            </div>);})}
-        </div>
-        <div style={{fontSize:7.5,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Cifras = % long · % short. Mide el SESGO por cohortes (quién está en cada lado), no dinero neto — en derivados el $ largo = $ corto = OI siempre. Igual que el «Long/Short» oficial de Coinglass, por cohorte. El detalle por exchange (Binance·OKX·Bybit) está más abajo, solo para BTC.</div>
+              {x.lng!=null&&<div style={{...flx({justifyContent:'space-between'}),marginTop:2}}><span className="mono" style={{fontSize:7.5,color:'var(--up)'}}>{fB(x.lng)}</span><span className="mono" style={{fontSize:7.5,color:'var(--down)'}}>{fB(x.sht)}</span></div>}
+            </div>
+            <span className="mono" style={{fontSize:9,fontWeight:800,width:48,flexShrink:0,textAlign:'right',color:col}}>{(x.cons*100).toFixed(0)}·{((1-x.cons)*100).toFixed(0)}</span>
+          </div>);})}
+        <div style={{fontSize:7.5,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>El <b style={{color:'var(--txt)'}}>$ long/$ short</b> es el interés abierto REAL (sumando {hasD?exCount:'los'} exchanges del relé) repartido por el sesgo de cohortes de cada moneda — la misma idea que la columna de $ de Coinglass (es una estimación: en derivados el notional largo = corto = OI, lo que cambia es de qué lado está cada grupo). Cifras a la derecha = % long · % short. El detalle por exchange (Binance·OKX·Bybit) está más abajo, solo para BTC.</div>
       </div>);
     })()}
     {/* qué se puede medir y qué no */}

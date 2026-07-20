@@ -40,8 +40,13 @@
         {t:'Glassnode: Bitcoin podría estar formando un suelo',s:'FXStreet',u:'https://example.com/4',d:Date.now()-9*36e5,hot:false}]});
       if(u.indexOf('/api/social')>=0)return J({t:Date.now(),tiktok:{f:531,v:782,likes:10400},youtube:{subs:'34 subscribers'},twitch:{live:false,f:107},x:{f:24},fb1:{name:'Notici Javox'},fb2:{name:'NotiExpress',n:'3 me gusta'}});
       if(u.indexOf('/api/ls')>=0)return J(lsData);
-      if(u.indexOf('/api/fr')>=0)return J({t:Date.now(),ex:{Gate:{BTC:{f:0.004,oi:2.1}},MEXC:{BTC:{f:0.01,oi:4.9}},Binance:{BTC:{f:0.008,oi:12.2}},Bybit:{BTC:{f:0.006,oi:7.5}},Bitget:{BTC:{f:0.004,oi:2.2}},
-        Kraken:{BTC:{f:0.0045,oi:0.12}},HTX:{BTC:{f:0.01,oi:2.06}},CoinEx:{BTC:{f:0,oi:0.075}},Bitfinex:{BTC:{f:0.0087,oi:0.57}},dYdX:{BTC:{f:-0.0136,oi:0.019}},WhiteBIT:{BTC:{f:-0.0039,oi:1.59}},Phemex:{BTC:{f:0.0065,oi:0.13}},Deribit:{BTC:{f:0.0018,oi:0.78}}}});
+      if(u.indexOf('/api/fr')>=0){
+        // OI (en $B) por moneda y exchange, sintético pero plausible (BTC el mayor)
+        var oiBase={BTC:12,ETH:6,SOL:2.5,XRP:1.8,BNB:1.2,DOGE:1.5,ADA:0.9,AVAX:0.7,LINK:0.6,LTC:0.5};
+        var mkEx=function(mult){var o={};for(var cc in oiBase)o[cc]={f:+((Math.random()*0.02)-0.005).toFixed(4),oi:+(oiBase[cc]*mult*(0.6+Math.random()*0.6)).toFixed(3)};return o;};
+        var exNames=['Gate','MEXC','Binance','Bybit','Bitget','Kraken','HTX','CoinEx','Bitfinex','dYdX','WhiteBIT','Phemex','Deribit','Hyperliquid'];
+        var exObj={};exNames.forEach(function(n,i){exObj[n]=mkEx([0.18,0.4,1,0.62,0.18,0.01,0.17,0.006,0.05,0.002,0.13,0.011,0.065,0.06][i]||0.05);});
+        return J({t:Date.now(),ex:exObj});}
       if(u.indexOf('/api/funding')>=0){var mk2=function(base){var ex={},names=['Binance','OKX','Bybit','Bitget','Gate','MEXC','HTX','Kraken'];names.forEach(function(n,i){ex[n]={funding:+(base+(i-3)*0.004).toFixed(4),oi:+(1+Math.random()*10).toFixed(2),ok:true};});return ex;};
         return J({updated:Date.now(),coins:['BTC','ETH','SOL','XRP','BNB','DOGE','ADA','AVAX','LINK','LTC'],data:{BTC:mk2(0.008),ETH:mk2(0.006),SOL:mk2(0.012),XRP:mk2(0.004),BNB:mk2(0.005),DOGE:mk2(0.01),ADA:mk2(0.004),AVAX:mk2(0.007),LINK:mk2(0.006),LTC:mk2(0.005)}});}
       if(u.indexOf('/klines')>=0)return J(klines(u));
