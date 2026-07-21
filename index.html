@@ -7099,7 +7099,11 @@ function TotalView({gFunding}){
           <div className="mono" style={{fontSize:34,fontWeight:800,color:col2,lineHeight:1}}>{R.up.toFixed(0)}%</div>
           <div style={{fontSize:11.5,fontWeight:800,color:col2,marginTop:4}}>de esas veces BTC subió a 30 días</div>
         </div>
-        {(()=>{const eLean=st.lean,agree=(R.up-50)*(eLean-50)>=0,gap=Math.abs(R.up-eLean);
+        {(()=>{const eLean=st.lean,eNeutral=Math.abs(eLean-50)<5,agree=(R.up-50)*(eLean-50)>=0,gap=Math.abs(R.up-eLean);
+          if(eNeutral)return(
+            <div style={{margin:'0 0 10px',padding:'8px 11px',borderRadius:9,background:'rgba(243,186,47,.08)',border:'1px solid rgba(243,186,47,.22)',fontSize:9.5,lineHeight:1.55,color:'var(--txt)'}}>
+              ◆ <b>El conjunto está casi neutral</b> ({eLean.toFixed(0)}/100): los modelos no marcan dirección clara, así que aquí la señal direccional la aporta sobre todo esta analogía histórica.
+            </div>);
           if(!agree&&gap>=12)return(
             <div style={{margin:'0 0 10px',padding:'8px 11px',borderRadius:9,background:'rgba(243,186,47,.10)',border:'1px solid rgba(243,186,47,.30)',fontSize:9.5,lineHeight:1.55,color:'var(--txt)'}}>
               ⚠️ <b>Baja confianza:</b> la ruta histórica ({R.up.toFixed(0)}% sube) y el veredicto ponderado del conjunto ({eLean.toFixed(0)}/100) apuntan en <b>direcciones opuestas</b>. Cuando la analogía y los modelos no coinciden, la señal es débil — trátalo como rango, no como tendencia.
