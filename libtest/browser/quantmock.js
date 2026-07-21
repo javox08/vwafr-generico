@@ -60,6 +60,10 @@
           timestamp:''+Math.floor((Date.now()-f2*864e5)/1000)});
         return J({data:fd});
       }
+      if(u.indexOf('mempool.space')>=0){var hr=[];for(var h9=0;h9<365;h9++){
+        var base9=9e20*(1+h9/900);if(h9>300&&h9<330)base9*=0.9; // capitulación y recuperación
+        hr.push({timestamp:Math.floor((Date.now()-(364-h9)*864e5)/1000),avgHashrate:base9});}
+        return J({hashrates:hr});}
       if(u.indexOf('bitcoin-data.com/v1/mvrv/last')>=0)return J({mvrv:'1.21'});
       if(u.indexOf('bitcoin-data.com/v1/nupl/last')>=0)return J({nupl:'0.16'});
       if(u.indexOf('bitcoin-data.com/v1/mvrv-zscore/last')>=0)return J({mvrvZscore:'1.9'});

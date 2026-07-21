@@ -6793,6 +6793,227 @@ function BotsView({gFunding}){
 // 📰 NOTICIAS (pestaña propia, estilo terminal Bloomberg): solo titulares IMPORTANTES
 // en español, del relé /api/news (Google News agrega Expansión/Investing/FXStreet/
 // CoinTelegraph…). Los muy recientes o con palabras de impacto van como ÚLTIMA HORA.
+// ══════════ ANÁLISIS TOTAL: batería de ESCUELAS cuantitativas clásicas ══════════
+// Cada modelo es una escuela REAL y conocida (momentum AQR, Turtles/Donchian, RSI2 de
+// Connors, Mayer Multiple, media de 200 semanas, power law, Pi Cycle Top, hash ribbons,
+// MVRV/NUPL/SOPR, Fear&Greed, funding), evaluada point-in-time sobre ~8 años y
+// BACKTESTEADA donde se puede (acierto direccional a 30 días, walk-forward, encogido).
+// El veredicto global es el VOTO PONDERADO por el acierto MEDIDO de cada escuela:
+// la que no demuestra ventaja apenas pesa. Los modelos sin serie histórica propia
+// (on-chain/sentimiento instantáneos) entran con peso "prior" pequeño y etiquetado.
+function totalModels(cl,ts0,aux){
+  const N=cl.length; if(N<700)return null;
+  const ma=w=>{const o=new Array(N).fill(null);let s=0;for(let i=0;i<N;i++){s+=cl[i];if(i>=w)s-=cl[i-w];if(i>=w-1)o[i]=s/w;}return o;};
+  const ma50=ma(50),ma111=ma(111),ma200=ma(200),ma350=ma(350),ma1400=N>1460?ma(1400):null;
+  const rsi2=(()=>{const o=new Array(N).fill(50);let g=0,l=0;for(let i=1;i<N;i++){const ch=cl[i]-cl[i-1],up=Math.max(ch,0),dn=Math.max(-ch,0);
+    if(i<=2){g+=up;l+=dn;if(i===2){g/=2;l/=2;}}else{g=(g+up)/2;l=(l+dn)/2;}
+    if(i>=2)o[i]=l===0?100:100-100/(1+g/l);}return o;})();
+  const m30=new Array(N).fill(null),s30=new Array(N).fill(null);
+  {let s=0,s2=0;for(let i=0;i<N;i++){s+=cl[i];s2+=cl[i]*cl[i];
+    if(i>=30){s-=cl[i-30];s2-=cl[i-30]*cl[i-30];}
+    if(i>=29){const m=s/30,v=Math.max(0,s2/30-m*m);m30[i]=m;s30[i]=Math.sqrt(v);}}}
+  const vol30=new Array(N).fill(null);{const r2=[];let s=0;
+    for(let i=1;i<N;i++){const r=Math.log(cl[i]/cl[i-1]);r2.push(r*r);s+=r*r;if(r2.length>30)s-=r2[r2.length-31];
+      if(r2.length>=30)vol30[i]=Math.sqrt(s/30*365);}}
+  const hh55=new Array(N).fill(null),ll55=new Array(N).fill(null);
+  for(let i=55;i<N;i++){let hi=-Infinity,lo=Infinity;for(let k=i-55;k<i;k++){if(cl[k]>hi)hi=cl[k];if(cl[k]<lo)lo=cl[k];}hh55[i]=hi;ll55[i]=lo;}
+  // power law log-log (ajuste con TODO el histórico disponible — estructural, ver Fine)
+  const GEN=Date.UTC(2009,0,3), dayOf=i=>Math.max(400,(ts0+i*864e5-GEN)/864e5);
+  let pl=null;{let sx=0,sy=0,sxy=0,sxx=0,n=0;
+    for(let i=0;i<N;i+=3){const x=Math.log10(dayOf(i)),y=Math.log10(cl[i]);sx+=x;sy+=y;sxy+=x*y;sxx+=x*x;n++;}
+    const den=sxx-sx*sx/n;
+    if(Math.abs(den)>1e-9){const b=(sxy-sx*sy/n)/den,a=sy/n-b*sx/n;
+      const res=[];for(let i=0;i<N;i+=3)res.push(Math.log10(cl[i])-(a+b*Math.log10(dayOf(i))));
+      const rNow=Math.log10(cl[N-1])-(a+b*Math.log10(dayOf(N-1)));
+      pl={pct:res.filter(x=>x<rNow).length/res.length*100,fair:Math.pow(10,a+b*Math.log10(dayOf(N-1)))};}}
+  const HALV=[Date.UTC(2012,10,28),Date.UTC(2016,6,9),Date.UTC(2020,4,11),Date.UTC(2024,3,20),Date.UTC(2028,3,18)];
+  const weeksAt=i=>{const t=ts0+i*864e5;let h=HALV[0];for(const x of HALV)if(t>=x)h=x;return (t-h)/6048e5;};
+  const i=N-1, px=cl[i];
+  // ── MODELOS DIRECCIONALES (school, nombre, señal point-in-time, valor hoy, detalle) ──
+  const MODELS=[
+    {sch:'Tendencia',t:'Momentum 3m (TSMOM · AQR)',ref:'Moskowitz 2012',
+     sig:j=>{if(j<91)return 0;const m=cl[j]/cl[j-90]-1;return m>0.03?1:m<-0.03?-1:0;},
+     val:()=>((cl[i]/cl[i-90]-1)*100).toFixed(1)+'% en 90d',d:'la tendencia de 1-12 meses persiste (la anomalía mejor documentada)'},
+    {sch:'Tendencia',t:'Cruce dorado (MA50/200)',ref:'clásico',
+     sig:j=>ma200[j]==null?0:(ma50[j]>ma200[j]?1:-1),
+     val:()=>'MA50 '+(ma50[i]>ma200[i]?'sobre':'bajo')+' MA200',d:'régimen alcista/bajista por medias'},
+    {sch:'Tendencia',t:'Ruptura Donchian 55 (Turtles)',ref:'Dennis 1983',
+     sig:j=>hh55[j]==null?0:(cl[j]>hh55[j]?1:cl[j]<ll55[j]?-1:0),
+     val:()=>cl[i]>hh55[i]?'rompiendo máximos de 55d':cl[i]<ll55[i]?'rompiendo mínimos de 55d':'dentro del canal 55d',d:'las rupturas de canal largas tienden a seguir'},
+    {sch:'Reversión',t:'RSI(2) de Connors',ref:'Connors 2008',
+     sig:j=>{if(ma200[j]==null)return 0;if(rsi2[j]<10&&cl[j]>ma200[j])return 1;if(rsi2[j]>90&&cl[j]<ma200[j])return -1;return 0;},
+     val:()=>'RSI2 '+rsi2[i].toFixed(0)+(cl[i]>ma200[i]?' · sobre MA200':' · bajo MA200'),d:'comprar el pánico corto DENTRO de tendencia alcista'},
+    {sch:'Reversión',t:'Z-score 30d (estiramiento)',ref:'contrario',
+     sig:j=>{if(s30[j]==null||s30[j]<=0)return 0;const z=(cl[j]-m30[j])/s30[j];return z<-2?1:z>2?-1:0;},
+     val:()=>{const z=s30[i]>0?(cl[i]-m30[i])/s30[i]:0;return 'z = '+z.toFixed(1);},d:'a >2 desviaciones de su media de 30d, el precio suele volver'},
+    {sch:'Valoración',t:'Mayer Multiple',ref:'Mayer',
+     sig:j=>{if(ma200[j]==null)return 0;const m=cl[j]/ma200[j];return m<0.8?1:m>2.4?-1:0;},
+     val:()=>(cl[i]/ma200[i]).toFixed(2)+'×',d:'precio/MA200d: <0,8 barato histórico · >2,4 caro'},
+    ma1400?{sch:'Valoración',t:'Media de 200 semanas',ref:'ciclo BTC',
+     sig:j=>{if(ma1400[j]==null)return 0;const m=cl[j]/ma1400[j];return m<1?1:m>3?-1:0;},
+     val:()=>(cl[i]/ma1400[i]).toFixed(2)+'×',d:'el suelo de cada ciclo tocó la MA de 200 semanas'}:null,
+    pl?{sch:'Valoración',t:'Corredor power law',ref:'log-log',
+     sig:null,sNow:pl.pct<15?1:pl.pct>85?-1:0,
+     val:()=>'percentil '+pl.pct.toFixed(0)+' del corredor',d:'BTC ha crecido siguiendo una ley de potencias del tiempo; extremos del corredor = zonas de valor/exceso'}:null,
+    {sch:'Ciclo',t:'Pi Cycle Top',ref:'Edwards',
+     sig:j=>(ma350[j]==null||ma111[j]==null)?0:(ma111[j]>=2*ma350[j]?-1:0),
+     val:()=>ma350[i]?('111DMA al '+((ma111[i]/(2*ma350[i]))*100).toFixed(0)+'% del cruce'):'—',d:'el cruce 111DMA sobre 2×350DMA clavó los techos de 2013/2017/2021'},
+    {sch:'Ciclo',t:'Fase del halving',ref:'4 años',
+     sig:j=>{const w=weeksAt(j);return (w>=40&&w<77)?1:(w>=77&&w<130)?-1:0;},
+     val:()=>'semana '+weeksAt(i).toFixed(0)+' del ciclo',d:'históricamente: semanas 40-77 alcistas · 77-130 bajistas'},
+  ].filter(Boolean);
+  // ── BACKTEST walk-forward de cada modelo (acierto direccional a 30d, encogido) ──
+  const START=Math.max(460,N-2600);
+  for(const m of MODELS){
+    if(!m.sig){m.hit=null;m.n=null;m.sNow=m.sNow!=null?m.sNow:0;continue;}
+    let n=0,hit=0;
+    for(let j=START;j<N-31;j+=2){const s=m.sig(j);if(!s)continue;n++;const r=cl[j+30]/cl[j]-1;if((s>0&&r>0)||(s<0&&r<0))hit++;}
+    m.n=n;m.hit=n>=8?((hit/n*100)*n+50*12)/(n+12):null; // encogido hacia 50 (fuerza 12)
+    m.sNow=m.sig(i);
+  }
+  // ── MODELOS INSTANTÁNEOS (sin serie propia → peso PRIOR pequeño, etiquetado) ──
+  const inst=[];
+  if(Number.isFinite(aux.mvrv))inst.push({sch:'On-chain',t:'MVRV',ref:'on-chain',sNow:aux.mvrv<1?1:aux.mvrv>3.5?-1:0,val:()=>aux.mvrv.toFixed(2),d:'<1 = mercado bajo coste medio (suelo) · >3,5 = techo',prior:true});
+  if(Number.isFinite(aux.nupl))inst.push({sch:'On-chain',t:'NUPL',ref:'on-chain',sNow:aux.nupl<0?1:aux.nupl>0.75?-1:0,val:()=>aux.nupl.toFixed(2),d:'<0 capitulación · >0,75 euforia',prior:true});
+  if(Number.isFinite(aux.sopr))inst.push({sch:'On-chain',t:'SOPR',ref:'on-chain',sNow:aux.sopr<0.97?1:aux.sopr>1.05?-1:0,val:()=>aux.sopr.toFixed(3),d:'<1 se vende en pérdidas (suelos) · >1,05 toma de beneficios',prior:true});
+  if(aux.hashSig!=null)inst.push({sch:'On-chain',t:'Hash Ribbons',ref:'Capriole',sNow:aux.hashSig,val:()=>aux.hashTxt,d:'capitulación de mineros y su RECUPERACIÓN marcó suelos históricos',prior:true});
+  if(Number.isFinite(aux.fng))inst.push({sch:'Sentimiento',t:'Miedo y Codicia (contrario)',ref:'alternative.me',sNow:aux.fng<20?1:aux.fng>80?-1:0,val:()=>String(aux.fng),d:'miedo extremo = oportunidad histórica · codicia = riesgo',prior:true});
+  if(Number.isFinite(aux.gf))inst.push({sch:'Derivados',t:'Funding (contrario)',ref:'perpetuos',sNow:aux.gf<0?1:aux.gf>0.03?-1:0,val:()=>(aux.gf>=0?'+':'')+aux.gf.toFixed(4)+'%/8h',d:'funding negativo = cortos pagando (squeeze arriba) · muy alto = longs sobrecalentados',prior:true});
+  const ALL=MODELS.concat(inst);
+  // ── ENSEMBLE: voto ponderado por ACIERTO MEDIDO (prior pequeño para instantáneos) ──
+  let wsum=0,vote=0,nUp=0,nDn=0,n0=0;
+  for(const m of ALL){
+    const w=m.prior?0.10:(m.hit!=null?Math.max(0.02,(m.hit-50)/50):0.06);
+    m.w=w;
+    if(m.sNow>0)nUp++;else if(m.sNow<0)nDn++;else n0++;
+    wsum+=w;vote+=m.sNow*w;
+  }
+  const v=wsum>0?vote/wsum:0;                 // -1..1
+  const lean=50+v*30;                          // inclinación 20-80 (no vende certezas)
+  // ── RIESGO (no dirección): vol targeting, VaR empírico, medio Kelly ──
+  const volNow=vol30[i]||0.5;
+  const expo=Math.max(0.1,Math.min(1.5,0.30/Math.max(0.05,volNow)));
+  const r30=[];for(let j=START;j<N-30;j+=3)r30.push(cl[j+30]/cl[j]-1);
+  r30.sort((a,b)=>a-b);
+  const var95=r30.length?r30[Math.floor(r30.length*0.05)]*100:null;
+  const var99=r30.length?r30[Math.floor(r30.length*0.01)]*100:null;
+  const kelly=Math.max(-0.25,Math.min(0.25,v*0.25));
+  return {models:ALL,v,lean,nUp,nDn,n0,volNow,expo,var95,var99,kelly,pl,price:px,years:+(N/365).toFixed(1)};
+}
+function TotalView({gFunding}){
+  const [st,setSt]=useState(null);
+  const [err,setErr]=useState(false);
+  useEffect(()=>{let a=true;
+    const jget=(u,ms=9000)=>{const c=new AbortController();const t=setTimeout(()=>c.abort(),ms);
+      return fetch(u,{signal:c.signal}).then(r=>{if(!r.ok)throw 0;return r.json();}).finally(()=>clearTimeout(t));};
+    const load=async()=>{try{
+      // histórico largo (3 páginas ≈ 8 años) + on-chain + sentimiento + minería
+      let all=[],end=Date.now(),t0=null;
+      for(let pg=0;pg<3;pg++){const k=await jget('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=1000&endTime='+end);
+        if(!Array.isArray(k)||!k.length)break;
+        all=k.map(x=>({t:+x[0],c:+x[4]})).concat(all);end=k[0][0]-864e5;if(k.length<1000)break;}
+      if(all.length<700)throw 0;
+      const cl=all.map(x=>x.c), ts0=all[0].t;
+      const aux={gf:Number.isFinite(gFunding)?gFunding:null};
+      await Promise.all([
+        jget('https://bitcoin-data.com/v1/mvrv/last',6000).then(j=>{aux.mvrv=parseFloat(j.mvrv);}).catch(()=>{}),
+        jget('https://bitcoin-data.com/v1/nupl/last',6000).then(j=>{aux.nupl=parseFloat(j.nupl);}).catch(()=>{}),
+        jget('https://bitcoin-data.com/v1/sopr/last',6000).then(j=>{aux.sopr=parseFloat(j.sopr);}).catch(()=>{}),
+        jget('https://api.alternative.me/fng/?limit=1',6000).then(j=>{aux.fng=parseInt(j.data[0].value);}).catch(()=>{}),
+        jget('https://mempool.space/api/v1/mining/hashrate/1y',9000).then(j=>{
+          const hs=(j.hashrates||[]).map(x=>x.avgHashrate).filter(Number.isFinite);
+          if(hs.length>90){const sma=(a,w,k)=>{let s=0;for(let z=k-w+1;z<=k;z++)s+=a[z];return s/w;};
+            const k=hs.length-1,s30=sma(hs,30,k),s60=sma(hs,60,k);
+            let capiRec=false;for(let z=Math.max(60,k-20);z<k;z++){if(sma(hs,30,z)<sma(hs,60,z)&&s30>=s60){capiRec=true;break;}}
+            aux.hashSig=capiRec?1:(s30<s60?0:0);
+            aux.hashTxt=capiRec?'recuperación tras capitulación ✓ (señal de compra clásica)':(s30<s60?'capitulación de mineros en curso':'minería sana (30d ≥ 60d)');
+          }}).catch(()=>{}),
+      ]);
+      const r=totalModels(cl,ts0,aux);
+      if(a&&r)setSt(r); if(a&&!r)setErr(true);
+    }catch(_){if(a&&!st)setErr(true);}};
+    load();const t=setInterval(load,300000);return()=>{a=false;clearInterval(t);};},[gFunding]);
+  if(!st)return(<div className="viewwrap"><div style={{textAlign:'center',color:'var(--faint)',fontSize:13,padding:'40px 0'}}>
+    <div style={{fontSize:20,marginBottom:8,animation:'spin 1s linear infinite',display:'inline-block'}}>◌</div>
+    <div>{err?'No se pudieron cargar los datos — reintentando en 5 min':'Ejecutando todas las escuelas cuantitativas…'}</div>
+    <div style={{fontSize:10,marginTop:6}}>~8 años de precio · on-chain · minería · sentimiento · derivados</div></div></div>);
+  const dir=st.lean>=55?1:st.lean<=45?-1:0, col=dir>0?'var(--up)':dir<0?'var(--down)':'#F3BA2F';
+  const SCHOOLS=['Tendencia','Reversión','Valoración','Ciclo','On-chain','Sentimiento','Derivados'];
+  const money=v2=>'$'+Math.round(v2).toLocaleString('es-ES');
+  return(<div className="viewwrap">
+    <div style={{...flx({gap:10}),margin:'2px 2px 14px'}}>
+      <div style={{width:32,height:32,borderRadius:10,flexShrink:0,background:'rgba(110,139,255,.15)',
+        border:'1px solid rgba(110,139,255,.4)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16}}>🧠</div>
+      <div>
+        <div style={{fontSize:15,fontWeight:800,letterSpacing:-.3,lineHeight:1.05}}>Análisis Total</div>
+        <div style={{...eyebrow,fontSize:9}}>todas las escuelas cuantitativas · backtesteadas · automático</div>
+      </div>
+    </div>
+    {/* HERO: veredicto del ensemble */}
+    <div style={panel({marginBottom:14,padding:16,background:`radial-gradient(130% 95% at 50% 0%, ${tint(col,11)} 0%, var(--panel) 62%)`,borderColor:`${tint(col,30)}`})}>
+      <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
+        <span style={eyebrow}>🧠 Veredicto de todas las escuelas</span>
+        <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>{st.models.length} modelos · {st.years} años</span>
+      </div>
+      <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:10,lineHeight:1.5}}>Ejecuta las escuelas cuantitativas CLÁSICAS (momentum AQR, Turtles, Connors, Mayer, power law, Pi Cycle, hash ribbons, on-chain, sentimiento, derivados) y las funde en un voto <b style={{color:'var(--txt)'}}>ponderado por el acierto MEDIDO de cada una</b> — la que no demuestra ventaja apenas pesa.</div>
+      <div style={{textAlign:'center',padding:'2px 0 10px'}}>
+        <div className="mono" style={{fontSize:44,fontWeight:800,color:col,lineHeight:1,textShadow:`0 0 34px ${tint(col,27)}`}}>{st.lean.toFixed(0)}%</div>
+        <div style={{fontSize:14,fontWeight:800,color:col,marginTop:6}}>{dir>0?'▲ Inclinación ALCISTA':dir<0?'▼ Inclinación BAJISTA':'◆ SIN inclinación clara'}</div>
+        <div style={{fontSize:9.5,color:'var(--dim)',marginTop:3}}>inclinación combinada a 30 días · <b style={{color:'var(--up)'}}>{st.nUp}▲</b> · <b style={{color:'var(--faint)'}}>{st.n0}◆</b> · <b style={{color:'var(--down)'}}>{st.nDn}▼</b> de {st.models.length} modelos</div>
+      </div>
+      <div style={{display:'flex',height:9,borderRadius:5,overflow:'hidden'}}>
+        <div style={{width:st.lean+'%',background:'var(--up)',opacity:.85}}/><div style={{flex:1,background:'var(--down)',opacity:.85}}/>
+      </div>
+      <div style={{...flx({justifyContent:'space-between'}),marginTop:4,fontSize:8,color:'var(--faint)'}} className="mono"><span>◀ bajista</span><span>50 = neutral</span><span>alcista ▶</span></div>
+    </div>
+    {/* ESCUELAS: cada modelo con su señal, valor y acierto medido */}
+    {SCHOOLS.map(sch=>{const ms=st.models.filter(m=>m.sch===sch);if(!ms.length)return null;
+      const ICN={Tendencia:'📈',Reversión:'🔄',Valoración:'⚖️',Ciclo:'🔁','On-chain':'⛓️',Sentimiento:'😨',Derivados:'💵'};
+      return(
+      <Lazy key={sch} est={90+ms.length*74}>
+      <div style={panel({marginBottom:14,padding:16})}>
+        <div style={{...eyebrow,marginBottom:10}}>{ICN[sch]||'·'} Escuela · {sch}</div>
+        {ms.map((m,i)=>{const up=m.sNow>0,dn=m.sNow<0,c2=up?'var(--up)':dn?'var(--down)':'var(--faint)';
+          return(
+          <div key={i} style={{padding:'8px 0',borderTop:i?'1px solid #12151F':'none'}}>
+            <div style={{...flx({justifyContent:'space-between',gap:8})}}>
+              <span style={{fontSize:11.5,fontWeight:700,color:'var(--txt)'}}>{m.t} <span className="mono" style={{fontSize:7.5,color:'var(--faint)',fontWeight:400}}>· {m.ref}</span></span>
+              <span className="mono" style={{fontSize:11,fontWeight:800,color:c2,flexShrink:0}}>{up?'▲ alcista':dn?'▼ bajista':'◆ neutral'}</span>
+            </div>
+            <div style={{...flx({justifyContent:'space-between',gap:8}),marginTop:2}}>
+              <span className="mono" style={{fontSize:9,color:'var(--dim)'}}>{m.val()}</span>
+              <span className="mono" style={{fontSize:8,color:'var(--faint)',flexShrink:0}}>{m.prior?'sin backtest · peso prior':(m.hit!=null?('acierta '+m.hit.toFixed(0)+'% (n='+m.n+')'):'estructural')}</span>
+            </div>
+            <div style={{fontSize:8.5,color:'var(--faint)',marginTop:2,lineHeight:1.45}}>{m.d}</div>
+          </div>);})}
+      </div>
+      </Lazy>);})}
+    {/* RIESGO: cuánto exponerse (no dirección) */}
+    <Lazy est={230}>
+    <div style={panel({marginBottom:14,padding:16})}>
+      <div style={{...eyebrow,marginBottom:10}}>🛡️ Gestión del riesgo · cuánto, no hacia dónde</div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+        {[['Volatilidad ahora',(st.volNow*100).toFixed(0)+'% anual',st.volNow>0.6?'var(--down)':'var(--txt)','realizada 30d'],
+          ['Exposición sugerida',(st.expo*100).toFixed(0)+'%',st.expo<0.5?'var(--down)':st.expo<1?'#F3BA2F':'var(--up)','objetivo 30% vol'],
+          ['VaR 95% (30d)',st.var95!=null?st.var95.toFixed(0)+'%':'—','var(--down)','pérdida típica mala'],
+          ['VaR 99% (30d)',st.var99!=null?st.var99.toFixed(0)+'%':'—','var(--down)','escenario extremo']].map((m,i)=>(
+          <div key={i} style={{background:'#0A0D14',borderRadius:9,padding:'10px 11px'}}>
+            <div style={{...flx({justifyContent:'space-between'})}}>
+              <span style={{fontSize:10,color:'var(--dim)'}}>{m[0]}</span>
+              <span className="mono" style={{fontSize:13,fontWeight:800,color:m[2]}}>{m[1]}</span>
+            </div>
+            <div style={{fontSize:8,color:'var(--faint)',marginTop:2}}>{m[3]}</div>
+          </div>))}
+      </div>
+      <div style={{marginTop:10,padding:'9px 11px',borderRadius:9,background:'#0A0D14',fontSize:9.5,lineHeight:1.55,color:'var(--dim)'}}>
+        📐 <b style={{color:'var(--txt)'}}>Tamaño teórico (medio Kelly)</b>: {st.kelly>=0?'+':''}{(st.kelly*100).toFixed(0)}% del capital {st.kelly>0?'largo':st.kelly<0?'corto':'(sin ventaja → sin posición)'} — fórmula de crecimiento óptimo APLICADA A LA MITAD (el Kelly completo asume que conoces las probabilidades exactas, y nadie las conoce). Educativo, no es una recomendación.
+      </div>
+      <Fine>Vol targeting: exponerse MENOS cuando la volatilidad sube mantiene el riesgo constante (30% anual objetivo). VaR = percentil empírico de los retornos REALES a 30 días de todo el histórico (sin asumir normalidad). Kelly = f* del voto del ensemble, a la mitad y capado a ±25%.</Fine>
+    </div>
+    </Lazy>
+    <Fine label="ℹ️ metodología completa">Cada escuela se evalúa point-in-time (solo datos hasta ese día) y las direccionales se backtestean walk-forward: % de veces que el precio fue EN SU DIRECCIÓN 30 días después, encogido hacia 50 con muestras chicas. El voto pondera cada modelo por (acierto−50): sin ventaja medida ≈ sin peso. Los instantáneos (on-chain/sentimiento/funding, sin serie histórica aquí) entran con peso prior 0,10 y etiquetados. El corredor power law se ajusta con todo el histórico (estructural — no se backtestea a sí mismo). La inclinación se capa a 20-80: este panel NUNCA vende certezas. Datos: Binance (precio), bitcoin-data.com (on-chain), mempool.space (minería), alternative.me (sentimiento), funding propio. Se recalcula solo cada 5 min. No es consejo financiero.</Fine>
+  </div>);
+}
 function NewsView(){
   const [nw,setNw]=useState(null);
   const [nwT,setNwT]=useState(null); // hora de la última actualización del feed
@@ -7177,7 +7398,8 @@ function App(){
     pos:['BTC · posicionamiento oficial','Posiciones L/S'],
     bots:['BTC · estrategias automáticas','Bots de Trading'],
     pib:['Macro · ciclo económico mundial','Ciclo económico'],
-    news:['Cripto · última hora','Noticias']}[view];
+    total:['BTC · todas las escuelas cuánticas','Análisis Total'],
+    news:['Cripto · última hora','Noticias']}[view]||['BTC · análisis automático','VWAFR'];
 
   return(
     <>
@@ -7220,11 +7442,11 @@ function App(){
 
       {/* NAV apartados (desplaza en horizontal si no caben) */}
       <div className="span-all tabs mainnav" style={{...flx({gap:5}),overflowX:'auto'}}>
-        {[['home','Funding'],['cycle','Ciclo'],['quant','Cuant'],['pos','L/S'],['bots','Bots'],['pib','Macro'],['news','Noticias']].map(([k,label])=>{
+        {[['home','Funding'],['cycle','Ciclo'],['quant','Cuant'],['total','Total'],['pos','L/S'],['bots','Bots'],['pib','Macro'],['news','Noticias']].map(([k,label])=>{
           const on=view===k;
           return(
-            <button key={k} onClick={()=>setView(k)} className={on?'nav-glow':''} aria-label={'Ver sección '+label} aria-current={on?'page':undefined} style={{flex:'1 0 auto',padding:'9px 6px',borderRadius:10,
-              fontSize:10.5,fontWeight:700,cursor:'pointer',transition:'all .18s',whiteSpace:'nowrap',letterSpacing:-.2,
+            <button key={k} onClick={()=>setView(k)} className={on?'nav-glow':''} aria-label={'Ver sección '+label} aria-current={on?'page':undefined} style={{flex:'1 0 auto',padding:'9px 4px',borderRadius:10,
+              fontSize:10,fontWeight:700,cursor:'pointer',transition:'all .18s',whiteSpace:'nowrap',letterSpacing:-.3,
               border:`1px solid ${on?'var(--accent)':'var(--line)'}`,
               background:on?'linear-gradient(135deg,rgba(110,139,255,.22),rgba(31,224,160,.10))':'transparent',color:on?'var(--txt)':'var(--dim)'}}>{label}</button>
           );
@@ -7233,6 +7455,7 @@ function App(){
 
       {view==='cycle'&&<CycleBTC/>}
       {view==='quant'&&<QuantView gFunding={g.vwafr} nav={setView}/>}
+      {view==='total'&&<TotalView gFunding={g.vwafr}/>}
       {view==='pos'&&<PosView gFunding={g.vwafr} cot={cot}/>}
       {view==='bots'&&<BotsView gFunding={g.vwafr}/>}
       {view==='pib'&&<PIBView/>}
@@ -7655,7 +7878,7 @@ function App(){
 class ErrorBoundary extends React.Component{
   constructor(p){super(p);this.state={err:null};}
   static getDerivedStateFromError(e){return {err:e};}
-  componentDidCatch(e,info){try{console.error('UI error:',e,info);}catch(_){}}
+  componentDidCatch(e,info){try{window.__berr=(e&&e.message)||''+e;console.error('UI error:',e,info);}catch(_){}}
   render(){
     if(this.state.err)return(
       <div style={{maxWidth:480,margin:'40px auto',padding:'28px 22px',textAlign:'center',
