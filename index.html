@@ -1086,7 +1086,13 @@ function PosView({gFunding,cot}){
   // taker REAL de cada vela 4h, escalado por el OI AGREGADO de los 17 exchanges (relé fr).
   // Es la foto actual, no el histórico acumulado (eso exige ingesta 24/7 → Coinglass).
   const [lm,setLm]=useState(null);
+  const [mkt,setMkt]=useState(null); // volumen 24h de BTC en TODO el mercado (CoinGecko)
   const [showAllLS,setShowAllLS]=useState(false); // "Todas las monedas": ver la lista completa (~100)
+  useEffect(()=>{let a=true;const load=async()=>{try{
+    const r=await fetch('https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=bitcoin&price_change_percentage=24h').then(x=>x.json());
+    const b=Array.isArray(r)&&r[0];
+    if(a&&b&&Number.isFinite(b.total_volume))setMkt({vol:b.total_volume,price:b.current_price,chg:b.price_change_percentage_24h});
+  }catch(_){}};load();const t=setInterval(load,120000);return()=>{a=false;clearInterval(t);};},[]);
   useEffect(()=>{let a=true;(async()=>{try{
     const [kk,fr]=await Promise.all([
       fetch('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=4h&limit=500').then(r=>r.json()),
@@ -1147,6 +1153,34 @@ function PosView({gFunding,cot}){
         <div style={{...eyebrow,fontSize:9}}>datos oficiales por cohortes · opciones BTC y ETH</div>
       </div>
     </div>
+    {/* 💰 BTC EN TODO EL MERCADO: volumen 24h + interés abierto total (no 1h, mercado entero) */}
+    {(()=>{
+      const bigUSD=v=>(v==null||!Number.isFinite(v))?'—':v>=1e9?('$'+(v/1e9).toFixed(2)+'B'):v>=1e6?('$'+(v/1e6).toFixed(0)+'M'):('$'+Math.round(v).toLocaleString('es-ES'));
+      const px=(mkt&&mkt.price)||(lm&&lm.price)||(k&&k.price)||null;
+      const vol=mkt&&Number.isFinite(mkt.vol)?mkt.vol:null;                 // volumen 24h $ (todo el mercado)
+      const oi$=lm&&Number.isFinite(lm.oiAgg)&&lm.oiAgg>0?lm.oiAgg*1e9:null; // interés abierto $ (17 exchanges)
+      const volBtc=(vol!=null&&px)?vol/px:null, oiBtc=(oi$!=null&&px)?oi$/px:null;
+      const exN=(lm&&lm.exN)||17;
+      const Tile=({icn,lbl,usd,btc,src})=>(
+        <div style={{flex:1,minWidth:0,background:'#0A0D14',borderRadius:10,padding:'11px 12px'}}>
+          <div style={{fontSize:8.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.4,marginBottom:5}}>{icn} {lbl}</div>
+          <div className="mono" style={{fontSize:22,fontWeight:800,color:'var(--txt)',lineHeight:1}}>{bigUSD(usd)}</div>
+          <div className="mono" style={{fontSize:10,color:'var(--dim)',marginTop:4}}>{btc!=null?('≈ '+Math.round(btc).toLocaleString('es-ES')+' BTC'):'—'}</div>
+          <div style={{fontSize:8,color:'var(--faint)',marginTop:5,lineHeight:1.4}}>{src}</div>
+        </div>);
+      return(
+      <div style={panel({marginBottom:14,padding:14})}>
+        <div style={{...flx({justifyContent:'space-between'}),marginBottom:9}}>
+          <span style={eyebrow}>💰 BTC en TODO el mercado</span>
+          {mkt&&Number.isFinite(mkt.chg)&&<span className="mono" style={{fontSize:9,fontWeight:800,color:mkt.chg>=0?'var(--up)':'var(--down)'}}>{mkt.chg>=0?'+':''}{mkt.chg.toFixed(2)}% 24h</span>}
+        </div>
+        <div style={{display:'flex',gap:8}}>
+          <Tile icn="🔄" lbl="Volumen 24h" usd={vol} btc={volBtc} src="Volumen negociado spot en las últimas 24h, todo el mercado · CoinGecko"/>
+          <Tile icn="🔓" lbl="Interés abierto" usd={oi$} btc={oiBtc} src={'Contratos de futuros abiertos ahora mismo · '+exN+' exchanges (relé)'}/>
+        </div>
+        <Fine>El volumen es el total negociado en 24h (no de una vela de 1h); el interés abierto es el valor de TODOS los contratos de futuros perpetuos abiertos ahora, sumando {exN} exchanges. Ambos son la foto del mercado ENTERO, convertidos a dólares y a BTC al precio actual.</Fine>
+      </div>);
+    })()}
     {/* 🪙 TODAS LAS MONEDAS capturadas · Long/Short en $ (todos los exchanges) — arriba del todo */}
     {d&&d.coins&&d.coins.length>0&&(()=>{
       const tk=d.taker&&Number.isFinite(d.taker.pl)?d.taker.pl:null;

@@ -80,7 +80,7 @@
           var row9={d:dd9,unixTs:Math.floor((Date.now()-o9*864e5)/1000)};row9[fld]=+vv9.toFixed(4);oc.push(row9);}
         return J(oc);}
       if(u.indexOf('bitcoin-data.com')>=0)return J({});
-      if(u.indexOf('coingecko.com/api/v3/coins/markets')>=0)return J([{current_price:60000,ath:126000,ath_change_percentage:-52.4,price_change_percentage_24h:1.2,market_cap:1.19e12}]);
+      if(u.indexOf('coingecko.com/api/v3/coins/markets')>=0)return J([{current_price:60000,ath:126000,ath_change_percentage:-52.4,price_change_percentage_24h:1.2,market_cap:1.19e12,total_volume:38e9}]);
       if(u.indexOf('coingecko.com/api/v3/global')>=0)return J({data:{market_cap_percentage:{btc:56.3,eth:9.5},total_market_cap:{usd:2.281e12},market_cap_change_percentage_24h_usd:0.11}});
       if(u.indexOf('stablecoins.llama.fi')>=0)return J({peggedAssets:[{symbol:'USDT',circulating:{peggedUSD:1.7e11}},{symbol:'USDC',circulating:{peggedUSD:9e10}},{symbol:'DAI',circulating:{peggedUSD:5e10}}]});
       if(u.indexOf('companies/public_treasury/bitcoin')>=0)return J({total_holdings:1279882,total_value_usd:8.17e10,companies:[{name:'Strategy',total_holdings:640000}]});
