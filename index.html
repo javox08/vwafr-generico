@@ -6808,6 +6808,9 @@ function totalModels(cl,ts0,aux){
   const rsi2=(()=>{const o=new Array(N).fill(50);let g=0,l=0;for(let i=1;i<N;i++){const ch=cl[i]-cl[i-1],up=Math.max(ch,0),dn=Math.max(-ch,0);
     if(i<=2){g+=up;l+=dn;if(i===2){g/=2;l/=2;}}else{g=(g+up)/2;l=(l+dn)/2;}
     if(i>=2)o[i]=l===0?100:100-100/(1+g/l);}return o;})();
+  const rsi14=(()=>{const o=new Array(N).fill(50);let g=0,l=0;for(let i=1;i<N;i++){const ch=cl[i]-cl[i-1],up=Math.max(ch,0),dn=Math.max(-ch,0);
+    if(i<=14){g+=up;l+=dn;if(i===14){g/=14;l/=14;}}else{g=(g*13+up)/14;l=(l*13+dn)/14;}
+    if(i>=14)o[i]=l===0?100:100-100/(1+g/l);}return o;})();
   const m30=new Array(N).fill(null),s30=new Array(N).fill(null);
   {let s=0,s2=0;for(let i=0;i<N;i++){s+=cl[i];s2+=cl[i]*cl[i];
     if(i>=30){s-=cl[i-30];s2-=cl[i-30]*cl[i-30];}
@@ -6862,6 +6865,33 @@ function totalModels(cl,ts0,aux){
      sig:j=>{const w=weeksAt(j);return (w>=40&&w<77)?1:(w>=77&&w<130)?-1:0;},
      val:()=>'semana '+weeksAt(i).toFixed(0)+' del ciclo',d:'históricamente: semanas 40-77 alcistas · 77-130 bajistas'},
   ].filter(Boolean);
+  // ── COPPOCK CURVE (Coppock 1962, adaptada a meses de 30d): momentum de fondo para
+  //    detectar SUELOS — comprar cuando la curva está en negativo y gira hacia arriba. ──
+  {const M=[];for(let k=N-1;k>=0;k-=30)M.unshift(cl[k]); // cierres "mensuales"
+   if(M.length>=26){const cop=new Array(M.length).fill(null);
+     for(let k=14;k<M.length;k++){const roc14=M[k]/M[k-14]-1,roc11=k>=11?M[k]/M[k-11]-1:0;
+       let ws=0,vs=0;for(let w=0;w<10&&k-w>=14;w++){const kk=k-w,r=(M[kk]/M[kk-14]-1)+(M[kk]/M[kk-11]-1);vs+=r*(10-w);ws+=(10-w);}
+       cop[k]=ws?vs/ws*100:null;}
+     const mIdx=j=>Math.min(M.length-1,Math.floor((j-(N-1-30*(M.length-1)))/30));
+     MODELS.push({sch:'Ciclo',t:'Coppock Curve',ref:'Coppock 1962',
+       sig:j=>{const k=mIdx(j);if(k<16||cop[k]==null||cop[k-1]==null)return 0;
+         return (cop[k]<0&&cop[k]>cop[k-1])?1:0;},
+       val:()=>{const k=mIdx(i);return cop[k]!=null?('curva '+cop[k].toFixed(0)+(cop[k]<0?' (negativa)':'')):'—';},
+       d:'momentum mensual suavizado: en negativo y girando arriba = señal clásica de suelo mayor'});}}
+  // ── ON-CHAIN y SENTIMIENTO con HISTÓRICO REAL alineado por fecha (gratis): dejan de
+  //    ser "prior" y se BACKTESTEAN igual que el resto. aux.series.X = array alineado a cl. ──
+  const S=aux.series||{};
+  const mkSeries=(key,t,ref2,sch,fn,valFn,d2)=>{const a=S[key];
+    if(a&&a.filter(x=>x!=null).length>=500){MODELS.push({sch,t,ref:ref2,sig:j=>a[j]==null?0:fn(a[j]),val:valFn,d:d2,serie:true});return true;}
+    return false;};
+  const upMVRV=mkSeries('mvrv','MVRV','on-chain','On-chain',v2=>v2<1?1:v2>3.5?-1:0,
+    ()=>Number.isFinite(aux.mvrv)?aux.mvrv.toFixed(2):'—','<1 = mercado bajo coste medio (suelo) · >3,5 = techo');
+  const upNUPL=mkSeries('nupl','NUPL','on-chain','On-chain',v2=>v2<0?1:v2>0.75?-1:0,
+    ()=>Number.isFinite(aux.nupl)?aux.nupl.toFixed(2):'—','<0 capitulación · >0,75 euforia');
+  const upSOPR=mkSeries('sopr','SOPR','on-chain','On-chain',v2=>v2<0.97?1:v2>1.05?-1:0,
+    ()=>Number.isFinite(aux.sopr)?aux.sopr.toFixed(3):'—','<1 se vende en pérdidas (suelos) · >1,05 toma de beneficios');
+  const upFNG=mkSeries('fng','Miedo y Codicia (contrario)','alternative.me','Sentimiento',v2=>v2<20?1:v2>80?-1:0,
+    ()=>Number.isFinite(aux.fng)?String(aux.fng):'—','miedo extremo = oportunidad histórica · codicia = riesgo');
   // ── BACKTEST walk-forward de cada modelo (acierto direccional a 30d, encogido) ──
   const START=Math.max(460,N-2600);
   for(const m of MODELS){
@@ -6871,13 +6901,14 @@ function totalModels(cl,ts0,aux){
     m.n=n;m.hit=n>=8?((hit/n*100)*n+50*12)/(n+12):null; // encogido hacia 50 (fuerza 12)
     m.sNow=m.sig(i);
   }
-  // ── MODELOS INSTANTÁNEOS (sin serie propia → peso PRIOR pequeño, etiquetado) ──
+  // ── MODELOS INSTANTÁNEOS: solo los que NO tienen histórico gratis alineable
+  //    (peso PRIOR pequeño y etiquetado). El resto ya se backtestea arriba. ──
   const inst=[];
-  if(Number.isFinite(aux.mvrv))inst.push({sch:'On-chain',t:'MVRV',ref:'on-chain',sNow:aux.mvrv<1?1:aux.mvrv>3.5?-1:0,val:()=>aux.mvrv.toFixed(2),d:'<1 = mercado bajo coste medio (suelo) · >3,5 = techo',prior:true});
-  if(Number.isFinite(aux.nupl))inst.push({sch:'On-chain',t:'NUPL',ref:'on-chain',sNow:aux.nupl<0?1:aux.nupl>0.75?-1:0,val:()=>aux.nupl.toFixed(2),d:'<0 capitulación · >0,75 euforia',prior:true});
-  if(Number.isFinite(aux.sopr))inst.push({sch:'On-chain',t:'SOPR',ref:'on-chain',sNow:aux.sopr<0.97?1:aux.sopr>1.05?-1:0,val:()=>aux.sopr.toFixed(3),d:'<1 se vende en pérdidas (suelos) · >1,05 toma de beneficios',prior:true});
+  if(!upMVRV&&Number.isFinite(aux.mvrv))inst.push({sch:'On-chain',t:'MVRV',ref:'on-chain',sNow:aux.mvrv<1?1:aux.mvrv>3.5?-1:0,val:()=>aux.mvrv.toFixed(2),d:'<1 = mercado bajo coste medio (suelo) · >3,5 = techo',prior:true});
+  if(!upNUPL&&Number.isFinite(aux.nupl))inst.push({sch:'On-chain',t:'NUPL',ref:'on-chain',sNow:aux.nupl<0?1:aux.nupl>0.75?-1:0,val:()=>aux.nupl.toFixed(2),d:'<0 capitulación · >0,75 euforia',prior:true});
+  if(!upSOPR&&Number.isFinite(aux.sopr))inst.push({sch:'On-chain',t:'SOPR',ref:'on-chain',sNow:aux.sopr<0.97?1:aux.sopr>1.05?-1:0,val:()=>aux.sopr.toFixed(3),d:'<1 se vende en pérdidas (suelos) · >1,05 toma de beneficios',prior:true});
   if(aux.hashSig!=null)inst.push({sch:'On-chain',t:'Hash Ribbons',ref:'Capriole',sNow:aux.hashSig,val:()=>aux.hashTxt,d:'capitulación de mineros y su RECUPERACIÓN marcó suelos históricos',prior:true});
-  if(Number.isFinite(aux.fng))inst.push({sch:'Sentimiento',t:'Miedo y Codicia (contrario)',ref:'alternative.me',sNow:aux.fng<20?1:aux.fng>80?-1:0,val:()=>String(aux.fng),d:'miedo extremo = oportunidad histórica · codicia = riesgo',prior:true});
+  if(!upFNG&&Number.isFinite(aux.fng))inst.push({sch:'Sentimiento',t:'Miedo y Codicia (contrario)',ref:'alternative.me',sNow:aux.fng<20?1:aux.fng>80?-1:0,val:()=>String(aux.fng),d:'miedo extremo = oportunidad histórica · codicia = riesgo',prior:true});
   if(Number.isFinite(aux.gf))inst.push({sch:'Derivados',t:'Funding (contrario)',ref:'perpetuos',sNow:aux.gf<0?1:aux.gf>0.03?-1:0,val:()=>(aux.gf>=0?'+':'')+aux.gf.toFixed(4)+'%/8h',d:'funding negativo = cortos pagando (squeeze arriba) · muy alto = longs sobrecalentados',prior:true});
   const ALL=MODELS.concat(inst);
   // ── ENSEMBLE: voto ponderado por ACIERTO MEDIDO (prior pequeño para instantáneos) ──
@@ -6890,6 +6921,20 @@ function totalModels(cl,ts0,aux){
   }
   const v=wsum>0?vote/wsum:0;                 // -1..1
   const lean=50+v*30;                          // inclinación 20-80 (no vende certezas)
+  // ── BACKTEST DEL CONJUNTO: la misma votación (modelos direccionales, voto neto ≥2)
+  //    evaluada point-in-time sobre todo el histórico → cuánto acierta EL PANEL ENTERO,
+  //    comparado con la base de "siempre sube". El número más honesto de esta pestaña. ──
+  let ens=null;{
+    const dir=MODELS.filter(m=>m.sig);
+    let n=0,hit=0,bN=0,bU=0;
+    for(let j=START;j<N-31;j+=2){
+      bN++;if(cl[j+30]>cl[j])bU++;
+      let vv=0;for(const m of dir)vv+=m.sig(j);
+      const s=vv>=2?1:vv<=-2?-1:0;if(!s)continue;
+      n++;const r=cl[j+30]/cl[j]-1;if((s>0&&r>0)||(s<0&&r<0))hit++;
+    }
+    if(n>=30)ens={hit:((hit/n*100)*n+50*15)/(n+15),n,base:bN?bU/bN*100:55,cover:bN?Math.round(n/bN*100):0};
+  }
   // ── RIESGO (no dirección): vol targeting, VaR empírico, medio Kelly ──
   const volNow=vol30[i]||0.5;
   const expo=Math.max(0.1,Math.min(1.5,0.30/Math.max(0.05,volNow)));
@@ -6898,11 +6943,53 @@ function totalModels(cl,ts0,aux){
   const var95=r30.length?r30[Math.floor(r30.length*0.05)]*100:null;
   const var99=r30.length?r30[Math.floor(r30.length*0.01)]*100:null;
   const kelly=Math.max(-0.25,Math.min(0.25,v*0.25));
-  return {models:ALL,v,lean,nUp,nDn,n0,volNow,expo,var95,var99,kelly,pl,price:px,years:+(N/365).toFixed(1)};
+  // ── RUTA PRECISA POR ANALOGÍA HISTÓRICA (KNN): describe el ESTADO de hoy con estos
+  //    indicadores día a día (Mayer, distancia a MA50, momentum 30/90d, RSI14, vol,
+  //    posición en el ciclo, MVRV, NUPL, F&G) y busca los días del pasado MÁS parecidos.
+  //    La ruta es el camino REAL que siguió el precio esas veces (mediana + bandas). ──
+  let route=null;{
+    const cr=x=>Math.max(-0.6,Math.min(0.6,x));
+    const featAt=j=>{
+      if(j<200||ma200[j]==null||ma50[j]==null||vol30[j]==null||rsi14[j]==null)return null;
+      const mv=S.mvrv?S.mvrv[j]:null, nu=S.nupl?S.nupl[j]:null, fg=S.fng?S.fng[j]:null;
+      return [Math.log(cl[j]/ma200[j]),Math.log(cl[j]/ma50[j]),cr(cl[j]/cl[j-90]-1),cr(cl[j]/cl[j-30]-1),
+        rsi14[j]/100,vol30[j],(weeksAt(j)%208)/208, mv, nu, fg];
+    };
+    const F=[],idxs=[];
+    for(let j=200;j<N;j++){const fv=featAt(j);if(fv){F.push(fv);idxs.push(j);}}
+    if(F.length>200){
+      const nf=F[0].length, mean=new Array(nf).fill(0), std=new Array(nf).fill(1);
+      for(let c=0;c<nf;c++){const col=F.map(r=>r[c]).filter(x=>x!=null&&isFinite(x));
+        const m=col.length?col.reduce((a,x)=>a+x,0)/col.length:0;
+        const sd=col.length?Math.sqrt(col.reduce((a,x)=>a+(x-m)*(x-m),0)/col.length):1;
+        mean[c]=m;std[c]=sd||1;}
+      for(const r of F)for(let c=0;c<nf;c++){let x=r[c];if(x==null||!isFinite(x))x=mean[c];r[c]=(x-mean[c])/std[c];}
+      const W=[1.1,0.8,1.0,0.7,0.7,0.8,1.0,0.9,0.9,0.7]; // pesos por indicador
+      const today=F[F.length-1];
+      const cand=[];
+      for(let p=0;p<idxs.length;p++){const jj=idxs[p];if(jj+30>=N||Math.abs(jj-i)<=45)continue;
+        let dd=0;for(let c=0;c<nf;c++){const x=F[p][c]-today[c];dd+=W[c]*x*x;}
+        cand.push({jj,d:Math.sqrt(dd)});}
+      cand.sort((a,b)=>a.d-b.d);
+      const K=Math.min(45,cand.length), nb=cand.slice(0,K);
+      if(K>=15){
+        const paths=nb.map(x=>{const arr=[];for(let d=0;d<=30;d++)arr.push(cl[x.jj+d]/cl[x.jj]);return arr;});
+        const q=(d,p2)=>{const col=paths.map(r=>r[d]).sort((a,b)=>a-b);return col[Math.min(col.length-1,Math.max(0,Math.round(p2*(col.length-1))))];};
+        const med=[],p25=[],p75=[],p10=[],p90=[];
+        for(let d=0;d<=30;d++){med.push(q(d,0.5));p25.push(q(d,0.25));p75.push(q(d,0.75));p10.push(q(d,0.10));p90.push(q(d,0.90));}
+        const up=nb.filter(x=>cl[x.jj+30]>cl[x.jj]).length/K*100;
+        // ejemplos: los 3 análogos más cercanos, con su fecha
+        const ex=nb.slice(0,3).map(x=>({date:new Date(ts0+x.jj*864e5).toISOString().slice(0,10),ret:(cl[x.jj+30]/cl[x.jj]-1)*100}));
+        route={med,p25,p75,p10,p90,up,K,dist:+(nb.reduce((a,x)=>a+x.d,0)/K).toFixed(2),price:px,ex,onchain:!!(S.mvrv||S.nupl||S.fng)};
+      }
+    }
+  }
+  return {models:ALL,v,lean,nUp,nDn,n0,ens,route,volNow,expo,var95,var99,kelly,pl,price:px,years:+(N/365).toFixed(1)};
 }
 function TotalView({gFunding}){
   const [st,setSt]=useState(null);
   const [err,setErr]=useState(false);
+  const histRef=React.useRef(null); // históricos on-chain/sentimiento (gratis) — 1 sola carga
   useEffect(()=>{let a=true;
     const jget=(u,ms=9000)=>{const c=new AbortController();const t=setTimeout(()=>c.abort(),ms);
       return fetch(u,{signal:c.signal}).then(r=>{if(!r.ok)throw 0;return r.json();}).finally(()=>clearTimeout(t));};
@@ -6929,6 +7016,29 @@ function TotalView({gFunding}){
             aux.hashTxt=capiRec?'recuperación tras capitulación ✓ (señal de compra clásica)':(s30<s60?'capitulación de mineros en curso':'minería sana (30d ≥ 60d)');
           }}).catch(()=>{}),
       ]);
+      // HISTÓRICOS con fecha (todos GRATIS · presupuesto API: 0 $): F&G completo +
+      // MVRV/NUPL/SOPR (~4 años) → los modelos on-chain/sentimiento se backtestean.
+      // Se cargan UNA vez (bitcoin-data limita: secuencial con pausa) y se cachean.
+      if(!histRef.current){
+        const H={};
+        try{const j=await jget('https://api.alternative.me/fng/?limit=0',12000);
+          const m=new Map();for(const r2 of (j.data||[])){const ts=+r2.timestamp;if(Number.isFinite(ts))m.set(new Date(ts*1000).toISOString().slice(0,10),parseFloat(r2.value));}
+          if(m.size>500)H.fng=m;}catch(_){}
+        for(const [key,ep,fld] of [['mvrv','mvrv','mvrv'],['nupl','nupl','nupl'],['sopr','sopr','sopr']]){
+          try{const j=await jget('https://bitcoin-data.com/v1/'+ep,10000);
+            if(Array.isArray(j)&&j.length>500){const m=new Map();
+              for(const r2 of j){const v2=parseFloat(r2[fld]);if(r2.d&&Number.isFinite(v2))m.set(r2.d,v2);}
+              if(m.size>500)H[key]=m;}}catch(_){}
+          await new Promise(r2=>setTimeout(r2,350));
+        }
+        histRef.current=H;
+      }
+      // alinear cada histórico por FECHA con las velas diarias
+      aux.series={};
+      {const H=histRef.current;
+        for(const key in H){const m=H[key],arr=new Array(cl.length).fill(null);let cnt=0;
+          for(let z=0;z<cl.length;z++){const v2=m.get(new Date(ts0+z*864e5).toISOString().slice(0,10));if(v2!=null&&Number.isFinite(v2)){arr[z]=v2;cnt++;}}
+          if(cnt>=500)aux.series[key]=arr;}}
       const r=totalModels(cl,ts0,aux);
       if(a&&r)setSt(r); if(a&&!r)setErr(true);
     }catch(_){if(a&&!st)setErr(true);}};
@@ -6965,7 +7075,50 @@ function TotalView({gFunding}){
         <div style={{width:st.lean+'%',background:'var(--up)',opacity:.85}}/><div style={{flex:1,background:'var(--down)',opacity:.85}}/>
       </div>
       <div style={{...flx({justifyContent:'space-between'}),marginTop:4,fontSize:8,color:'var(--faint)'}} className="mono"><span>◀ bajista</span><span>50 = neutral</span><span>alcista ▶</span></div>
+      {st.ens&&<div style={{marginTop:10,padding:'9px 11px',borderRadius:9,background:'#0A0D14',fontSize:9.5,lineHeight:1.55,color:'var(--dim)'}}>
+        🎯 <b style={{color:'var(--txt)'}}>El CONJUNTO, backtesteado</b>: cuando ≥2 escuelas netas coinciden (pasa el {st.ens.cover}% de los días), la dirección acierta el <b style={{color:st.ens.hit>st.ens.base?'var(--up)':'#F3BA2F'}}>{st.ens.hit.toFixed(0)}%</b> a 30 días (n={st.ens.n} · vs {st.ens.base.toFixed(0)}% de acertar diciendo siempre "sube"). {st.ens.hit>st.ens.base+2?'Ventaja real sobre la base.':'Ventaja modesta: úsalo como contexto, no como oráculo.'}</div>}
     </div>
+    {/* 🧭 RUTA PRECISA por analogía histórica (KNN sobre los indicadores día a día) */}
+    {st.route&&(()=>{const R=st.route, p=R.price, b30=R.med[30]*p, pc=(R.med[30]-1)*100;
+      const dir2=R.up>=55?1:R.up<=45?-1:0, col2=dir2>0?'var(--up)':dir2<0?'var(--down)':'#F3BA2F';
+      const W=300,Hs=76,P2=4;
+      const med=R.med.map(m=>m*p),hi=R.p75.map(m=>m*p),lo=R.p25.map(m=>m*p),hi2=R.p90.map(m=>m*p),lo2=R.p10.map(m=>m*p);
+      const allv=med.concat(hi2,lo2,[p]),mn=Math.min(...allv),mx=Math.max(...allv),rg=(mx-mn)||1;
+      const X=k=>P2+k/30*(W-2*P2), Y=vv=>Hs-P2-(vv-mn)/rg*(Hs-2*P2);
+      const line=a=>'M '+a.map((vv,k)=>X(k).toFixed(1)+' '+Y(vv).toFixed(1)).join(' L ');
+      const band=(hh,ll)=>'M '+hh.map((vv,k)=>X(k).toFixed(1)+' '+Y(vv).toFixed(1)).join(' L ')+' L '+ll.map((_,k)=>X(30-k).toFixed(1)+' '+Y(ll[30-k]).toFixed(1)).join(' L ')+' Z';
+      const b7=R.med[7]*p, pc7=(R.med[7]-1)*100;
+      return(
+      <div style={panel({marginBottom:14,padding:16,background:`radial-gradient(130% 95% at 50% 0%, ${tint(col2,10)} 0%, var(--panel) 62%)`,borderColor:`${tint(col2,28)}`})}>
+        <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
+          <span style={eyebrow}>🧭 Ruta precisa · por analogía histórica</span>
+          <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>{R.K} días análogos</span>
+        </div>
+        <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:10,lineHeight:1.5}}>Describe el estado de HOY con estos indicadores (Mayer, momentum, ciclo, RSI{R.onchain?', MVRV, NUPL, Miedo/Codicia':''}…) y busca los <b style={{color:'var(--txt)'}}>{R.K} días del pasado más parecidos</b>. La ruta es el camino REAL que siguió el precio esas veces — mediana y bandas.</div>
+        <div style={{textAlign:'center',padding:'2px 0 8px'}}>
+          <div className="mono" style={{fontSize:34,fontWeight:800,color:col2,lineHeight:1}}>{R.up.toFixed(0)}%</div>
+          <div style={{fontSize:11.5,fontWeight:800,color:col2,marginTop:4}}>de esas veces BTC subió a 30 días</div>
+        </div>
+        <div style={{background:'#0A0D14',borderRadius:10,padding:'10px 12px'}}>
+          <svg viewBox={`0 0 ${W} ${Hs}`} width="100%" style={{display:'block'}}>
+            <path d={band(hi2,lo2)} fill={tint(col2,8)} stroke="none"/>
+            <path d={band(hi,lo)} fill={tint(col2,14)} stroke="none"/>
+            <path d={line(med)} fill="none" stroke={col2} strokeWidth="2"/>
+            <line x1={X(0)} y1={Y(p)} x2={X(30)} y2={Y(p)} stroke="var(--faint)" strokeWidth="1" strokeDasharray="3 3"/>
+          </svg>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8}}>
+            {[['En 7 días',b7,pc7],['En 30 días',b30,pc]].map(([lbl,val,p3],k)=>(
+              <div key={k} style={{textAlign:'center',padding:'7px 4px',borderRadius:8,background:'rgba(0,0,0,.28)'}}>
+                <div style={{fontSize:7.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.5}}>{lbl}</div>
+                <div className="mono" style={{fontSize:13.5,fontWeight:800,color:p3>=0?'var(--up)':'var(--down)',marginTop:2}}>{money(val)}</div>
+                <div className="mono" style={{fontSize:8,color:'var(--dim)',marginTop:1}}>{p3>=0?'+':''}{p3.toFixed(1)}% · rango {money(R.p25[k?30:7]*p)}–{money(R.p75[k?30:7]*p)}</div>
+              </div>))}
+          </div>
+        </div>
+        {R.ex&&R.ex.length>0&&<div style={{fontSize:8.5,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Los 3 días más parecidos: {R.ex.map((e,k)=>(<span key={k}>{k?' · ':''}<b style={{color:e.ret>=0?'var(--up)':'var(--down)'}}>{e.date}</b> ({e.ret>=0?'+':''}{e.ret.toFixed(0)}% en 30d)</span>))}.</div>}
+        <Fine>Distancia media a los análogos: {R.dist} (menor = más parecidos = ruta más fiable). Vector de estado normalizado (z-score) y ponderado por indicador; se excluyen los días a menos de 45 del actual (para no solaparse) y los que no tienen 30 días por delante. Es una foto de "cuando BTC estuvo así, esto pasó" — descriptivo, no una predicción garantizada.</Fine>
+      </div>);
+    })()}
     {/* ESCUELAS: cada modelo con su señal, valor y acierto medido */}
     {SCHOOLS.map(sch=>{const ms=st.models.filter(m=>m.sch===sch);if(!ms.length)return null;
       const ICN={Tendencia:'📈',Reversión:'🔄',Valoración:'⚖️',Ciclo:'🔁','On-chain':'⛓️',Sentimiento:'😨',Derivados:'💵'};
@@ -7011,7 +7164,7 @@ function TotalView({gFunding}){
       <Fine>Vol targeting: exponerse MENOS cuando la volatilidad sube mantiene el riesgo constante (30% anual objetivo). VaR = percentil empírico de los retornos REALES a 30 días de todo el histórico (sin asumir normalidad). Kelly = f* del voto del ensemble, a la mitad y capado a ±25%.</Fine>
     </div>
     </Lazy>
-    <Fine label="ℹ️ metodología completa">Cada escuela se evalúa point-in-time (solo datos hasta ese día) y las direccionales se backtestean walk-forward: % de veces que el precio fue EN SU DIRECCIÓN 30 días después, encogido hacia 50 con muestras chicas. El voto pondera cada modelo por (acierto−50): sin ventaja medida ≈ sin peso. Los instantáneos (on-chain/sentimiento/funding, sin serie histórica aquí) entran con peso prior 0,10 y etiquetados. El corredor power law se ajusta con todo el histórico (estructural — no se backtestea a sí mismo). La inclinación se capa a 20-80: este panel NUNCA vende certezas. Datos: Binance (precio), bitcoin-data.com (on-chain), mempool.space (minería), alternative.me (sentimiento), funding propio. Se recalcula solo cada 5 min. No es consejo financiero.</Fine>
+    <Fine label="ℹ️ metodología completa">Cada escuela se evalúa point-in-time (solo datos hasta ese día) y se backtestea walk-forward: % de veces que el precio fue EN SU DIRECCIÓN 30 días después, encogido hacia 50 con muestras chicas. Eso incluye <b>MVRV, NUPL, SOPR y Miedo/Codicia</b>, backtesteados sobre SUS históricos reales alineados por fecha (~4 años on-chain · ~8 años sentimiento). El voto pondera cada modelo por (acierto−50): sin ventaja medida ≈ sin peso. Los pocos sin serie alineable (hash ribbons, funding) entran con peso prior 0,10 etiquetado. El corredor power law se ajusta con todo el histórico (estructural — no se backtestea a sí mismo). El "conjunto backtesteado" del hero replica la votación día a día del pasado y mide su acierto real vs la base. La inclinación se capa a 20-80: este panel NUNCA vende certezas. Datos: Binance (precio), bitcoin-data.com (on-chain), mempool.space (minería), alternative.me (sentimiento), funding propio — <b>todas las fuentes gratuitas: coste de APIs 0 $</b>. Se recalcula solo cada 5 min (históricos: 1 carga por sesión). No es consejo financiero.</Fine>
   </div>);
 }
 function NewsView(){

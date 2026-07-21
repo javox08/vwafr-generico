@@ -56,6 +56,7 @@
       if(u.indexOf('coinbase.com/products/BTC-USD/ticker')>=0)return J({price:'60040'});
       if(u.indexOf('alternative.me')>=0){
         var nf=+((u.match(/limit=(\d+)/)||[])[1]||1),fd=[];
+        if(!nf)nf=1600; // limit=0 = histórico completo
         for(var f2=0;f2<nf;f2++)fd.push({value:''+Math.round(15+Math.abs(Math.sin(f2/40))*70),value_classification:'Fear',
           timestamp:''+Math.floor((Date.now()-f2*864e5)/1000)});
         return J({data:fd});
@@ -71,6 +72,13 @@
       if(u.indexOf('bitcoin-data.com/v1/puell-multiple/last')>=0)return J({puellMultiple:'0.92'});
       if(u.indexOf('bitcoin-data.com/v1/sopr/last')>=0)return J({sopr:'1.01'});
       if(u.indexOf('bitcoin-data.com/v1/fear-greed/last')>=0)return J({fearGreed:'45'});
+      // históricos COMPLETOS on-chain (para el Análisis Total): [{d,unixTs,<campo>}…]
+      if(/bitcoin-data\.com\/v1\/(mvrv|nupl|sopr)$/.test(u)){
+        var fld=u.split('/').pop(),oc=[];
+        for(var o9=1400;o9>=0;o9--){var dd9=new Date(Date.now()-o9*864e5).toISOString().slice(0,10);
+          var vv9=fld==='mvrv'?(1.8+Math.sin(o9/120)*1.7):fld==='nupl'?(0.35+Math.sin(o9/110)*0.55):(1+Math.sin(o9/40)*0.08);
+          var row9={d:dd9,unixTs:Math.floor((Date.now()-o9*864e5)/1000)};row9[fld]=+vv9.toFixed(4);oc.push(row9);}
+        return J(oc);}
       if(u.indexOf('bitcoin-data.com')>=0)return J({});
       if(u.indexOf('coingecko.com/api/v3/coins/markets')>=0)return J([{current_price:60000,ath:126000,ath_change_percentage:-52.4,price_change_percentage_24h:1.2,market_cap:1.19e12}]);
       if(u.indexOf('coingecko.com/api/v3/global')>=0)return J({data:{market_cap_percentage:{btc:56.3,eth:9.5},total_market_cap:{usd:2.281e12},market_cap_change_percentage_24h_usd:0.11}});
