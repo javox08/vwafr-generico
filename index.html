@@ -1210,7 +1210,7 @@ function PosView({gFunding,cot}){
       <div style={panel({marginBottom:14,padding:16})}>
         <div style={{...flx({justifyContent:'space-between'}),marginBottom:8}}>
           <span style={eyebrow}>🪙 Todas las monedas · Long/Short</span>
-          <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>{rows.length} monedas{hasD?' · '+exCount+' exchanges':''} · auto</span>
+          <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>{rows.length} monedas{hasD?' · '+exCount+' exchanges':''} · en vivo</span>
         </div>
         {/* TOTAL en $ agregando TODOS los exchanges (OI × sesgo) */}
         {hasD&&tot>0&&(()=>{const bull=tPct>0.5;
@@ -1226,7 +1226,7 @@ function PosView({gFunding,cot}){
             <div style={{display:'flex',height:8,borderRadius:5,overflow:'hidden'}}>
               <div style={{width:(tPct*100)+'%',background:'var(--up)',opacity:.85}}/><div style={{flex:1,background:'var(--down)',opacity:.85}}/>
             </div>
-            <div style={{fontSize:7.5,color:'var(--faint)',marginTop:5}}>Interés abierto total ≈ {fB(tot)} en {exCount} exchanges, repartido por el sesgo de cada cohorte. {(tPct*100).toFixed(0)}% del dinero del lado largo.</div>
+            <div style={{fontSize:7.5,color:'var(--faint)',marginTop:5}}>Interés abierto total ≈ {fB(tot)} en {exCount} exchanges, repartido por el sesgo de cada cohorte. {(tPct*100).toFixed(0)}% del dinero del lado largo. Foto EN VIVO del total, sin ventana temporal.</div>
           </div>);})()}
         {/* por moneda */}
         <div style={{fontSize:8,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.6,fontWeight:700,marginBottom:6}}>Por moneda {hasD?'· ordenadas por tamaño (OI)':'· sesgo L/S'}</div>
@@ -1245,7 +1245,7 @@ function PosView({gFunding,cot}){
           style={{textAlign:'center',padding:'9px',marginTop:6,borderRadius:9,cursor:'pointer',background:'var(--panel2)',border:'1px solid var(--line2)'}}>
           <span className="mono" style={{fontSize:10,fontWeight:800,color:'var(--accent)'}}>{showAllLS?'▲ ver menos':'▼ ver TODAS · '+(rows.length-CAP)+' monedas más'}</span>
         </div>}
-        <div style={{fontSize:7.5,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>El <b style={{color:'var(--txt)'}}>$ long/$ short</b> es el interés abierto REAL en dólares (sumando {hasD?exCount:'los'} exchanges y <b style={{color:'var(--txt)'}}>todos los contratos: perp USDT + USDC + inverse/coin-margined</b> donde el exchange lo publica), repartido por el sesgo de cohortes de cada moneda — la misma idea que la columna de $ de Coinglass (es una estimación: en derivados el notional largo = corto = OI, lo que cambia es de qué lado está cada grupo). Cifras a la derecha = % long · % short. Top 10: consenso multi-exchange (cuentas + top traders); el resto (ᴮ): ratio de cuentas y OI de <b style={{color:'var(--txt)'}}>Binance</b> — el único con datos bulk gratis para ~100 monedas. El detalle por exchange (Binance·OKX·Bybit) está más abajo, solo para BTC.</div>
+        <div style={{fontSize:7.5,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>El sesgo Long/Short es la <b style={{color:'var(--txt)'}}>foto EN VIVO de cómo están posicionadas TODAS las cuentas abiertas ahora mismo</b> — no es de una vela de 1h ni de ningún periodo: es el total actual del mercado (el ratio de cuentas es un recuento de todas las posiciones abiertas, no del volumen de una hora). El <b style={{color:'var(--txt)'}}>$ long/$ short</b> es el interés abierto REAL en dólares (sumando {hasD?exCount:'los'} exchanges y <b style={{color:'var(--txt)'}}>todos los contratos: perp USDT + USDC + inverse/coin-margined</b> donde el exchange lo publica), repartido por ese sesgo de cohortes de cada moneda — la misma idea que la columna de $ de Coinglass (es una estimación: en derivados el notional largo = corto = OI, lo que cambia es de qué lado está cada grupo). Cifras a la derecha = % long · % short. Top 10: consenso multi-exchange (cuentas + top traders); el resto (ᴮ): ratio de cuentas y OI de <b style={{color:'var(--txt)'}}>Binance</b> — el único con datos bulk gratis para ~100 monedas. El detalle por exchange (Binance·OKX·Bybit) está más abajo, solo para BTC.</div>
       </div>);
     })()}
     {/* qué se puede medir y qué no */}
