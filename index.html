@@ -7099,6 +7099,17 @@ function TotalView({gFunding}){
           <div className="mono" style={{fontSize:34,fontWeight:800,color:col2,lineHeight:1}}>{R.up.toFixed(0)}%</div>
           <div style={{fontSize:11.5,fontWeight:800,color:col2,marginTop:4}}>de esas veces BTC subió a 30 días</div>
         </div>
+        {(()=>{const eLean=st.lean,agree=(R.up-50)*(eLean-50)>=0,gap=Math.abs(R.up-eLean);
+          if(!agree&&gap>=12)return(
+            <div style={{margin:'0 0 10px',padding:'8px 11px',borderRadius:9,background:'rgba(243,186,47,.10)',border:'1px solid rgba(243,186,47,.30)',fontSize:9.5,lineHeight:1.55,color:'var(--txt)'}}>
+              ⚠️ <b>Baja confianza:</b> la ruta histórica ({R.up.toFixed(0)}% sube) y el veredicto ponderado del conjunto ({eLean.toFixed(0)}/100) apuntan en <b>direcciones opuestas</b>. Cuando la analogía y los modelos no coinciden, la señal es débil — trátalo como rango, no como tendencia.
+            </div>);
+          if(agree&&gap<=10)return(
+            <div style={{margin:'0 0 10px',padding:'8px 11px',borderRadius:9,background:'rgba(31,224,160,.08)',border:'1px solid rgba(31,224,160,.22)',fontSize:9.5,lineHeight:1.55,color:'var(--txt)'}}>
+              ✓ <b>Coincide con el conjunto:</b> la analogía histórica y el veredicto ponderado de los modelos ({eLean.toFixed(0)}/100) apuntan en la <b>misma dirección</b> — mayor confianza en la ruta.
+            </div>);
+          return null;
+        })()}
         <div style={{background:'#0A0D14',borderRadius:10,padding:'10px 12px'}}>
           <svg viewBox={`0 0 ${W} ${Hs}`} width="100%" style={{display:'block'}}>
             <path d={band(hi2,lo2)} fill={tint(col2,8)} stroke="none"/>
