@@ -10,7 +10,7 @@ const jf = (u, ms = 4500) => { const c = new AbortController(); const t = setTim
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 's-maxage=120, stale-while-revalidate=300');
-  const out = { t: Date.now(), v: 'ls-20260718b', coins: [], btc: {} };
+  const out = { t: Date.now(), v: 'ls-20260718c', coins: [], btc: {} };
   // SECUENCIAL por moneda (OKX limita las peticiones simultáneas), pero los 3
   // exchanges de cada moneda en paralelo. Bybit/Binance pueden estar geo-
   // bloqueados según la región del servidor: si fallan, queda la media del resto.
@@ -41,6 +41,37 @@ module.exports = async (req, res) => {
     if (rs.length || rp != null) out.coins.push({ c, r: rs.length ? rs.reduce((a, x) => a + x, 0) / rs.length : null, srcs: rs.length, rp });
     await new Promise(r2 => setTimeout(r2, 120));
   }
+  // ── AMPLIACIÓN a ~100 monedas ("alárgalo al máximo"): para las que no están en el
+  //    top 10, ratio de CUENTAS de Binance (globalLongShortAccountRatio) + OI en $.
+  //    Solo Binance (los únicos bulk-baratos); se eligen las de MÁS volumen 24h. ──
+  try {
+    const tk = await jf('https://fapi.binance.com/fapi/v1/ticker/24hr', 6000);
+    if (Array.isArray(tk)) {
+      const done = new Set(COINS);
+      const cands = tk
+        .filter(t => /USDT$/.test(t.symbol) && !/_/.test(t.symbol))
+        .map(t => ({ sym: t.symbol, base: t.symbol.replace(/USDT$/, ''), vol: parseFloat(t.quoteVolume) || 0, px: parseFloat(t.lastPrice) }))
+        .filter(t => !done.has(t.base) && t.vol > 0 && Number.isFinite(t.px))
+        .sort((a, b) => b.vol - a.vol)
+        .slice(0, 90);
+      const CH = 30; // en tandas para no pasarnos de golpe
+      const extra = [];
+      for (let i = 0; i < cands.length; i += CH) {
+        await Promise.all(cands.slice(i, i + CH).map(async t => {
+          const [ratio, oi] = await Promise.all([
+            jf('https://fapi.binance.com/futures/data/globalLongShortAccountRatio?symbol=' + t.sym + '&period=1h&limit=1', 4000),
+            jf('https://fapi.binance.com/fapi/v1/openInterest?symbol=' + t.sym, 4000)
+          ]);
+          const v = parseFloat(Array.isArray(ratio) && ratio[0] && ratio[0].longShortRatio);
+          const oiUsd = parseFloat(oi && oi.openInterest) * t.px;
+          if (Number.isFinite(v) && v > 0) extra.push({ c: t.base.replace(/^1000000|^1000/, ''), r: +v.toFixed(3), oi: Number.isFinite(oiUsd) && oiUsd > 0 ? +(oiUsd / 1e9).toFixed(4) : null });
+        }));
+      }
+      // orden por OI (tamaño real) y fuera duplicados de base (p.ej. 1000PEPE vs PEPE)
+      const seen = new Set(); out.coinsX = [];
+      for (const e of extra.sort((a, b) => (b.oi || 0) - (a.oi || 0))) { if (seen.has(e.c)) continue; seen.add(e.c); out.coinsX.push(e); }
+    }
+  } catch (e) {}
   // ratio por POSICIONES de TOP TRADERS (el "dinero de los pros"): SOLO fuentes que
   // son de verdad de top traders por posición (OKX y Binance). Bybit no publica
   // top-traders (solo cuentas = la masa), así que NO entra aquí — iría al lado

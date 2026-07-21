@@ -1049,7 +1049,7 @@ function PosView({gFunding,cot}){
       const bc=((j&&j.coins)||[]).find(x=>x.c==='BTC');
       const masaAgg=(bc&&Number.isFinite(bc.r)&&bc.r>0)?bc.r/(1+bc.r):null;
       const prosAgg=(j&&j.btc&&Number.isFinite(j.btc.pos)&&j.btc.pos>0)?j.btc.pos/(1+j.btc.pos):null;
-      if(a&&j&&j.btc)setD({lsEx:j.btc.lsEx||null,taker:j.btc.taker||null,hist:(j.btc.hist||[]),cvdFut:j.btc.cvdFut||null,oiSplit:j.btc.oiSplit||null,skew:j.btc.skew||null,opts:j.btc.opts||null,ethOpts:(j.eth&&j.eth.opts)||null,cvdAgg:j.btc.cvdAgg||null,masaAgg,prosAgg,coins:((j&&j.coins)||[])});
+      if(a&&j&&j.btc)setD({lsEx:j.btc.lsEx||null,taker:j.btc.taker||null,hist:(j.btc.hist||[]),cvdFut:j.btc.cvdFut||null,oiSplit:j.btc.oiSplit||null,skew:j.btc.skew||null,opts:j.btc.opts||null,ethOpts:(j.eth&&j.eth.opts)||null,cvdAgg:j.btc.cvdAgg||null,masaAgg,prosAgg,coins:((j&&j.coins)||[]),coinsX:((j&&j.coinsX)||[])});
     }catch(_){}};
     load();const t=setInterval(load,120000);return()=>{a=false;clearInterval(t);};},[]);
   const [k,setK]=useState(null); // CVD spot diario (oficial: taker buy de las velas) + máx/mín 60d
@@ -1086,6 +1086,7 @@ function PosView({gFunding,cot}){
   // taker REAL de cada vela 4h, escalado por el OI AGREGADO de los 17 exchanges (relé fr).
   // Es la foto actual, no el histórico acumulado (eso exige ingesta 24/7 → Coinglass).
   const [lm,setLm]=useState(null);
+  const [showAllLS,setShowAllLS]=useState(false); // "Todas las monedas": ver la lista completa (~100)
   useEffect(()=>{let a=true;(async()=>{try{
     const [kk,fr]=await Promise.all([
       fetch('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=4h&limit=500').then(r=>r.json()),
@@ -1160,9 +1161,15 @@ function PosView({gFunding,cot}){
       let rows=d.coins.map(x=>{const cons=consOf(x);const oi=(oiC&&Number.isFinite(oiC[x.c]))?oiC[x.c]:null;
         return{c:x.c,cons,oi,lng:(oi!=null&&cons!=null)?oi*cons:null,sht:(oi!=null&&cons!=null)?oi*(1-cons):null};})
         .filter(x=>x.cons!=null);
+      // AMPLIACIÓN "al máximo": el resto de monedas con ratio de cuentas + OI de Binance
+      const tops=new Set(rows.map(x=>x.c));
+      for(const x of (d.coinsX||[])){if(tops.has(x.c)||!Number.isFinite(x.r)||x.r<=0)continue;
+        const cons=x.r/(1+x.r), oi=Number.isFinite(x.oi)?x.oi:null;
+        rows.push({c:x.c,cons,oi,lng:oi!=null?oi*cons:null,sht:oi!=null?oi*(1-cons):null,ext:true});}
       if(!rows.length)return null;
       const hasD=rows.some(x=>x.oi!=null);
       rows=hasD?rows.sort((a,b)=>(b.oi||0)-(a.oi||0)):rows.sort((a,b)=>b.cons-a.cons);
+      const CAP=14, vis=showAllLS?rows:rows.slice(0,CAP);
       const totL=rows.reduce((s,x)=>s+(x.lng||0),0), totS=rows.reduce((s,x)=>s+(x.sht||0),0), tot=totL+totS;
       const tPct=tot>0?totL/tot:null;
       return(
@@ -1189,9 +1196,9 @@ function PosView({gFunding,cot}){
           </div>);})()}
         {/* por moneda */}
         <div style={{fontSize:8,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.6,fontWeight:700,marginBottom:6}}>Por moneda {hasD?'· ordenadas por tamaño (OI)':'· sesgo L/S'}</div>
-        {rows.map((x,i)=>{const bull=x.cons>0.52,bear=x.cons<0.48,col=bull?'var(--up)':bear?'var(--down)':'#F3BA2F';
+        {vis.map((x,i)=>{const bull=x.cons>0.52,bear=x.cons<0.48,col=bull?'var(--up)':bear?'var(--down)':'#F3BA2F';
           return(<div key={x.c} style={{...flx({gap:8}),padding:'5px 0',borderTop:i?'1px solid #12151F':'none'}}>
-            <span className="mono" style={{fontSize:10,fontWeight:800,width:42,flexShrink:0,color:'var(--txt)'}}>{x.c}</span>
+            <span className="mono" style={{fontSize:10,fontWeight:800,width:52,flexShrink:0,color:'var(--txt)',overflow:'hidden',textOverflow:'ellipsis'}}>{x.c}{x.ext&&<span style={{fontSize:6,color:'var(--faint)',fontWeight:600}} title="ratio de cuentas de Binance"> ᴮ</span>}</span>
             <div style={{flex:1,minWidth:24}}>
               <div style={{display:'flex',height:6,borderRadius:4,overflow:'hidden'}}>
                 <div style={{width:(x.cons*100)+'%',background:'var(--up)',opacity:.82}}/><div style={{flex:1,background:'var(--down)',opacity:.82}}/>
@@ -1200,7 +1207,11 @@ function PosView({gFunding,cot}){
             </div>
             <span className="mono" style={{fontSize:9,fontWeight:800,width:48,flexShrink:0,textAlign:'right',color:col}}>{(x.cons*100).toFixed(0)}·{((1-x.cons)*100).toFixed(0)}</span>
           </div>);})}
-        <div style={{fontSize:7.5,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>El <b style={{color:'var(--txt)'}}>$ long/$ short</b> es el interés abierto REAL en dólares (sumando {hasD?exCount:'los'} exchanges y <b style={{color:'var(--txt)'}}>todos los contratos: perp USDT + USDC + inverse/coin-margined</b> donde el exchange lo publica), repartido por el sesgo de cohortes de cada moneda — la misma idea que la columna de $ de Coinglass (es una estimación: en derivados el notional largo = corto = OI, lo que cambia es de qué lado está cada grupo). Cifras a la derecha = % long · % short. El detalle por exchange (Binance·OKX·Bybit) está más abajo, solo para BTC.</div>
+        {rows.length>CAP&&<div onClick={()=>setShowAllLS(v=>!v)} className="qnav" role="button" tabIndex={0}
+          style={{textAlign:'center',padding:'9px',marginTop:6,borderRadius:9,cursor:'pointer',background:'var(--panel2)',border:'1px solid var(--line2)'}}>
+          <span className="mono" style={{fontSize:10,fontWeight:800,color:'var(--accent)'}}>{showAllLS?'▲ ver menos':'▼ ver TODAS · '+(rows.length-CAP)+' monedas más'}</span>
+        </div>}
+        <div style={{fontSize:7.5,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>El <b style={{color:'var(--txt)'}}>$ long/$ short</b> es el interés abierto REAL en dólares (sumando {hasD?exCount:'los'} exchanges y <b style={{color:'var(--txt)'}}>todos los contratos: perp USDT + USDC + inverse/coin-margined</b> donde el exchange lo publica), repartido por el sesgo de cohortes de cada moneda — la misma idea que la columna de $ de Coinglass (es una estimación: en derivados el notional largo = corto = OI, lo que cambia es de qué lado está cada grupo). Cifras a la derecha = % long · % short. Top 10: consenso multi-exchange (cuentas + top traders); el resto (ᴮ): ratio de cuentas y OI de <b style={{color:'var(--txt)'}}>Binance</b> — el único con datos bulk gratis para ~100 monedas. El detalle por exchange (Binance·OKX·Bybit) está más abajo, solo para BTC.</div>
       </div>);
     })()}
     {/* qué se puede medir y qué no */}
@@ -3706,15 +3717,8 @@ function QuantView({gFunding,nav}){
   const [velaSel,setVelaSel]=useState(null); // visor de patrón de velas (modal)
   const [infoSel,setInfoSel]=useState(null); // visor genérico (técnicos y manipulaciones)
   const [flowPro,setFlowPro]=useState(null); // panel PRO: Coinbase premium + long/short (masa/pros)
-  // CPI REAL (dato oficial de la Fed/FRED) para el calendario — vía el relé (FRED no da
-  // CORS al navegador). Se muestra el "dato real" del IPC junto a su guía de impacto.
-  const [cpiReal,setCpiReal]=useState(null);
-  const [jobsReal,setJobsReal]=useState(null); // empleo EE.UU. (NFP + paro) para el calendario
-  const [ppiReal,setPpiReal]=useState(null);   // IPP (inflación mayorista) para el calendario
-  const [fedReal,setFedReal]=useState(null);   // tipos de la Fed (FRED) para el veredicto del FOMC
-  useEffect(()=>{let a=true;(async()=>{try{
-    const j=await fetchLS();if(a&&j){if(j.cpi&&Number.isFinite(j.cpi.yoy))setCpiReal(j.cpi);if(j.jobs&&j.jobs.nfp&&Number.isFinite(j.jobs.nfp.act))setJobsReal(j.jobs);if(j.ppi&&Number.isFinite(j.ppi.yoy))setPpiReal(j.ppi);if(j.fed&&Number.isFinite(j.fed.rate))setFedReal(j.fed);}
-  }catch(_){}})();return()=>{a=false;};},[]);
+  // (los datos del calendario económico —IPC/IPP/empleo/Fed— viven ahora en el
+  // componente EconCalendar, en la pestaña Macro)
   const [veloTfSel,setVeloTfSel]=useState('4h'); // temporalidad de la Vista Velo (gráficos apilados)
   const [veloCopied,setVeloCopied]=useState(false); // feedback del botón "copiar análisis"
   const [showAllPats,setShowAllPats]=useState(false); // ver todos los patrones (la lista se capa a 12)
@@ -4655,6 +4659,16 @@ function QuantView({gFunding,nav}){
         const glob=ups>dns?{t:'ALCISTA en '+ups+' de '+c.veloTF.length+' temporalidades',c:'var(--up)',e:'📈'}:
           dns>ups?{t:'BAJISTA en '+dns+' de '+c.veloTF.length+' temporalidades',c:'var(--down)',e:'📉'}:
           {t:'MIXTO entre temporalidades',c:'#F3BA2F',e:'⚖️'};
+        // HISTORIAL del veredicto: guarda los cambios (ALCISTA/BAJISTA/MIXTO) en el navegador
+        // y muestra el anterior + cuándo cambió → saber si la señal es fresca o lleva días.
+        const gDir=ups>dns?1:dns>ups?-1:0; let veloPrev=null,veloSince=null;
+        try{let vh=JSON.parse(localStorage.getItem('vwafr_velo_hist')||'[]');
+          if(!vh.length||vh[vh.length-1].d!==gDir){vh.push({t:Date.now(),d:gDir});while(vh.length>24)vh.shift();localStorage.setItem('vwafr_velo_hist',JSON.stringify(vh));}
+          const cur=vh[vh.length-1]; veloSince=cur?cur.t:null;
+          if(vh.length>1)veloPrev=vh[vh.length-2];
+        }catch(_){}
+        const agoTxt=ts=>{const m=Math.max(1,Math.round((Date.now()-ts)/6e4));return m<60?('hace '+m+' min'):m<2880?('hace '+Math.round(m/60)+' h'):('hace '+Math.round(m/1440)+' días');};
+        const dirTxt2=d2=>d2>0?'ALCISTA':d2<0?'BAJISTA':'MIXTO';
         const Spark=({p,cv})=>{const W=290,H=44,P2=3,n2=p.length;
           const nrm=a=>{const mn=Math.min(...a),mx=Math.max(...a),rg=(mx-mn)||1;return a.map(v=>(v-mn)/rg);};
           const pn=nrm(p),cn=nrm(cv);
@@ -4681,7 +4695,13 @@ function QuantView({gFunding,nav}){
           {/* veredicto global */}
           <div id="velo-verdict" style={{...flx({gap:9}),padding:'10px 12px',borderRadius:10,marginBottom:10,background:`${tint(glob.c,7)}`,border:`1px solid ${tint(glob.c,20)}`}}>
             <span style={{fontSize:20}}>{glob.e}</span>
-            <div style={{fontSize:13,fontWeight:800,color:glob.c}}>{glob.t}</div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:13,fontWeight:800,color:glob.c}}>{glob.t}</div>
+              {veloSince&&<div style={{fontSize:8,color:'var(--faint)',marginTop:2}} className="mono">
+                {veloPrev?('antes '+dirTxt2(veloPrev.d)+' · cambió a '+dirTxt2(gDir)+' '+agoTxt(veloSince)):('sin cambios desde '+agoTxt(veloSince))}
+                {veloPrev&&veloPrev.d*gDir<0&&<b style={{color:'#F3BA2F'}}> · giro reciente: confirmar antes de fiarse</b>}
+              </div>}
+            </div>
           </div>
           {/* 🧩 LECTURA COMBINADA: TODOS los indicadores de derivados afectan a la vez
               (OI + funding + taker Coinglass + CVD + Coinbase premium + masa/pros),
@@ -5485,214 +5505,14 @@ function QuantView({gFunding,nav}){
           el posicionamiento OFICIAL por cohortes. El imán del cono sigue usando la
           estimación internamente (es un input del modelo, no un dato mostrado). */}
 
-      {/* CALENDARIO ECONÓMICO */}
-      <div style={panel({marginBottom:14,padding:16})}>
-        <div style={{...flx({justifyContent:'space-between'}),marginBottom:12}}>
-          <span style={eyebrow}>Calendario económico</span>
-          {(()=>{ // chip del PRÓXIMO evento: cuenta atrás, en rojo si está a ≤2 días (volatilidad)
-            const nx=evNext.find(e2=>Math.ceil((e2.d-now)/D)>=0); if(!nx)return null;
-            const dd=Math.ceil((nx.d-now)/D), hot2=dd<=2;
-            return(<span className="mono" style={{fontSize:8.5,fontWeight:800,padding:'2px 8px',borderRadius:8,
-              color:hot2?'var(--down)':'var(--accent)',
-              background:hot2?'rgba(255,84,112,.1)':'rgba(110,139,255,.1)',
-              border:'1px solid '+(hot2?'rgba(255,84,112,.35)':'rgba(110,139,255,.3)'),
-              animation:hot2?'breathe 2s ease infinite':'none'}}>{hot2?'⚠ ':'⏰ '}{nx.t} {dd===0?'HOY':'en '+dd+'d'}{hot2?' · volatilidad':''}</span>);})()}
-        </div>
-        {cpiReal&&(()=>{
-          // VEREDICTO por la SORPRESA (actual vs previsión), NO por el nivel absoluto:
-          // el mercado reacciona a si sale por encima/debajo de lo esperado. Así esta
-          // nota y la tarjeta del dato de abajo dicen SIEMPRE lo mismo (no se contradicen).
-          const defl=Number.isFinite(cpiReal.yoy)&&cpiReal.yoy<0;
-          const s=Number.isFinite(cpiReal.estLastYoy)?+(cpiReal.yoy-cpiReal.estLastYoy).toFixed(1):null;
-          const hot=s!=null&&s>0.05, cool=s!=null&&s<-0.05;
-          const vc=(defl||hot)?'var(--down)':cool?'var(--up)':s==null?'var(--dim)':'#F3BA2F';
-          const verd=defl?'inflación NEGATIVA → 🔴 riesgo de deflación (no es alivio)'
-            :s==null?'(sin previsión con la que comparar)'
-            :hot?('salió POR ENCIMA de lo previsto ('+(s>=0?'+':'')+s+'pp) → 🔴 negativo para cripto')
-            :cool?('salió POR DEBAJO de lo previsto ('+s+'pp) → 🟢 positivo para cripto')
-            :'salió EN LÍNEA con lo previsto → 🟡 impacto pequeño';
-          return(<div style={{fontSize:9,color:'var(--dim)',marginBottom:10,marginTop:-6,padding:'6px 9px',borderRadius:8,background:'#0A0D14',border:'1px solid var(--line2)'}} className="mono">📊 Último IPC EE.UU. REAL (BLS · oficial): <b style={{color:vc}}>{cpiReal.yoy}% interanual</b> · {cpiReal.mom>=0?'+':''}{cpiReal.mom}% mensual <span style={{color:'var(--faint)'}}>({cpiReal.month})</span> · {verd}{!defl&&cpiReal.yoy>=2.5?' · sigue sobre el objetivo 2% de la Fed':''}</div>);
-        })()}
-        {(fedReal||cpiReal)&&(()=>{
-          // VEREDICTO del FOMC. Preferencia: dato REAL de tipos (FRED). Si el relé no lo
-          // trae, se INFIERE el sesgo probable de la Fed desde el IPC y el empleo reales
-          // (marcado como "probable"), para que el FOMC nunca se quede sin lectura.
-          if(fedReal){
-            const f=fedReal, hike=f.dir==='hike', cut=f.dir==='cut';
-            const easing=f.traj6<-0.1, tightening=f.traj6>0.1;
-            const vc=hike?'var(--down)':cut?'var(--up)':easing?'var(--up)':tightening?'var(--down)':'#F3BA2F';
-            const verd=hike?'SUBIÓ tipos → dinero más caro → 🔴 negativo para cripto'
-              :cut?'BAJÓ tipos → más liquidez → 🟢 positivo para cripto'
-              :easing?('mantiene, pero en ciclo de BAJADAS (−'+Math.abs(f.traj6).toFixed(2)+'pp/6m) → 🟢 viento de cola')
-              :tightening?('mantiene, aún en ciclo de SUBIDAS (+'+f.traj6.toFixed(2)+'pp/6m) → 🔴 presión')
-              :'mantiene los tipos → 🟡 manda el tono de Powell (pistas del futuro)';
-            return(<div style={{fontSize:9,color:'var(--dim)',marginBottom:10,marginTop:-4,padding:'6px 9px',borderRadius:8,background:'#0A0D14',border:'1px solid var(--line2)'}} className="mono">🏦 Tipo de la Fed REAL (FRED · oficial): <b style={{color:vc}}>{f.rate.toFixed(2)}%</b> <span style={{color:'var(--faint)'}}>(rango superior)</span> · {verd}</div>);
-          }
-          // inferencia desde datos reales (IPC + empleo)
-          const infl=Number.isFinite(cpiReal.yoy)?cpiReal.yoy:null;
-          const cooling=Number.isFinite(cpiReal.estLastYoy)&&(cpiReal.yoy-cpiReal.estLastYoy)<-0.05;
-          const hot=Number.isFinite(cpiReal.estLastYoy)&&(cpiReal.yoy-cpiReal.estLastYoy)>0.05;
-          const weakJobs=jobsReal&&jobsReal.nfp&&Number.isFinite(jobsReal.nfp.act)&&Number.isFinite(jobsReal.nfp.estLast)&&(jobsReal.nfp.act-jobsReal.nfp.estLast)<-30;
-          let vc,txt;
-          if((cooling||weakJobs)&&(infl==null||infl<3.5)){vc='var(--up)';txt='sesgo probable BLANDO (inflación cediendo'+(weakJobs?' y empleo flojo':'')+') → 🟢 favorable a cripto';}
-          else if(hot||(infl!=null&&infl>=3.5)){vc='var(--down)';txt='sesgo probable DURO (inflación '+(hot?'caliente':'aún alta')+') → 🔴 presión para cripto';}
-          else{vc='#F3BA2F';txt='sesgo probable NEUTRAL → 🟡 manda el tono de Powell';}
-          return(<div style={{fontSize:9,color:'var(--dim)',marginBottom:10,marginTop:-4,padding:'6px 9px',borderRadius:8,background:'#0A0D14',border:'1px solid var(--line2)'}} className="mono">🏦 Sesgo de la Fed (según IPC y empleo reales): <b style={{color:vc}}>{txt}</b></div>);
-        })()}
-        {evNext.map((e,i)=>{
-          const days=Math.ceil((e.d-now)/D), past=days<0;
-          // GUÍA DE IMPACTO según el resultado, para cripto/dólar/acciones (🟢 bueno · 🔴 malo).
-          // El mercado reacciona a la SORPRESA (real vs esperado): estas son las reglas típicas.
-          // GUÍA DE ESCENARIOS COMPLETA: TODAS las variantes posibles de cada dato, con el
-          // porqué en cadena (dato → Fed/liquidez → cripto·bolsa·dólar). Fija por tipo de
-          // dato; los números (previo/previsión/actual) se actualizan SOLOS desde BLS.
-          const SCEN={
-            CPI:[
-              ['🔴','Sale POR ENCIMA de lo previsto','inflación acelera → la Fed mantiene tipos altos más tiempo → menos liquidez → cae cripto y bolsa · sube el dólar'],
-              ['🟡','Sale EN LÍNEA','ya estaba descontado → impacto pequeño; manda la tendencia que traía el mercado'],
-              ['🟢','Sale POR DEBAJO','la inflación cede → recortes de tipos más cerca → más liquidez → sube cripto y bolsa · cae el dólar'],
-            ],
-            IPP:[
-              ['🔴','Sale POR ENCIMA de lo previsto','los costes de producción suben → anticipan IPC alto → Fed dura → cae cripto y bolsa · sube el dólar'],
-              ['🟡','Sale EN LÍNEA','sin sorpresa → impacto pequeño (el IPP mueve menos que el IPC)'],
-              ['🟢','Sale POR DEBAJO','la inflación mayorista cede → el IPC vendrá más suave → 🟢 cripto y bolsa · cae el dólar'],
-            ],
-            EMPLEO:[
-              ['🔴','MUCHO más empleo de lo previsto','economía caliente → la Fed no puede bajar tipos → cae cripto y bolsa · sube el dólar'],
-              ['🟡','Sale EN LÍNEA','sin sorpresa → impacto pequeño'],
-              ['🟢','Algo más DÉBIL de lo previsto','la Fed puede bajar tipos antes → sube cripto y bolsa · cae el dólar'],
-              ['🔴','MUY débil (destrucción de empleo / paro se dispara)','miedo a RECESIÓN → risk-off: cae todo, también cripto (bonos y dólar hacen de refugio)'],
-            ],
-            FOMC:[
-              ['🔴','SUBE tipos o tono duro (hawkish)','dinero más caro → menos apetito de riesgo → cae cripto y bolsa · sube el dólar'],
-              ['🟡','MANTIENE, como se esperaba','descontado → la reacción la decide la rueda de prensa de Powell (pistas del futuro)'],
-              ['🟢','RECORTA o tono blando (dovish)','más liquidez → sube cripto y bolsa · cae el dólar'],
-              ['🔴','Recorte de EMERGENCIA','recortar por pánico = algo se ha roto → risk-off aunque haya recorte'],
-            ],
-          };
-          const scen=SCEN[e.t]||null;
-          // Estilo "calendario de Investing": ANTERIOR · PREVISIÓN · ACTUAL, con el añadido de que
-          // aquí SÍ te decimos si el resultado es 🔴 negativo o 🟢 positivo para cripto. Vale para
-          // IPC (%) y Empleo/NFP (miles). isLast = el más reciente ya publicado (ventana 5d); isNext = el próximo.
-          const macroT=e.t==='CPI'||e.t==='EMPLEO'||e.t==='IPP';
-          const isLast=macroT&&past&&!evNext.some((x,j)=>j>i&&x.t===e.t&&Math.ceil((x.d-now)/D)<0);
-          const isNext=macroT&&!past&&!evNext.some((x,j)=>j<i&&x.t===e.t&&Math.ceil((x.d-now)/D)>=0);
-          let evBox=null;
-          if(e.t==='CPI'&&cpiReal&&(isLast||isNext)){const rel=isLast;
-            evBox={rel,unit:'%',dec:1,thr:0.05,
-              defl:rel&&Number.isFinite(cpiReal.yoy)&&cpiReal.yoy<0, // deflación = riesgo, no alivio
-              ant: rel?cpiReal.prevYoy:cpiReal.yoy,       antM: rel?cpiReal.prevMom:cpiReal.mom,
-              prev:rel?cpiReal.estLastYoy:cpiReal.estYoy, prevM:rel?cpiReal.estLastMom:cpiReal.estMom,
-              act: rel?cpiReal.yoy:null,                  actM: rel?cpiReal.mom:null,
-              hist:cpiReal.hist||null,
-              rHot:'inflación más alta de lo esperado → Fed más dura',rCool:'inflación cede → Fed más blanda'};}
-          else if(e.t==='IPP'&&ppiReal&&(isLast||isNext)){const rel=isLast;
-            evBox={rel,unit:'%',dec:1,thr:0.05,
-              defl:rel&&Number.isFinite(ppiReal.yoy)&&ppiReal.yoy<0,
-              ant: rel?ppiReal.prevYoy:ppiReal.yoy,       antM: rel?ppiReal.prevMom:ppiReal.mom,
-              prev:rel?ppiReal.estLastYoy:ppiReal.estYoy, prevM:rel?ppiReal.estLastMom:ppiReal.estMom,
-              act: rel?ppiReal.yoy:null,                  actM: rel?ppiReal.mom:null,
-              hist:ppiReal.hist||null,
-              rHot:'costes de producción al alza → anticipan IPC alto → Fed más dura',rCool:'inflación mayorista cede → el IPC vendrá más suave'};}
-          else if(e.t==='EMPLEO'&&jobsReal&&(isLast||isNext)){const rel=isLast,J=jobsReal;
-            // RECESIÓN: empleo MUY débil (se destruye empleo, o falla la previsión por
-            // mucho) NO es bueno para cripto aunque implique Fed más blanda → risk-off.
-            const unJump=J.unemp&&Number.isFinite(J.unemp.act)&&Number.isFinite(J.unemp.prev)?(J.unemp.act-J.unemp.prev):null;
-            const rec=rel&&((Number.isFinite(J.nfp.act)&&(J.nfp.act<0||(Number.isFinite(J.nfp.estLast)&&(J.nfp.act-J.nfp.estLast)<-125)))||(unJump!=null&&unJump>=0.3));
-            evBox={rel,unit:'k',dec:0,thr:10,rec,
-              ant: rel?J.nfp.prev:J.nfp.act, antM:null,
-              prev:rel?J.nfp.estLast:J.nfp.est, prevM:null,
-              act: rel?J.nfp.act:null, actM:null,
-              hist:J.nfp.hist||null,
-              rHot:'economía fuerte (más empleo) → Fed más dura',rCool:'empleo algo más débil → Fed más blanda',
-              sub:J.unemp?(rel?('Paro: '+J.unemp.prev+'% → '+J.unemp.act+'%'):('Paro actual: '+J.unemp.act+'%')):null};}
-          return(
-            <div key={i} style={{padding:'9px 0',borderTop:i?'1px solid #12151F':'none',opacity:past?.9:1}}>
-              <div style={{...flx({justifyContent:'space-between'})}}>
-                <div style={{...flx({gap:8})}}>
-                  <span style={{fontSize:9,fontWeight:800,color:'#07090E',background:e.t==='FOMC'?'#F3BA2F':e.t==='EMPLEO'?'#2FB6C7':e.t==='IPP'?'#B78CFF':'#6E8BFF',
-                    borderRadius:5,padding:'2px 6px'}}>{e.t}</span>
-                  <span style={{fontSize:11.5,color:'var(--dim)'}}>{e.n}</span>
-                </div>
-                {days===0&&!past
-                  ?<span className="mono" style={{fontSize:9,fontWeight:800,letterSpacing:.5,padding:'2px 9px',borderRadius:7,color:'#fff',
-                      background:'linear-gradient(92deg,#E53E3E,#C53030)',animation:'rdLive 1.6s ease-in-out infinite'}}>HOY</span>
-                  :<span className="mono" style={{fontSize:10.5,color:past?'var(--faint)':days<=2?'var(--down)':'var(--faint)',fontWeight:days<=2&&!past?700:400}}>
-                    {past?'hace '+(-days)+'d ✓':'en '+days+'d'}
-                  </span>}
-              </div>
-              {/* Rejilla estilo Investing: ANTERIOR · PREVISIÓN · ACTUAL + veredicto para cripto (IPC en % · Empleo en miles) */}
-              {evBox&&(()=>{const cb=evBox;
-                const fu=v=>cb.unit==='k'?((v>=0?'+':'')+v+'k'):(v+'%');
-                const surp=(cb.act!=null&&cb.prev!=null)?+(cb.act-cb.prev).toFixed(cb.dec):null;
-                const hot=surp!=null&&surp>cb.thr, cool=surp!=null&&surp<-cb.thr;
-                const su=surp==null?'':((surp>=0?'+':'')+surp+(cb.unit==='k'?'k':'pp'));
-                const actCol=cb.act==null?'var(--txt)':hot?'var(--down)':cool?'var(--up)':'#F3BA2F';
-                let vc,vt,vd;
-                if(cb.act!=null){
-                  if(cb.rec){vc='var(--down)';vt='🔴 NEGATIVO para cripto (miedo a recesión)';vd='empleo MUY débil ('+su+') → aunque la Fed pueda bajar tipos, el miedo a RECESIÓN manda → risk-off: cae todo, también cripto (dólar y bonos hacen de refugio)';}
-                  else if(cb.defl){vc='var(--down)';vt='🔴 NEGATIVO para cripto (deflación)';vd='inflación NEGATIVA ('+fu(cb.act)+') → señal de parón de la demanda / deflación, no de alivio → risk-off, malo también para cripto';}
-                  else if(hot){vc='var(--down)';vt='🔴 NEGATIVO para cripto';vd='salió POR ENCIMA de lo previsto ('+su+') → '+cb.rHot+' · 🔴 cripto y bolsa · 🟢 dólar';}
-                  else if(cool){vc='var(--up)';vt='🟢 POSITIVO para cripto';vd='salió POR DEBAJO de lo previsto ('+su+') → '+cb.rCool+' · 🟢 cripto y bolsa · 🔴 dólar';}
-                  else{vc='#F3BA2F';vt='🟡 En línea con lo previsto';vd='sin apenas sorpresa → impacto limitado; manda la reacción propia del mercado';}
-                }else{vc='var(--accent)';vt='📊 Cuando salga el dato:';vd=(cb.prev!=null?'si sale POR ENCIMA de ~'+fu(cb.prev)+' → 🔴 cripto y bolsa / 🟢 dólar · si queda POR DEBAJO → 🟢 cripto y bolsa / 🔴 dólar':'dato alto → 🔴 cripto · dato bajo → 🟢 cripto');}
-                const cell=(lbl,y,m,col,big,nl)=>(<div style={{flex:1,textAlign:'center',padding:'5px 2px'}}>
-                  <div style={{fontSize:6.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.4,marginBottom:2}}>{lbl}</div>
-                  {y==null?<div className="mono" style={{fontSize:big?10:9,fontWeight:800,color:big?'#F3BA2F':'var(--faint)'}}>{nl||'—'}</div>:
-                    <div className="mono"><span style={{fontSize:big?13:12,fontWeight:800,color:col||'var(--dim)'}}>{fu(y)}</span>
-                    {m!=null&&<div style={{fontSize:6.5,color:'var(--faint)'}}>{(m>=0?'+':'')+m}% m.</div>}</div>}
-                </div>);
-                return(<div style={{marginTop:6,marginLeft:2}}>
-                  <div style={{display:'flex',borderRadius:8,overflow:'hidden',background:'#0A0D14',border:'1px solid var(--line2)'}}>
-                    {cell('Anterior',cb.ant,cb.antM)}
-                    <div style={{width:1,background:'var(--line2)'}}/>
-                    {cell('Previsión',cb.prev,cb.prevM)}
-                    <div style={{width:1,background:'var(--line2)'}}/>
-                    {cell('Actual',cb.act,cb.actM,actCol,true,'pendiente')}
-                  </div>
-                  {cb.sub&&<div style={{fontSize:8,color:'var(--faint)',marginTop:3,textAlign:'center'}} className="mono">{cb.sub}</div>}
-                  {/* sparkline: tendencia real de los últimos meses (BLS) */}
-                  {cb.hist&&cb.hist.length>=4&&(()=>{const h=cb.hist,mn2=Math.min(...h),mx2=Math.max(...h),W3=120,H3=20;
-                    const Y3=v2=>H3-2-((v2-mn2)/((mx2-mn2)||1))*(H3-4);
-                    const pts=h.map((v2,i2)=>((i2/(h.length-1))*W3).toFixed(1)+','+Y3(v2).toFixed(1)).join(' ');
-                    const up3=h[h.length-1]>=h[0], col3=up3?'var(--down)':'var(--up)'; // al alza = caliente = rojo para cripto
-                    return(<div style={{...flx({gap:8,alignItems:'center'}),marginTop:6}}>
-                      <svg viewBox={'0 0 '+W3+' '+H3} width="120" height="20" style={{display:'block',flexShrink:0}}>
-                        <polyline points={pts} fill="none" stroke={col3} strokeWidth="1.6" strokeLinejoin="round"/>
-                        <circle cx={W3} cy={Y3(h[h.length-1])} r="2.2" fill={col3}/>
-                      </svg>
-                      <span style={{fontSize:7.5,color:'var(--faint)',lineHeight:1.4}}>tendencia {h.length} meses: {h[0]}{cb.unit==='k'?'k':'%'} → <b style={{color:col3}}>{h[h.length-1]}{cb.unit==='k'?'k':'%'}</b> ({up3?'al alza':'a la baja'})</span>
-                    </div>);})()}
-                  <div style={{fontSize:8.5,fontWeight:800,color:vc,marginTop:5}}>{vt}</div>
-                  <div style={{fontSize:8,color:'var(--faint)',lineHeight:1.5,marginTop:1}}>{vd}</div>
-                  <div style={{fontSize:6.5,color:'var(--faint)',marginTop:3}}>Previsión = estimación propia por tendencia (media 6m), no el consenso de mercado (sin API pública gratis). Actual = BLS oficial.</div>
-                </div>);})()}
-              {scen&&!isLast&&<div style={{marginTop:6,marginLeft:2}}>
-                <div style={{fontSize:7,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.5,fontWeight:700,marginBottom:3}}>Escenarios posibles · qué significa cada resultado</div>
-                {scen.map(([d2,cond,why],si)=>(
-                  <div key={si} style={{...flx({gap:6,alignItems:'flex-start'}),padding:'2.5px 0'}}>
-                    <span style={{fontSize:8,flexShrink:0,marginTop:1}}>{d2}</span>
-                    <span style={{fontSize:8,color:'var(--faint)',lineHeight:1.55}}><b style={{color:'var(--dim)'}}>{cond}</b> → {why}</span>
-                  </div>))}
-              </div>}
-            </div>
-          );
-        })}
-        {/* Cierre de gobierno EE.UU. */}
-        {(()=>{const s=c.shutdown;const col=s.active?'var(--down)':s.deadline?'#F3BA2F':'var(--dim)';
-          return(
-          <div style={{...flx({justifyContent:'space-between'}),padding:'9px 0',borderTop:'1px solid #12151F',marginTop:2}}>
-            <div style={{...flx({gap:8})}}>
-              <span style={{fontSize:9,fontWeight:800,color:'#07090E',background:col,borderRadius:5,padding:'2px 6px'}}>USA</span>
-              <span style={{fontSize:11.5,color:'var(--dim)'}}>Cierre de gobierno</span>
-            </div>
-            <span className="mono" style={{fontSize:10.5,fontWeight:s.active||s.deadline?700:400,color:col}}>
-              {s.active?('ACTIVO · '+s.daysLeft+'d'):s.deadline?('límite en '+s.daysTo+'d'):s.next?('límite '+s.next.daysTo+'d'):'sin cierre'}
-            </span>
-          </div>);})()}
-        <p style={{fontSize:9.5,color:'var(--faint)',lineHeight:1.5,marginTop:10}}>
-          <b style={{color:'var(--txt)'}}>🟢 = bueno · 🔴 = malo</b> para cada activo según el resultado (el mercado reacciona a la SORPRESA: dato real vs lo previo/esperado). Ej.: IPC más alto de lo esperado → la Fed sube/mantiene tipos → malo para cripto y bolsa, bueno para el dólar. El <b>número que salió</b> del IPC es oficial (BLS); el <b>esperado</b> es una estimación por tendencia (media de 6 meses) — <b>no</b> el consenso de mercado, que no tiene API pública gratis. Se mantienen 5 días tras el evento para ver el resultado. <b style={{color:'var(--txt)'}}>Dos datos pueden apuntar en direcciones opuestas</b> (p. ej. IPC caliente → 🔴 y empleo algo débil → 🟢) y NO es un error: cada uno se compara con SU previsión, y ambos influyen en la Fed por caminos distintos — el mercado pondera el conjunto. <b style={{color:'var(--txt)'}}>Ojo al matiz clave</b>: un dato débil suele ser 🟢 (la Fed baja tipos), pero si es <b>MUY</b> débil se vuelve 🔴 — empleo que destruye puestos o paro que se dispara = miedo a <b>recesión</b>; inflación negativa = <b>deflación</b>. En esos extremos el "malo pero bueno" pasa a ser malo de verdad (risk-off), y así lo marca la tarjeta. <b style={{color:'var(--txt)'}}>Todo se actualiza solo</b>: los números salen de BLS en cuanto se publican y el calendario se auto-extiende (IPC ~día 12 · IPP ~día 13 · empleo 1er viernes · FOMC 8 reuniones/año). En las 48h alrededor la volatilidad se dispara: el modelo fuerza <b style={{color:'var(--down)'}}>NO-GO</b>. Los <b>cierres de gobierno</b> de EE.UU. retrasan datos macro.
-        </p>
+      {/* el CALENDARIO ECONÓMICO vive ahora en la pestaña MACRO (junto al ciclo
+          económico, que es su sitio). Aquí queda un acceso directo; la ventana de
+          evento macro (NO-GO) se sigue calculando en esta vista con evNext. */}
+      <div onClick={()=>{if(nav)nav('pib');}} className="qnav" role="button" tabIndex={0}
+        style={{...flx({justifyContent:'space-between'}),marginBottom:14,padding:'11px 14px',borderRadius:11,cursor:'pointer',
+          background:'rgba(110,139,255,.07)',border:'1px dashed rgba(110,139,255,.35)'}}>
+        <span style={{fontSize:11,fontWeight:700,color:'var(--accent)'}}>📅 Calendario económico (IPC · IPP · empleo · FOMC) → ahora en <b>Macro</b></span>
+        <span className="mono" style={{fontSize:12,color:'var(--accent)'}}>→</span>
       </div>
 
       {/* (el aviso "los bots tienen su propia pestaña" y el marcador de la ruta 30d
@@ -5917,6 +5737,234 @@ function analyzeMacro(data){
   }
   return {rows,score:sc,phase};
 }
+// ── CALENDARIO ECONÓMICO (pestaña Macro): IPC · IPP · EMPLEO · FOMC con dato REAL
+//    (BLS vía relé), previsión por tendencia, veredicto para cripto por SORPRESA con
+//    overrides (recesión/deflación) y escenarios. Autoextensible para siempre. ──
+function EconCalendar(){
+  const [cpiReal,setCpiReal]=useState(null);
+  const [jobsReal,setJobsReal]=useState(null);
+  const [ppiReal,setPpiReal]=useState(null);
+  const [fedReal,setFedReal]=useState(null);
+  useEffect(()=>{let a=true;(async()=>{try{
+    const j=await fetchLS();if(a&&j){if(j.cpi&&Number.isFinite(j.cpi.yoy))setCpiReal(j.cpi);if(j.jobs&&j.jobs.nfp&&Number.isFinite(j.jobs.nfp.act))setJobsReal(j.jobs);if(j.ppi&&Number.isFinite(j.ppi.yoy))setPpiReal(j.ppi);if(j.fed&&Number.isFinite(j.fed.rate))setFedReal(j.fed);}
+  }catch(_){}})();return()=>{a=false;};},[]);
+  const D=86400000, now=Date.now();
+  const evNext=ECON.map(e=>({d:new Date(e[0]+'T13:00:00Z').getTime(),t:e[1],n:e[2]})).filter(e=>e.d>now-5*D).sort((a,b)=>a.d-b.d).slice(0,6);
+  const shutdown=shutdownState();
+  const money=v=>(v==null||!Number.isFinite(v))?'—':'$'+Math.round(v).toLocaleString('es-ES');
+  return(<React.Fragment>
+      {/* CALENDARIO ECONÓMICO */}
+      <div style={panel({marginBottom:14,padding:16})}>
+        <div style={{...flx({justifyContent:'space-between'}),marginBottom:12}}>
+          <span style={eyebrow}>Calendario económico</span>
+          {(()=>{ // chip del PRÓXIMO evento: cuenta atrás, en rojo si está a ≤2 días (volatilidad)
+            const nx=evNext.find(e2=>Math.ceil((e2.d-now)/D)>=0); if(!nx)return null;
+            const dd=Math.ceil((nx.d-now)/D), hot2=dd<=2;
+            return(<span className="mono" style={{fontSize:8.5,fontWeight:800,padding:'2px 8px',borderRadius:8,
+              color:hot2?'var(--down)':'var(--accent)',
+              background:hot2?'rgba(255,84,112,.1)':'rgba(110,139,255,.1)',
+              border:'1px solid '+(hot2?'rgba(255,84,112,.35)':'rgba(110,139,255,.3)'),
+              animation:hot2?'breathe 2s ease infinite':'none'}}>{hot2?'⚠ ':'⏰ '}{nx.t} {dd===0?'HOY':'en '+dd+'d'}{hot2?' · volatilidad':''}</span>);})()}
+        </div>
+        {cpiReal&&(()=>{
+          // VEREDICTO por la SORPRESA (actual vs previsión), NO por el nivel absoluto:
+          // el mercado reacciona a si sale por encima/debajo de lo esperado. Así esta
+          // nota y la tarjeta del dato de abajo dicen SIEMPRE lo mismo (no se contradicen).
+          const defl=Number.isFinite(cpiReal.yoy)&&cpiReal.yoy<0;
+          const s=Number.isFinite(cpiReal.estLastYoy)?+(cpiReal.yoy-cpiReal.estLastYoy).toFixed(1):null;
+          const hot=s!=null&&s>0.05, cool=s!=null&&s<-0.05;
+          const vc=(defl||hot)?'var(--down)':cool?'var(--up)':s==null?'var(--dim)':'#F3BA2F';
+          const verd=defl?'inflación NEGATIVA → 🔴 riesgo de deflación (no es alivio)'
+            :s==null?'(sin previsión con la que comparar)'
+            :hot?('salió POR ENCIMA de lo previsto ('+(s>=0?'+':'')+s+'pp) → 🔴 negativo para cripto')
+            :cool?('salió POR DEBAJO de lo previsto ('+s+'pp) → 🟢 positivo para cripto')
+            :'salió EN LÍNEA con lo previsto → 🟡 impacto pequeño';
+          return(<div style={{fontSize:9,color:'var(--dim)',marginBottom:10,marginTop:-6,padding:'6px 9px',borderRadius:8,background:'#0A0D14',border:'1px solid var(--line2)'}} className="mono">📊 Último IPC EE.UU. REAL (BLS · oficial): <b style={{color:vc}}>{cpiReal.yoy}% interanual</b> · {cpiReal.mom>=0?'+':''}{cpiReal.mom}% mensual <span style={{color:'var(--faint)'}}>({cpiReal.month})</span> · {verd}{!defl&&cpiReal.yoy>=2.5?' · sigue sobre el objetivo 2% de la Fed':''}</div>);
+        })()}
+        {(fedReal||cpiReal)&&(()=>{
+          // VEREDICTO del FOMC. Preferencia: dato REAL de tipos (FRED). Si el relé no lo
+          // trae, se INFIERE el sesgo probable de la Fed desde el IPC y el empleo reales
+          // (marcado como "probable"), para que el FOMC nunca se quede sin lectura.
+          if(fedReal){
+            const f=fedReal, hike=f.dir==='hike', cut=f.dir==='cut';
+            const easing=f.traj6<-0.1, tightening=f.traj6>0.1;
+            const vc=hike?'var(--down)':cut?'var(--up)':easing?'var(--up)':tightening?'var(--down)':'#F3BA2F';
+            const verd=hike?'SUBIÓ tipos → dinero más caro → 🔴 negativo para cripto'
+              :cut?'BAJÓ tipos → más liquidez → 🟢 positivo para cripto'
+              :easing?('mantiene, pero en ciclo de BAJADAS (−'+Math.abs(f.traj6).toFixed(2)+'pp/6m) → 🟢 viento de cola')
+              :tightening?('mantiene, aún en ciclo de SUBIDAS (+'+f.traj6.toFixed(2)+'pp/6m) → 🔴 presión')
+              :'mantiene los tipos → 🟡 manda el tono de Powell (pistas del futuro)';
+            return(<div style={{fontSize:9,color:'var(--dim)',marginBottom:10,marginTop:-4,padding:'6px 9px',borderRadius:8,background:'#0A0D14',border:'1px solid var(--line2)'}} className="mono">🏦 Tipo de la Fed REAL (FRED · oficial): <b style={{color:vc}}>{f.rate.toFixed(2)}%</b> <span style={{color:'var(--faint)'}}>(rango superior)</span> · {verd}</div>);
+          }
+          // inferencia desde datos reales (IPC + empleo)
+          const infl=Number.isFinite(cpiReal.yoy)?cpiReal.yoy:null;
+          const cooling=Number.isFinite(cpiReal.estLastYoy)&&(cpiReal.yoy-cpiReal.estLastYoy)<-0.05;
+          const hot=Number.isFinite(cpiReal.estLastYoy)&&(cpiReal.yoy-cpiReal.estLastYoy)>0.05;
+          const weakJobs=jobsReal&&jobsReal.nfp&&Number.isFinite(jobsReal.nfp.act)&&Number.isFinite(jobsReal.nfp.estLast)&&(jobsReal.nfp.act-jobsReal.nfp.estLast)<-30;
+          let vc,txt;
+          if((cooling||weakJobs)&&(infl==null||infl<3.5)){vc='var(--up)';txt='sesgo probable BLANDO (inflación cediendo'+(weakJobs?' y empleo flojo':'')+') → 🟢 favorable a cripto';}
+          else if(hot||(infl!=null&&infl>=3.5)){vc='var(--down)';txt='sesgo probable DURO (inflación '+(hot?'caliente':'aún alta')+') → 🔴 presión para cripto';}
+          else{vc='#F3BA2F';txt='sesgo probable NEUTRAL → 🟡 manda el tono de Powell';}
+          return(<div style={{fontSize:9,color:'var(--dim)',marginBottom:10,marginTop:-4,padding:'6px 9px',borderRadius:8,background:'#0A0D14',border:'1px solid var(--line2)'}} className="mono">🏦 Sesgo de la Fed (según IPC y empleo reales): <b style={{color:vc}}>{txt}</b></div>);
+        })()}
+        {evNext.map((e,i)=>{
+          const days=Math.ceil((e.d-now)/D), past=days<0;
+          // GUÍA DE IMPACTO según el resultado, para cripto/dólar/acciones (🟢 bueno · 🔴 malo).
+          // El mercado reacciona a la SORPRESA (real vs esperado): estas son las reglas típicas.
+          // GUÍA DE ESCENARIOS COMPLETA: TODAS las variantes posibles de cada dato, con el
+          // porqué en cadena (dato → Fed/liquidez → cripto·bolsa·dólar). Fija por tipo de
+          // dato; los números (previo/previsión/actual) se actualizan SOLOS desde BLS.
+          const SCEN={
+            CPI:[
+              ['🔴','Sale POR ENCIMA de lo previsto','inflación acelera → la Fed mantiene tipos altos más tiempo → menos liquidez → cae cripto y bolsa · sube el dólar'],
+              ['🟡','Sale EN LÍNEA','ya estaba descontado → impacto pequeño; manda la tendencia que traía el mercado'],
+              ['🟢','Sale POR DEBAJO','la inflación cede → recortes de tipos más cerca → más liquidez → sube cripto y bolsa · cae el dólar'],
+            ],
+            IPP:[
+              ['🔴','Sale POR ENCIMA de lo previsto','los costes de producción suben → anticipan IPC alto → Fed dura → cae cripto y bolsa · sube el dólar'],
+              ['🟡','Sale EN LÍNEA','sin sorpresa → impacto pequeño (el IPP mueve menos que el IPC)'],
+              ['🟢','Sale POR DEBAJO','la inflación mayorista cede → el IPC vendrá más suave → 🟢 cripto y bolsa · cae el dólar'],
+            ],
+            EMPLEO:[
+              ['🔴','MUCHO más empleo de lo previsto','economía caliente → la Fed no puede bajar tipos → cae cripto y bolsa · sube el dólar'],
+              ['🟡','Sale EN LÍNEA','sin sorpresa → impacto pequeño'],
+              ['🟢','Algo más DÉBIL de lo previsto','la Fed puede bajar tipos antes → sube cripto y bolsa · cae el dólar'],
+              ['🔴','MUY débil (destrucción de empleo / paro se dispara)','miedo a RECESIÓN → risk-off: cae todo, también cripto (bonos y dólar hacen de refugio)'],
+            ],
+            FOMC:[
+              ['🔴','SUBE tipos o tono duro (hawkish)','dinero más caro → menos apetito de riesgo → cae cripto y bolsa · sube el dólar'],
+              ['🟡','MANTIENE, como se esperaba','descontado → la reacción la decide la rueda de prensa de Powell (pistas del futuro)'],
+              ['🟢','RECORTA o tono blando (dovish)','más liquidez → sube cripto y bolsa · cae el dólar'],
+              ['🔴','Recorte de EMERGENCIA','recortar por pánico = algo se ha roto → risk-off aunque haya recorte'],
+            ],
+          };
+          const scen=SCEN[e.t]||null;
+          // Estilo "calendario de Investing": ANTERIOR · PREVISIÓN · ACTUAL, con el añadido de que
+          // aquí SÍ te decimos si el resultado es 🔴 negativo o 🟢 positivo para cripto. Vale para
+          // IPC (%) y Empleo/NFP (miles). isLast = el más reciente ya publicado (ventana 5d); isNext = el próximo.
+          const macroT=e.t==='CPI'||e.t==='EMPLEO'||e.t==='IPP';
+          const isLast=macroT&&past&&!evNext.some((x,j)=>j>i&&x.t===e.t&&Math.ceil((x.d-now)/D)<0);
+          const isNext=macroT&&!past&&!evNext.some((x,j)=>j<i&&x.t===e.t&&Math.ceil((x.d-now)/D)>=0);
+          let evBox=null;
+          if(e.t==='CPI'&&cpiReal&&(isLast||isNext)){const rel=isLast;
+            evBox={rel,unit:'%',dec:1,thr:0.05,
+              defl:rel&&Number.isFinite(cpiReal.yoy)&&cpiReal.yoy<0, // deflación = riesgo, no alivio
+              ant: rel?cpiReal.prevYoy:cpiReal.yoy,       antM: rel?cpiReal.prevMom:cpiReal.mom,
+              prev:rel?cpiReal.estLastYoy:cpiReal.estYoy, prevM:rel?cpiReal.estLastMom:cpiReal.estMom,
+              act: rel?cpiReal.yoy:null,                  actM: rel?cpiReal.mom:null,
+              hist:cpiReal.hist||null,
+              rHot:'inflación más alta de lo esperado → Fed más dura',rCool:'inflación cede → Fed más blanda'};}
+          else if(e.t==='IPP'&&ppiReal&&(isLast||isNext)){const rel=isLast;
+            evBox={rel,unit:'%',dec:1,thr:0.05,
+              defl:rel&&Number.isFinite(ppiReal.yoy)&&ppiReal.yoy<0,
+              ant: rel?ppiReal.prevYoy:ppiReal.yoy,       antM: rel?ppiReal.prevMom:ppiReal.mom,
+              prev:rel?ppiReal.estLastYoy:ppiReal.estYoy, prevM:rel?ppiReal.estLastMom:ppiReal.estMom,
+              act: rel?ppiReal.yoy:null,                  actM: rel?ppiReal.mom:null,
+              hist:ppiReal.hist||null,
+              rHot:'costes de producción al alza → anticipan IPC alto → Fed más dura',rCool:'inflación mayorista cede → el IPC vendrá más suave'};}
+          else if(e.t==='EMPLEO'&&jobsReal&&(isLast||isNext)){const rel=isLast,J=jobsReal;
+            // RECESIÓN: empleo MUY débil (se destruye empleo, o falla la previsión por
+            // mucho) NO es bueno para cripto aunque implique Fed más blanda → risk-off.
+            const unJump=J.unemp&&Number.isFinite(J.unemp.act)&&Number.isFinite(J.unemp.prev)?(J.unemp.act-J.unemp.prev):null;
+            const rec=rel&&((Number.isFinite(J.nfp.act)&&(J.nfp.act<0||(Number.isFinite(J.nfp.estLast)&&(J.nfp.act-J.nfp.estLast)<-125)))||(unJump!=null&&unJump>=0.3));
+            evBox={rel,unit:'k',dec:0,thr:10,rec,
+              ant: rel?J.nfp.prev:J.nfp.act, antM:null,
+              prev:rel?J.nfp.estLast:J.nfp.est, prevM:null,
+              act: rel?J.nfp.act:null, actM:null,
+              hist:J.nfp.hist||null,
+              rHot:'economía fuerte (más empleo) → Fed más dura',rCool:'empleo algo más débil → Fed más blanda',
+              sub:J.unemp?(rel?('Paro: '+J.unemp.prev+'% → '+J.unemp.act+'%'):('Paro actual: '+J.unemp.act+'%')):null};}
+          return(
+            <div key={i} style={{padding:'9px 0',borderTop:i?'1px solid #12151F':'none',opacity:past?.9:1}}>
+              <div style={{...flx({justifyContent:'space-between'})}}>
+                <div style={{...flx({gap:8})}}>
+                  <span style={{fontSize:9,fontWeight:800,color:'#07090E',background:e.t==='FOMC'?'#F3BA2F':e.t==='EMPLEO'?'#2FB6C7':e.t==='IPP'?'#B78CFF':'#6E8BFF',
+                    borderRadius:5,padding:'2px 6px'}}>{e.t}</span>
+                  <span style={{fontSize:11.5,color:'var(--dim)'}}>{e.n}</span>
+                </div>
+                {days===0&&!past
+                  ?<span className="mono" style={{fontSize:9,fontWeight:800,letterSpacing:.5,padding:'2px 9px',borderRadius:7,color:'#fff',
+                      background:'linear-gradient(92deg,#E53E3E,#C53030)',animation:'rdLive 1.6s ease-in-out infinite'}}>HOY</span>
+                  :<span className="mono" style={{fontSize:10.5,color:past?'var(--faint)':days<=2?'var(--down)':'var(--faint)',fontWeight:days<=2&&!past?700:400}}>
+                    {past?'hace '+(-days)+'d ✓':'en '+days+'d'}
+                  </span>}
+              </div>
+              {/* Rejilla estilo Investing: ANTERIOR · PREVISIÓN · ACTUAL + veredicto para cripto (IPC en % · Empleo en miles) */}
+              {evBox&&(()=>{const cb=evBox;
+                const fu=v=>cb.unit==='k'?((v>=0?'+':'')+v+'k'):(v+'%');
+                const surp=(cb.act!=null&&cb.prev!=null)?+(cb.act-cb.prev).toFixed(cb.dec):null;
+                const hot=surp!=null&&surp>cb.thr, cool=surp!=null&&surp<-cb.thr;
+                const su=surp==null?'':((surp>=0?'+':'')+surp+(cb.unit==='k'?'k':'pp'));
+                const actCol=cb.act==null?'var(--txt)':hot?'var(--down)':cool?'var(--up)':'#F3BA2F';
+                let vc,vt,vd;
+                if(cb.act!=null){
+                  if(cb.rec){vc='var(--down)';vt='🔴 NEGATIVO para cripto (miedo a recesión)';vd='empleo MUY débil ('+su+') → aunque la Fed pueda bajar tipos, el miedo a RECESIÓN manda → risk-off: cae todo, también cripto (dólar y bonos hacen de refugio)';}
+                  else if(cb.defl){vc='var(--down)';vt='🔴 NEGATIVO para cripto (deflación)';vd='inflación NEGATIVA ('+fu(cb.act)+') → señal de parón de la demanda / deflación, no de alivio → risk-off, malo también para cripto';}
+                  else if(hot){vc='var(--down)';vt='🔴 NEGATIVO para cripto';vd='salió POR ENCIMA de lo previsto ('+su+') → '+cb.rHot+' · 🔴 cripto y bolsa · 🟢 dólar';}
+                  else if(cool){vc='var(--up)';vt='🟢 POSITIVO para cripto';vd='salió POR DEBAJO de lo previsto ('+su+') → '+cb.rCool+' · 🟢 cripto y bolsa · 🔴 dólar';}
+                  else{vc='#F3BA2F';vt='🟡 En línea con lo previsto';vd='sin apenas sorpresa → impacto limitado; manda la reacción propia del mercado';}
+                }else{vc='var(--accent)';vt='📊 Cuando salga el dato:';vd=(cb.prev!=null?'si sale POR ENCIMA de ~'+fu(cb.prev)+' → 🔴 cripto y bolsa / 🟢 dólar · si queda POR DEBAJO → 🟢 cripto y bolsa / 🔴 dólar':'dato alto → 🔴 cripto · dato bajo → 🟢 cripto');}
+                const cell=(lbl,y,m,col,big,nl)=>(<div style={{flex:1,textAlign:'center',padding:'5px 2px'}}>
+                  <div style={{fontSize:6.5,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.4,marginBottom:2}}>{lbl}</div>
+                  {y==null?<div className="mono" style={{fontSize:big?10:9,fontWeight:800,color:big?'#F3BA2F':'var(--faint)'}}>{nl||'—'}</div>:
+                    <div className="mono"><span style={{fontSize:big?13:12,fontWeight:800,color:col||'var(--dim)'}}>{fu(y)}</span>
+                    {m!=null&&<div style={{fontSize:6.5,color:'var(--faint)'}}>{(m>=0?'+':'')+m}% m.</div>}</div>}
+                </div>);
+                return(<div style={{marginTop:6,marginLeft:2}}>
+                  <div style={{display:'flex',borderRadius:8,overflow:'hidden',background:'#0A0D14',border:'1px solid var(--line2)'}}>
+                    {cell('Anterior',cb.ant,cb.antM)}
+                    <div style={{width:1,background:'var(--line2)'}}/>
+                    {cell('Previsión',cb.prev,cb.prevM)}
+                    <div style={{width:1,background:'var(--line2)'}}/>
+                    {cell('Actual',cb.act,cb.actM,actCol,true,'pendiente')}
+                  </div>
+                  {cb.sub&&<div style={{fontSize:8,color:'var(--faint)',marginTop:3,textAlign:'center'}} className="mono">{cb.sub}</div>}
+                  {/* sparkline: tendencia real de los últimos meses (BLS) */}
+                  {cb.hist&&cb.hist.length>=4&&(()=>{const h=cb.hist,mn2=Math.min(...h),mx2=Math.max(...h),W3=120,H3=20;
+                    const Y3=v2=>H3-2-((v2-mn2)/((mx2-mn2)||1))*(H3-4);
+                    const pts=h.map((v2,i2)=>((i2/(h.length-1))*W3).toFixed(1)+','+Y3(v2).toFixed(1)).join(' ');
+                    const up3=h[h.length-1]>=h[0], col3=up3?'var(--down)':'var(--up)'; // al alza = caliente = rojo para cripto
+                    return(<div style={{...flx({gap:8,alignItems:'center'}),marginTop:6}}>
+                      <svg viewBox={'0 0 '+W3+' '+H3} width="120" height="20" style={{display:'block',flexShrink:0}}>
+                        <polyline points={pts} fill="none" stroke={col3} strokeWidth="1.6" strokeLinejoin="round"/>
+                        <circle cx={W3} cy={Y3(h[h.length-1])} r="2.2" fill={col3}/>
+                      </svg>
+                      <span style={{fontSize:7.5,color:'var(--faint)',lineHeight:1.4}}>tendencia {h.length} meses: {h[0]}{cb.unit==='k'?'k':'%'} → <b style={{color:col3}}>{h[h.length-1]}{cb.unit==='k'?'k':'%'}</b> ({up3?'al alza':'a la baja'})</span>
+                    </div>);})()}
+                  <div style={{fontSize:8.5,fontWeight:800,color:vc,marginTop:5}}>{vt}</div>
+                  <div style={{fontSize:8,color:'var(--faint)',lineHeight:1.5,marginTop:1}}>{vd}</div>
+                  <div style={{fontSize:6.5,color:'var(--faint)',marginTop:3}}>Previsión = estimación propia por tendencia (media 6m), no el consenso de mercado (sin API pública gratis). Actual = BLS oficial.</div>
+                </div>);})()}
+              {scen&&!isLast&&<div style={{marginTop:6,marginLeft:2}}>
+                <div style={{fontSize:7,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.5,fontWeight:700,marginBottom:3}}>Escenarios posibles · qué significa cada resultado</div>
+                {scen.map(([d2,cond,why],si)=>(
+                  <div key={si} style={{...flx({gap:6,alignItems:'flex-start'}),padding:'2.5px 0'}}>
+                    <span style={{fontSize:8,flexShrink:0,marginTop:1}}>{d2}</span>
+                    <span style={{fontSize:8,color:'var(--faint)',lineHeight:1.55}}><b style={{color:'var(--dim)'}}>{cond}</b> → {why}</span>
+                  </div>))}
+              </div>}
+            </div>
+          );
+        })}
+        {/* Cierre de gobierno EE.UU. */}
+        {(()=>{const s=shutdown;const col=s.active?'var(--down)':s.deadline?'#F3BA2F':'var(--dim)';
+          return(
+          <div style={{...flx({justifyContent:'space-between'}),padding:'9px 0',borderTop:'1px solid #12151F',marginTop:2}}>
+            <div style={{...flx({gap:8})}}>
+              <span style={{fontSize:9,fontWeight:800,color:'#07090E',background:col,borderRadius:5,padding:'2px 6px'}}>USA</span>
+              <span style={{fontSize:11.5,color:'var(--dim)'}}>Cierre de gobierno</span>
+            </div>
+            <span className="mono" style={{fontSize:10.5,fontWeight:s.active||s.deadline?700:400,color:col}}>
+              {s.active?('ACTIVO · '+s.daysLeft+'d'):s.deadline?('límite en '+s.daysTo+'d'):s.next?('límite '+s.next.daysTo+'d'):'sin cierre'}
+            </span>
+          </div>);})()}
+        <p style={{fontSize:9.5,color:'var(--faint)',lineHeight:1.5,marginTop:10}}>
+          <b style={{color:'var(--txt)'}}>🟢 = bueno · 🔴 = malo</b> para cada activo según el resultado (el mercado reacciona a la SORPRESA: dato real vs lo previo/esperado). Ej.: IPC más alto de lo esperado → la Fed sube/mantiene tipos → malo para cripto y bolsa, bueno para el dólar. El <b>número que salió</b> del IPC es oficial (BLS); el <b>esperado</b> es una estimación por tendencia (media de 6 meses) — <b>no</b> el consenso de mercado, que no tiene API pública gratis. Se mantienen 5 días tras el evento para ver el resultado. <b style={{color:'var(--txt)'}}>Dos datos pueden apuntar en direcciones opuestas</b> (p. ej. IPC caliente → 🔴 y empleo algo débil → 🟢) y NO es un error: cada uno se compara con SU previsión, y ambos influyen en la Fed por caminos distintos — el mercado pondera el conjunto. <b style={{color:'var(--txt)'}}>Ojo al matiz clave</b>: un dato débil suele ser 🟢 (la Fed baja tipos), pero si es <b>MUY</b> débil se vuelve 🔴 — empleo que destruye puestos o paro que se dispara = miedo a <b>recesión</b>; inflación negativa = <b>deflación</b>. En esos extremos el "malo pero bueno" pasa a ser malo de verdad (risk-off), y así lo marca la tarjeta. <b style={{color:'var(--txt)'}}>Todo se actualiza solo</b>: los números salen de BLS en cuanto se publican y el calendario se auto-extiende (IPC ~día 12 · IPP ~día 13 · empleo 1er viernes · FOMC 8 reuniones/año). En las 48h alrededor la volatilidad se dispara: el modelo fuerza <b style={{color:'var(--down)'}}>NO-GO</b>. Los <b>cierres de gobierno</b> de EE.UU. retrasan datos macro.
+        </p>
+      </div>
+  </React.Fragment>);
+}
+
 function PIBView(){
   const [raw,setRaw]=useState(null);
   const [macro,setMacro]=useState(null);
@@ -6098,6 +6146,44 @@ function PIBView(){
           <Fine>Dato anual del Banco Mundial (con desfase). ▲ = empuja a riesgo-ON, ▼ = a riesgo-OFF. Esta fase y puntuación se <b>aplican como sesgo macro en la ruta cuantitativa de BTC</b>. Algunos indicadores (PMI, claims, nóminas…) no tienen fuente gratuita en vivo.</Fine>
         </div>);
       })()}
+
+      {/* 💼 QUÉ FAVORECE CADA FASE: guía de asignación por fase del ciclo (educativa).
+          La fase ACTUAL del país sale resaltada — responde a "risk-off ¿y entonces qué
+          compro: acciones, bonos…?" del usuario. */}
+      {macro&&(()=>{const cur=macro.phase&&macro.phase.t;
+        const GU=[
+          ['🚀','Recuperación','var(--up)','saliendo del suelo, tipos bajando','ACCIONES (cíclicas) y CRIPTO — históricamente el mejor tramo del ciclo · bonos corporativos','efectivo en exceso (te pierdes el rebote)'],
+          ['📈','Expansión','var(--up)','crecimiento sano, empleo fuerte','ACCIONES (amplio), inmobiliario, cripto con viento a favor','bonos largos (rinden poco con tipos al alza)'],
+          ['🔥','Recalentamiento','#F3BA2F','inflación acelera, banco central endurece','MATERIAS PRIMAS y liquidez/monetarios · reducir acciones caras','acciones de crecimiento y cripto (sufren con tipos al alza)'],
+          ['⚠️','Pico · ralentización','#F3BA2F','el crecimiento pierde fuerza','DEFENSIVAS (salud, consumo básico), empezar a acumular BONOS largos, oro','añadir riesgo nuevo (cíclicas, cripto con tamaño)'],
+          ['🐌','Desaceleración','var(--downDim)','datos enfriándose, tipos tocan techo','BONOS del tesoro largos y oro · defensivas · efectivo listo','cíclicas e industriales'],
+          ['🔻','Recesión','var(--down)','contracción: risk-off','BONOS del tesoro, oro, efectivo · y preparar la lista de compra de acciones/cripto para la recuperación','vender en pánico lo de calidad (suele ser el suelo)'],
+        ];
+        return(
+        <div style={panel({marginBottom:14,padding:16})}>
+          <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
+            <span style={eyebrow}>💼 Qué favorece cada fase</span>
+            <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>guía por ciclo · educativa</span>
+          </div>
+          <div style={{fontSize:9,color:'var(--faint)',marginBottom:10,lineHeight:1.5}}>Según la fase del ciclo (y su risk-on/off), qué activos han funcionado históricamente MEJOR y cuáles peor. La fase actual de EE.UU. sale resaltada; vale igual para cualquier país según SU fase (lista de países abajo).</div>
+          {GU.map((g,i)=>{const active=cur&&(cur===g[1]||cur.startsWith(g[1].split(' ')[0]));
+            return(
+            <div key={i} style={{padding:'8px 10px',borderRadius:10,marginBottom:6,
+              background:active?`radial-gradient(120% 100% at 50% 0%, ${tint(g[2],10)} 0%, #0A0D14 75%)`:'transparent',
+              border:active?`1px solid ${tint(g[2],30)}`:'1px solid transparent',borderTop:active?undefined:(i?'1px solid #12151F':'1px solid transparent'),opacity:active?1:.8}}>
+              <div style={{...flx({justifyContent:'space-between',gap:8})}}>
+                <span style={{fontSize:11,fontWeight:800,color:g[2]}}>{g[0]} {g[1]}{active&&<span className="mono" style={{marginLeft:6,fontSize:7,fontWeight:800,padding:'1px 6px',borderRadius:7,color:'#07090E',background:g[2]}}>FASE ACTUAL EE.UU.</span>}</span>
+              </div>
+              <div style={{fontSize:8.5,color:'var(--faint)',marginTop:2}}>{g[3]}</div>
+              <div style={{fontSize:9.5,color:'var(--dim)',marginTop:4,lineHeight:1.5}}>✅ <b style={{color:'var(--txt)'}}>Favorece:</b> {g[4]}</div>
+              <div style={{fontSize:8.5,color:'var(--faint)',marginTop:2,lineHeight:1.5}}>✗ Evitar: {g[5]}</div>
+            </div>);})}
+          <div style={{fontSize:8,color:'var(--faint)',marginTop:6,lineHeight:1.5}}>Patrón histórico del "investment clock" (Merrill Lynch y ciclos desde 1970): orientativo, cada ciclo es distinto. NO es consejo de inversión ni recomendación personalizada.</div>
+        </div>);
+      })()}
+
+      {/* 📅 CALENDARIO ECONÓMICO (movido desde el Cuantitativo: es dato macro) */}
+      <EconCalendar/>
 
       {/* PAÍSES EN SU LÍMITE (pico o suelo del ciclo) */}
       <div style={panel({marginBottom:14,padding:16})}>
@@ -6303,91 +6389,9 @@ function BotsView({gFunding}){
           <div style={{...eyebrow,fontSize:9}}>backtest de 9 años · walk-forward · Deflated Sharpe</div>
         </div>
       </div>
-      {/* OPERACIÓN DEFINITIVA DE LOS BOTS RENTABLES (trade final con TP/SL en vivo) */}
-      {(()=>{const dt=c.defTrade, dr=c.defRec, neutral=dt.side==='NEUTRAL'||dt.empty, long=dt.side==='LONG';
-        const col=neutral?'var(--dim)':long?'var(--up)':'var(--down)';
-        return(
-        <div style={panel({marginBottom:14,padding:16,borderColor:neutral?'var(--line2)':long?'rgba(31,224,160,.4)':'rgba(255,84,112,.4)',
-          background:`radial-gradient(130% 90% at 50% 0%, ${neutral?'rgba(110,139,255,.06)':long?'rgba(31,224,160,.1)':'rgba(255,84,112,.1)'} 0%, var(--panel) 58%)`})}>
-          <div style={{...flx({justifyContent:'space-between'}),marginBottom:3}}>
-            <span style={eyebrow}>Operación de los bots rentables</span>
-            <span className="mono" style={{fontSize:8,color:'var(--faint)'}}>{loadedAt>0?'● '+new Date(loadedAt).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}):'auto'}</span>
-          </div>
-          <div style={{fontSize:9,color:'var(--faint)',marginBottom:9}}>trade FINAL combinando los {dr.nElig} bots que aguantan fuera de muestra (consenso ponderado por riesgo) · TP/SL que avanza con el precio</div>
-          {/* RENTABILIDAD del conjunto de bots rentables (backtest, periodo completo) */}
-          {(()=>{const pf=ev.portfolio, cagr=c.defCagr, yrs=pf?pf.years:9;
-            const fm=mm=>mm>=1000?Math.round(mm).toLocaleString('es-ES')+'×':mm>=10?mm.toFixed(0)+'×':mm.toFixed(1)+'×';
-            return(
-            <div style={{marginBottom:11,padding:'10px 12px',borderRadius:9,background:'rgba(31,224,160,.08)',border:'1px solid rgba(31,224,160,.25)'}}>
-              <div style={{...flx({justifyContent:'space-between'})}}>
-                <span style={{fontSize:9.5,color:'var(--faint)'}}>Mega bot · <b style={{color:'var(--txt)'}}>{dr.nElig} bots rentables</b> en {yrs.toFixed(1)} años</span>
-                <span className="mono" style={{fontSize:15,fontWeight:800,color:cagr==null?'var(--faint)':cagr>=0?'var(--up)':'var(--down)'}}>{cagr==null?'—':(cagr>=0?'+':'')+cagr.toFixed(0)+'%/año'}</span>
-              </div>
-              {pf&&<div style={{...flx({justifyContent:'space-between'}),marginTop:6,paddingTop:6,borderTop:'1px solid var(--line2)'}}>
-                <span style={{fontSize:8.5,color:'var(--faint)'}}>Total del periodo · {pf.lev>1.05?pf.lev.toFixed(1)+'× apalancado · ':''}máx. caída -{pf.maxDD.toFixed(0)}%</span>
-                <span className="mono" style={{fontSize:13,fontWeight:800,color:'var(--up)'}}>{fm(pf.eq)} <span style={{fontSize:9,color:'var(--dim)'}}>({(pf.roe>=0?'+':'')+Math.round(pf.roe).toLocaleString('es-ES')}%)</span></span>
-              </div>}
-            </div>);
-          })()}
-          {neutral?(
-            <div style={{textAlign:'center',padding:'12px 0'}}>
-              <div style={{fontSize:22,fontWeight:800,color:'var(--dim)'}}>⏸ SIN OPERACIÓN</div>
-              <div style={{fontSize:10.5,color:'var(--faint)',marginTop:4}}>los bots rentables no tienen consenso claro ahora ({dr.nLong}▲ / {dr.nShort}▼)</div>
-            </div>
-          ):(<>
-            <div style={{...flx({justifyContent:'space-between'}),marginBottom:10}}>
-              <div style={{...flx({gap:8})}}>
-                <span style={{fontSize:22,fontWeight:800,color:col}}>{long?'▲ LONG':'▼ SHORT'}</span>
-                {dt.closed&&<span className="mono" style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:10,background:dt.result==='TP'?'rgba(31,224,160,.15)':'rgba(255,84,112,.15)',color:dt.result==='TP'?'var(--up)':'var(--down)'}}>{dt.result==='TP'?'✓ objetivo':'✗ stop'}</span>}
-                {dt.stale&&!dt.closed&&<span className="mono" style={{fontSize:9,color:'#F3BA2F'}}>consenso cambió</span>}
-              </div>
-              <span className="mono" style={{fontSize:18,fontWeight:800,color:dt.pnl>=0?'var(--up)':'var(--down)'}}>{dt.pnl>=0?'+':''}{dt.pnl.toFixed(1)}%</span>
-            </div>
-            {/* GRÁFICO DE LA ORDEN: precio real + avance punteado hasta el TP, con entrada/SL/TP */}
-            {(()=>{const rc=(cl||[]).slice(-30); if(rc.length<4)return null;
-              const tp=dt.closed?dt.closePrice:dt.tp, last=dt.closed?dt.closePrice:rc[rc.length-1];
-              const steps=14, proj=[]; for(let k=1;k<=steps;k++)proj.push(last+(tp-last)*(k/steps)); // el precio avanza hasta el TP
-              const series=rc.concat(dt.closed?[]:proj), nn=series.length, splitI=rc.length-1;
-              const lv=[dt.entry,dt.tp,dt.sl], allv=rc.concat(proj).concat(lv);
-              const Wc=320,Hc=140,Pd=14; let lo=Math.min(...allv),hi=Math.max(...allv);const pd=((hi-lo)||1)*0.08;lo-=pd;hi+=pd;
-              const X=i=>Pd+i/(Math.max(1,nn-1))*(Wc-2*Pd), Y=v=>Hc-Pd-((v-lo)/((hi-lo)||1))*(Hc-2*Pd);
-              const pastD='M '+rc.map((v,i)=>X(i).toFixed(1)+' '+Y(v).toFixed(1)).join(' L ');
-              const futD=dt.closed?'':'M '+series.slice(splitI).map((v,i)=>X(i+splitI).toFixed(1)+' '+Y(v).toFixed(1)).join(' L ');
-              return(
-              <svg viewBox={`0 0 ${Wc} ${Hc}`} width="100%" style={{display:'block',margin:'4px 0 10px'}}>
-                <line x1={Pd} y1={Y(dt.tp).toFixed(1)} x2={Wc-Pd} y2={Y(dt.tp).toFixed(1)} stroke="var(--up)" strokeWidth="1" strokeDasharray="4 3" opacity=".9"/>
-                <text x={Wc-Pd-1} y={(Y(dt.tp)-3).toFixed(1)} fill="var(--up)" fontSize="8.5" textAnchor="end" className="mono">TP {money(dt.tp)}</text>
-                <line x1={Pd} y1={Y(dt.entry).toFixed(1)} x2={Wc-Pd} y2={Y(dt.entry).toFixed(1)} stroke="var(--faint)" strokeWidth="1" strokeDasharray="2 3"/>
-                <text x={Pd+1} y={(Y(dt.entry)-3).toFixed(1)} fill="var(--faint)" fontSize="8" className="mono">entrada {money(dt.entry)}</text>
-                <line x1={Pd} y1={Y(dt.sl).toFixed(1)} x2={Wc-Pd} y2={Y(dt.sl).toFixed(1)} stroke="var(--down)" strokeWidth="1" strokeDasharray="4 3" opacity=".9"/>
-                <text x={Wc-Pd-1} y={(Y(dt.sl)+10).toFixed(1)} fill="var(--down)" fontSize="8.5" textAnchor="end" className="mono">SL {money(dt.sl)}</text>
-                <path d={pastD} fill="none" stroke="#F7931A" strokeWidth="2.2" strokeLinejoin="round"/>
-                {futD&&<path d={futD} fill="none" stroke={col} strokeWidth="1.7" strokeDasharray="4 3" opacity=".75"/>}
-                <line x1={X(splitI).toFixed(1)} y1={Pd} x2={X(splitI).toFixed(1)} y2={Hc-Pd} stroke="var(--line2)" strokeWidth="1" strokeDasharray="2 3"/>
-                <circle cx={X(splitI).toFixed(1)} cy={Y(dt.closed?dt.closePrice:rc[rc.length-1]).toFixed(1)} r="3.6" fill={col} stroke="var(--bg)" strokeWidth="2"/>
-                <text x={X(splitI).toFixed(1)} y={(Hc-3).toFixed(1)} fill="var(--faint)" fontSize="7.5" textAnchor="middle" className="mono">ahora</text>
-              </svg>);
-            })()}
-            <div style={{height:8,borderRadius:4,background:'#0A0D14',overflow:'hidden'}}>
-              <div style={{height:'100%',width:Math.max(0,Math.min(100,dt.prog))+'%',borderRadius:4,background:dt.prog>=0?'linear-gradient(90deg,var(--upDim),var(--up))':'var(--down)'}}/>
-            </div>
-            <div style={{...flx({justifyContent:'space-between'}),marginTop:4,fontSize:8.5,color:'var(--faint)'}} className="mono">
-              <span>entrada {money(dt.entry)}</span><span>{dt.prog.toFixed(0)}% al objetivo</span><span>{dt.days}d en trade</span>
-            </div>
-            <div style={{...flx({justifyContent:'space-between'}),marginTop:7,fontSize:10.5,fontWeight:700}} className="mono">
-              <span style={{color:'var(--up)'}}>TP {money(dt.tp)}</span><span style={{color:'var(--down)'}}>SL {money(dt.sl)}</span>
-            </div>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:12}}>
-              {[['Apoyo',dr.nLong+'▲ / '+dr.nShort+'▼',col],['Apalancamiento',dr.lev.toFixed(1)+'×',dr.lev<=1.2?'var(--up)':'#F3BA2F'],['Confianza',dr.conf+'%',dr.conf>=60?'var(--up)':'#F3BA2F']].map((m,i)=>(
-                <div key={i} style={{background:'#0A0D14',borderRadius:8,padding:'8px',textAlign:'center'}}>
-                  <div className="mono" style={{fontSize:12,fontWeight:800,color:m[2]}}>{m[1]}</div>
-                  <div style={{fontSize:8,color:'var(--dim)'}}>{m[0]}</div>
-                </div>))}
-            </div>
-            <div style={{fontSize:9,color:'var(--faint)',marginTop:10,lineHeight:1.5}}>{dr.nLong} de {dr.nElig} bots rentables en largo y {dr.nShort} en corto. {dr.atr!=null?'Stop por ATR ('+(dr.atr*100).toFixed(1)+'%/día). ':''}Avanza con el precio y se cierra al tocar TP o SL; se abre otra cuando cambia el consenso.</div>
-          </>)}
-        </div>);
-      })()}
+      {/* (la "Operación definitiva" con TP/SL en vivo se RETIRÓ a petición del usuario
+          tras un stop loss: un solo trade agregado daba sensación de señal única. Quedan
+          el consenso de bots, el líder con su trade y la clasificación completa.) */}
 
       {/* nota: backtest justo */}
       <div style={{...flx({gap:6}),marginBottom:14,padding:'8px 12px',borderRadius:9,background:'rgba(31,224,160,.06)',border:'1px solid rgba(31,224,160,.2)'}}>

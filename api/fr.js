@@ -15,8 +15,19 @@ const jf = (u, ms = 4000) => { const c = new AbortController(); const t = setTim
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
-  const out = { t: Date.now(), v: 'fr-20260718a', ex: { Gate: {}, MEXC: {}, Binance: {}, Bybit: {}, Bitget: {},
-    Kraken: {}, HTX: {}, CoinEx: {}, Bitfinex: {}, dYdX: {}, WhiteBIT: {}, Phemex: {}, Deribit: {}, Hyperliquid: {} } };
+  const out = { t: Date.now(), v: 'fr-20260718b', ex: { Gate: {}, MEXC: {}, Binance: {}, Bybit: {}, Bitget: {},
+    Kraken: {}, HTX: {}, CoinEx: {}, Bitfinex: {}, dYdX: {}, WhiteBIT: {}, Phemex: {}, Deribit: {}, Hyperliquid: {}, KuCoin: {} } };
+  // ── KuCoin Futures (bulk): la función de Cloudflare NO llega (bloquean sus IPs y salía
+  //    "error" en la tabla) → se sirve desde aquí. funding ya es por 8h; OI = lotes × mult × precio. ──
+  try {
+    const r = await jf('https://api-futures.kucoin.com/api/v1/contracts/active');
+    const m = {}; for (const t of ((r && r.data) || [])) m[t.symbol] = t;
+    for (const c of COINS) { const t = m[(c === 'BTC' ? 'XBT' : c) + 'USDTM']; if (!t) continue;
+      const f = parseFloat(t.fundingFeeRate);
+      const oi = parseFloat(t.openInterest) * parseFloat(t.multiplier) * parseFloat(t.markPrice);
+      if (Number.isFinite(f)) out.ex.KuCoin[c] = { f: +(f * 100).toFixed(4), oi: Number.isFinite(oi) && oi > 0 ? +(oi / 1e9).toFixed(3) : 0 };
+    }
+  } catch (e) {}
   for (const c of COINS) {
     try {
       const j = await fetch('https://api.gateio.ws/api/v4/futures/usdt/contracts/' + c + '_USDT').then(r => r.json());

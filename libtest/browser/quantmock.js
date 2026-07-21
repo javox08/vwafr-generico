@@ -29,6 +29,8 @@
       oiHist:oiH,premHist:pmH,cvdFut:oiH.map(function(v,i){return +(i*10-2000+Math.random()*50).toFixed(1);}),fundHist:fdH,premHistD:pmH.slice(0,90),oiHistD:oiH.slice(0,30),
       hist:Array.from({length:72},function(){return 1.5+Math.random()*0.1;})},
     eth:{opts:{exp:'31JUL26',days:15,maxPain:1800,pc:0.59,callOI:181000,putOI:107000,spot:1917}},
+    coinsX:(function(){var names=['SUI','PEPE','WIF','ARB','OP','APT','SEI','TIA','INJ','NEAR','FIL','TON','TRX','DOT','UNI','ATOM','FET','RNDR','SHIB','BONK','JUP','WLD','ENA','ONDO','AAVE','MKR','LDO','STX','IMX','HBAR'];
+      return names.map(function(n,i){return {c:n,r:+(0.8+Math.random()*1.6).toFixed(3),oi:+(1.2/(i+2)).toFixed(4)};});})(),
     mkt:{futVol:14.9,spotVol:1.2}};
   var J=function(o){return Promise.resolve(new Response(JSON.stringify(o),{status:200,headers:{'Content-Type':'application/json'}}));};
   window.fetch=function(u){u=''+u;
