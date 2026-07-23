@@ -15,7 +15,7 @@ const jf = (u, ms = 4000) => { const c = new AbortController(); const t = setTim
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
-  const out = { t: Date.now(), v: 'fr-20260718b', ex: { Gate: {}, MEXC: {}, Binance: {}, Bybit: {}, Bitget: {},
+  const out = { t: Date.now(), v: 'fr-20260721a', ex: { Gate: {}, MEXC: {}, Binance: {}, Bybit: {}, OKX: {}, BingX: {}, Bitget: {},
     Kraken: {}, HTX: {}, CoinEx: {}, Bitfinex: {}, dYdX: {}, WhiteBIT: {}, Phemex: {}, Deribit: {}, Hyperliquid: {}, KuCoin: {} } };
   // ── KuCoin Futures (bulk): la función de Cloudflare NO llega (bloquean sus IPs y salía
   //    "error" en la tabla) → se sirve desde aquí. funding ya es por 8h; OI = lotes × mult × precio. ──
@@ -88,13 +88,53 @@ module.exports = async (req, res) => {
       if (Number.isFinite(f)) out.ex.Bybit[c] = { f: +(f * 100).toFixed(4), oi: oi > 0 ? +(oi / 1e9).toFixed(3) : 0 };
     }
   } catch (e) {}
-  // ── Bitget (v2 mix): funding + OI en 1 llamada bulk. ──
+  // ── OKX: OI en $ sumando TODOS los contratos (perp USDT + perp USDC + inverse coin-M).
+  //    OKX ya publica oiUsd (OI en dólares) por instrumento → conversión automática, sin
+  //    multiplicar por precio. Funding del swap USDT (OKX no tiene funding en bulk). ──
   try {
-    const r = await jf('https://api.bitget.com/api/v2/mix/market/tickers?productType=usdt-futures');
-    const m = {}; for (const t of ((r && r.data) || [])) m[t.symbol] = t;
-    for (const c of COINS) { const t = m[c + 'USDT']; if (!t) continue;
-      const f = parseFloat(t.fundingRate), oi = parseFloat(t.holdingAmount) * parseFloat(t.markPrice);
-      if (Number.isFinite(f)) out.ex.Bitget[c] = { f: +(f * 100).toFixed(4), oi: Number.isFinite(oi) && oi > 0 ? +(oi / 1e9).toFixed(3) : 0 };
+    const [oiR, frs] = await Promise.all([
+      jf('https://www.okx.com/api/v5/public/open-interest?instType=SWAP', 5000),
+      Promise.all(COINS.map(c => jf('https://www.okx.com/api/v5/public/funding-rate?instId=' + c + '-USDT-SWAP', 4000)))
+    ]);
+    const oim = {}; for (const d of ((oiR && oiR.data) || [])) oim[d.instId] = parseFloat(d.oiUsd);
+    const fm = {}; COINS.forEach((c, i) => { const d = frs[i] && frs[i].data && frs[i].data[0]; if (d) fm[c] = parseFloat(d.fundingRate); });
+    for (const c of COINS) {
+      let v = 0; // USDT-margined + USDC-margined + inverse (coin-margined), todo en $ nativo
+      for (const id of [c + '-USDT-SWAP', c + '-USDC-SWAP', c + '-USD-SWAP']) { const u = oim[id]; if (Number.isFinite(u) && u > 0) v += u; }
+      const f = fm[c];
+      if (v > 0 || Number.isFinite(f)) out.ex.OKX[c] = { f: Number.isFinite(f) ? +(f * 100).toFixed(4) : 0, oi: v > 0 ? +(v / 1e9).toFixed(3) : 0 };
+    }
+  } catch (e) {}
+  // ── BingX: swap USDT. funding (premiumIndex, por 8h) + OI (openInterest, ya en USDT ≈ $). ──
+  try {
+    await Promise.all(COINS.map(async c => {
+      const [pi, oi] = await Promise.all([
+        jf('https://open-api.bingx.com/openApi/swap/v2/quote/premiumIndex?symbol=' + c + '-USDT', 4000),
+        jf('https://open-api.bingx.com/openApi/swap/v2/quote/openInterest?symbol=' + c + '-USDT', 4000)
+      ]);
+      const f = parseFloat(pi && pi.data && pi.data.lastFundingRate);
+      const ov = parseFloat(oi && oi.data && oi.data.openInterest); // OI en USDT (notional) ≈ dólares
+      if (!Number.isFinite(f) && !(ov > 0)) return;
+      out.ex.BingX[c] = { f: Number.isFinite(f) ? +(f * 100).toFixed(4) : 0, oi: ov > 0 ? +(ov / 1e9).toFixed(3) : 0 };
+    }));
+  } catch (e) {}
+  // ── Bitget (v2 mix): funding + OI de los 3 productos (USDT + USDC + coin-margined),
+  //    todo a $ vía holdingAmount(base) × markPrice → suma de todos los contratos. ──
+  try {
+    const [ru, rc, ri] = await Promise.all([
+      jf('https://api.bitget.com/api/v2/mix/market/tickers?productType=usdt-futures'),
+      jf('https://api.bitget.com/api/v2/mix/market/tickers?productType=usdc-futures').catch(() => null),
+      jf('https://api.bitget.com/api/v2/mix/market/tickers?productType=coin-futures').catch(() => null)
+    ]);
+    const mkMap = r => { const m = {}; for (const t of ((r && r.data) || [])) m[t.symbol] = t; return m; };
+    const mu = mkMap(ru), mc = mkMap(rc), mi = mkMap(ri);
+    const oiOf = t => (t ? parseFloat(t.holdingAmount) * parseFloat(t.markPrice) : 0);
+    for (const c of COINS) { const t = mu[c + 'USDT']; if (!t) continue;
+      const f = parseFloat(t.fundingRate);
+      let oi = oiOf(t);                                             // USDT-margined
+      const uc = oiOf(mc[c + 'PERP']); if (uc > 0) oi += uc;        // USDC-margined
+      const ic = oiOf(mi[c + 'USD']);  if (ic > 0) oi += ic;        // inverse (coin-margined)
+      if (Number.isFinite(f)) out.ex.Bitget[c] = { f: +(f * 100).toFixed(4), oi: oi > 0 ? +(oi / 1e9).toFixed(3) : 0 };
     }
   } catch (e) {}
   // Todo lo de abajo normaliza el funding a % POR PERIODO DE 8H (el formato de la web).
