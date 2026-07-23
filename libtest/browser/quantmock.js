@@ -52,6 +52,14 @@
       if(u.indexOf('/api/funding')>=0){var mk2=function(base){var ex={},names=['Binance','OKX','Bybit','Bitget','Gate','MEXC','HTX','Kraken'];names.forEach(function(n,i){ex[n]={funding:+(base+(i-3)*0.004).toFixed(4),oi:+(1+Math.random()*10).toFixed(2),ok:true};});return ex;};
         return J({updated:Date.now(),coins:['BTC','ETH','SOL','XRP','BNB','DOGE','ADA','AVAX','LINK','LTC'],data:{BTC:mk2(0.008),ETH:mk2(0.006),SOL:mk2(0.012),XRP:mk2(0.004),BNB:mk2(0.005),DOGE:mk2(0.01),ADA:mk2(0.004),AVAX:mk2(0.007),LINK:mk2(0.006),LTC:mk2(0.005)}});}
       if(u.indexOf('/klines')>=0)return J(klines(u));
+      if(u.indexOf('frankfurter')>=0){ // DXY proxy: 6 divisas, ~1100 días hábiles, oscilando
+        var rates={},today9=Date.now();
+        for(var fz=1120;fz>=0;fz--){var dt9=new Date(today9-fz*864e5),dow=dt9.getUTCDay();if(dow===0||dow===6)continue;
+          var ph9=fz/120;
+          rates[dt9.toISOString().slice(0,10)]={EUR:+(0.92+Math.sin(ph9)*0.05+Math.random()*0.002).toFixed(4),
+            JPY:+(150+Math.sin(ph9*1.1)*8).toFixed(2),GBP:+(0.79+Math.sin(ph9*0.9)*0.03).toFixed(4),
+            CAD:+(1.36+Math.sin(ph9)*0.03).toFixed(4),SEK:+(10.5+Math.sin(ph9)*0.4).toFixed(3),CHF:+(0.88+Math.sin(ph9)*0.02).toFixed(4)};}
+        return J({amount:1,base:'USD',rates:rates});}
       if(u.indexOf('api.binance.com/api/v3/ticker/price')>=0)return J({price:'60000'});
       if(u.indexOf('coinbase.com/products/BTC-USD/ticker')>=0)return J({price:'60040'});
       if(u.indexOf('alternative.me')>=0){

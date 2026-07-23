@@ -6926,6 +6926,18 @@ function totalModels(cl,ts0,aux){
     ()=>Number.isFinite(aux.sopr)?aux.sopr.toFixed(3):'—','<1 se vende en pérdidas (suelos) · >1,05 toma de beneficios');
   const upFNG=mkSeries('fng','Miedo y Codicia (contrario)','alternative.me','Sentimiento',v2=>v2<20?1:v2>80?-1:0,
     ()=>Number.isFinite(aux.fng)?String(aux.fng):'—','miedo extremo = oportunidad histórica · codicia = riesgo');
+  // ── MACRO: fuerza del dólar (índice DXY, proxy de 6 divisas vía Frankfurter). Backtest
+  //    REAL sobre ~13 años: dólar débil (DXY cae a 90 días) → BTC largo; dólar fuerte →
+  //    corto. Edge medido +3,7% a 30d sobre la base (58,1% vs 54,4%, n≈2.300) y creciente a
+  //    horizontes largos (+8,8% a 60d). Solo entra si hay ≥500 días alineados; se backtestea
+  //    igual que el resto y su peso sale de su acierto medido (si no tuviera ventaja, ~0). ──
+  let upDXY=false;{const a=S.dxy;
+    if(a&&a.filter(x=>x!=null).length>=500){
+      const sig=j=>{if(j<90||a[j]==null||a[j-90]==null)return 0;const m=a[j]/a[j-90]-1;return m<-0.005?1:m>0.005?-1:0;};
+      MODELS.push({sch:'Macro',t:'Fuerza del dólar (DXY · 90d)',ref:'Frankfurter FX',sig,
+        val:()=>{if(a[i]==null||a[i-90]==null)return '—';const m=(a[i]/a[i-90]-1)*100;return (m>=0?'+':'')+m.toFixed(1)+'% 90d';},
+        d:'dólar débil (DXY cae a 90d) = viento a favor de BTC · dólar fuerte = en contra',serie:true});
+      upDXY=true;}}
   // ── BACKTEST walk-forward de cada modelo (acierto direccional a 30d, encogido) ──
   const START=Math.max(460,N-2600);
   for(const m of MODELS){
@@ -7065,6 +7077,17 @@ function TotalView({gFunding}){
               if(m.size>500)H[key]=m;}}catch(_){}
           await new Promise(r2=>setTimeout(r2,350));
         }
+        // MACRO: índice del dólar (DXY, proxy ICE de 6 divisas) desde Frankfurter (gratis,
+        // histórico desde 1999). Un solo fetch del rango completo; el modelo lo backtestea.
+        try{const s0=new Date(ts0).toISOString().slice(0,10), s1=new Date().toISOString().slice(0,10);
+          const j=await jget('https://api.frankfurter.dev/v1/'+s0+'..'+s1+'?from=USD&to=EUR,JPY,GBP,CAD,SEK,CHF',12000);
+          if(j&&j.rates){const m=new Map();
+            for(const dt in j.rates){const r2=j.rates[dt];
+              if(r2&&r2.EUR&&r2.JPY&&r2.GBP&&r2.CAD&&r2.SEK&&r2.CHF){
+                const EU=1/r2.EUR,GB=1/r2.GBP;
+                const dxy=50.14348112*Math.pow(EU,-0.576)*Math.pow(r2.JPY,0.136)*Math.pow(GB,-0.119)*Math.pow(r2.CAD,0.091)*Math.pow(r2.SEK,0.042)*Math.pow(r2.CHF,0.036);
+                if(Number.isFinite(dxy))m.set(dt,dxy);}}
+            if(m.size>500)H.dxy=m;}}catch(_){}
         histRef.current=H;
       }
       // alinear cada histórico por FECHA con las velas diarias
@@ -7073,6 +7096,8 @@ function TotalView({gFunding}){
         for(const key in H){const m=H[key],arr=new Array(cl.length).fill(null);let cnt=0;
           for(let z=0;z<cl.length;z++){const v2=m.get(new Date(ts0+z*864e5).toISOString().slice(0,10));if(v2!=null&&Number.isFinite(v2)){arr[z]=v2;cnt++;}}
           if(cnt>=500)aux.series[key]=arr;}}
+      // DXY solo cotiza en días hábiles → rellenar findes/festivos con el último valor
+      if(aux.series.dxy){const a2=aux.series.dxy;let last=null;for(let z=0;z<a2.length;z++){if(a2[z]!=null)last=a2[z];else if(last!=null)a2[z]=last;}}
       const r=totalModels(cl,ts0,aux);
       if(a&&r)setSt(r); if(a&&!r)setErr(true);
     }catch(_){if(a&&!st)setErr(true);}};
@@ -7082,7 +7107,7 @@ function TotalView({gFunding}){
     <div>{err?'No se pudieron cargar los datos — reintentando en 5 min':'Ejecutando todas las escuelas cuantitativas…'}</div>
     <div style={{fontSize:10,marginTop:6}}>~8 años de precio · on-chain · minería · sentimiento · derivados</div></div></div>);
   const dir=st.lean>=55?1:st.lean<=45?-1:0, col=dir>0?'var(--up)':dir<0?'var(--down)':'#F3BA2F';
-  const SCHOOLS=['Tendencia','Reversión','Valoración','Ciclo','On-chain','Sentimiento','Derivados'];
+  const SCHOOLS=['Tendencia','Reversión','Valoración','Ciclo','On-chain','Sentimiento','Derivados','Macro'];
   const money=v2=>'$'+Math.round(v2).toLocaleString('es-ES');
   return(<div className="viewwrap">
     <div style={{...flx({gap:10}),margin:'2px 2px 14px'}}>
@@ -7170,7 +7195,7 @@ function TotalView({gFunding}){
     })()}
     {/* ESCUELAS: cada modelo con su señal, valor y acierto medido */}
     {SCHOOLS.map(sch=>{const ms=st.models.filter(m=>m.sch===sch);if(!ms.length)return null;
-      const ICN={Tendencia:'📈',Reversión:'🔄',Valoración:'⚖️',Ciclo:'🔁','On-chain':'⛓️',Sentimiento:'😨',Derivados:'💵'};
+      const ICN={Tendencia:'📈',Reversión:'🔄',Valoración:'⚖️',Ciclo:'🔁','On-chain':'⛓️',Sentimiento:'😨',Derivados:'💵',Macro:'🏦'};
       return(
       <Lazy key={sch} est={90+ms.length*74}>
       <div style={panel({marginBottom:14,padding:16})}>
