@@ -7109,6 +7109,50 @@ function TotalView({gFunding}){
   const dir=st.lean>=55?1:st.lean<=45?-1:0, col=dir>0?'var(--up)':dir<0?'var(--down)':'#F3BA2F';
   const SCHOOLS=['Tendencia','Reversión','Valoración','Ciclo','On-chain','Sentimiento','Derivados','Macro'];
   const money=v2=>'$'+Math.round(v2).toLocaleString('es-ES');
+  // ── COMPARTIR: dibuja una tarjeta PNG de alta calidad de la ruta (sin librerías) y la
+  //    comparte con la hoja nativa (Telegram, WhatsApp…) vía Web Share; si no, la descarga. ──
+  const shareRuta=()=>{
+    const R=st.route; if(!R)return;
+    const hexA=(h,a)=>{const n=parseInt(h.slice(1),16);return 'rgba('+((n>>16)&255)+','+((n>>8)&255)+','+(n&255)+','+a+')';};
+    const UP='#1FE0A0',DN='#FF5470',NE='#F3BA2F',TX='#E4E8F1',DIM='#8A93A6';
+    const up=R.up,dir=up>=55?1:up<=45?-1:0,col=dir>0?UP:dir<0?DN:NE;
+    const S2=2, W=540, H=680, cv=document.createElement('canvas'); cv.width=W*S2; cv.height=H*S2;
+    const g=cv.getContext('2d'); g.scale(S2,S2);
+    const rr=(x,y,w,h,r)=>{g.beginPath();g.moveTo(x+r,y);g.arcTo(x+w,y,x+w,y+h,r);g.arcTo(x+w,y+h,x,y+h,r);g.arcTo(x,y+h,x,y,r);g.arcTo(x,y,x+w,y,r);g.closePath();};
+    g.fillStyle='#07090E'; g.fillRect(0,0,W,H);
+    const gr=g.createLinearGradient(0,0,0,H*0.55); gr.addColorStop(0,hexA(col,0.16)); gr.addColorStop(1,'rgba(7,9,14,0)'); g.fillStyle=gr; g.fillRect(0,0,W,H);
+    g.textAlign='left'; g.fillStyle=TX; g.font='800 27px system-ui,-apple-system,Segoe UI,Arial';
+    g.fillText('🧭 Ruta precisa · BTC', 30, 52);
+    g.fillStyle=DIM; g.font='500 14px system-ui,Arial';
+    g.fillText('Por analogía histórica · '+R.K+' días análogos', 30, 78);
+    g.textAlign='center'; g.fillStyle=col; g.font='800 92px system-ui,Arial';
+    g.fillText(up.toFixed(0)+'%', W/2, 190);
+    g.fillStyle=col; g.font='800 18px system-ui,Arial';
+    g.fillText('de esas veces BTC subió a 30 días', W/2, 220);
+    // gráfico de abanico
+    const bx=30,by=250,bw=W-60,bh=210; g.fillStyle='#05070C'; rr(bx,by,bw,bh,14); g.fill();
+    const p=R.price, med=R.med.map(m=>m*p),hi=R.p75.map(m=>m*p),lo=R.p25.map(m=>m*p),hi2=R.p90.map(m=>m*p),lo2=R.p10.map(m=>m*p);
+    const allv=med.concat(hi2,lo2,[p]),mn=Math.min(...allv),mx=Math.max(...allv),rg=(mx-mn)||1;
+    const X=k=>bx+22+k/30*(bw-44), Y=v=>by+22+(1-(v-mn)/rg)*(bh-44);
+    const band=(a,b,fill)=>{g.fillStyle=fill;g.beginPath();a.forEach((v,k)=>{const x=X(k),y=Y(v);k?g.lineTo(x,y):g.moveTo(x,y);});for(let k=30;k>=0;k--)g.lineTo(X(k),Y(b[k]));g.closePath();g.fill();};
+    band(hi2,lo2,hexA(col,0.10)); band(hi,lo,hexA(col,0.18));
+    g.strokeStyle=col; g.lineWidth=3; g.beginPath(); med.forEach((v,k)=>{const x=X(k),y=Y(v);k?g.lineTo(x,y):g.moveTo(x,y);}); g.stroke();
+    g.strokeStyle='#3A4152'; g.lineWidth=1.5; g.setLineDash([6,6]); g.beginPath(); g.moveTo(X(0),Y(p)); g.lineTo(X(30),Y(p)); g.stroke(); g.setLineDash([]);
+    // objetivos 7d / 30d
+    const tile=(x,lbl,val,pc)=>{const tw=(bw-14)/2; g.fillStyle='#0D1018'; rr(x,485,tw,90,12); g.fill();
+      g.textAlign='center'; g.fillStyle=DIM; g.font='600 12px system-ui,Arial'; g.fillText(lbl, x+tw/2, 512);
+      g.fillStyle=pc>=0?UP:DN; g.font='800 26px system-ui,Arial'; g.fillText(money(val), x+tw/2, 545);
+      g.fillStyle=DIM; g.font='600 13px system-ui,Arial'; g.fillText((pc>=0?'+':'')+pc.toFixed(1)+'%', x+tw/2, 566);};
+    tile(bx,'EN 7 DÍAS',R.med[7]*p,(R.med[7]-1)*100);
+    tile(bx+(bw-14)/2+14,'EN 30 DÍAS',R.med[30]*p,(R.med[30]-1)*100);
+    g.textAlign='center'; g.fillStyle='#6A7386'; g.font='600 14px system-ui,Arial';
+    g.fillText('vwafr-generico.pages.dev · '+new Date().toLocaleDateString('es-ES'), W/2, H-28);
+    cv.toBlob(async(blob)=>{ if(!blob)return;
+      const file=new File([blob],'ruta-btc.png',{type:'image/png'});
+      try{ if(navigator.canShare&&navigator.canShare({files:[file]})){ await navigator.share({files:[file],title:'Ruta BTC',text:'Ruta precisa de BTC ('+up.toFixed(0)+'% sube a 30d)'}); return; } }catch(_){ }
+      const url=URL.createObjectURL(blob),a2=document.createElement('a'); a2.href=url; a2.download='ruta-btc.png'; document.body.appendChild(a2); a2.click(); a2.remove(); setTimeout(()=>URL.revokeObjectURL(url),2000);
+    },'image/png');
+  };
   return(<div className="viewwrap">
     <div style={{...flx({gap:10}),margin:'2px 2px 14px'}}>
       <div style={{width:32,height:32,borderRadius:10,flexShrink:0,background:'rgba(110,139,255,.15)',
@@ -7188,6 +7232,12 @@ function TotalView({gFunding}){
                 <div className="mono" style={{fontSize:8,color:'var(--dim)',marginTop:1}}>{p3>=0?'+':''}{p3.toFixed(1)}% · rango {money(R.p25[k?30:7]*p)}–{money(R.p75[k?30:7]*p)}</div>
               </div>))}
           </div>
+        </div>
+        <div onClick={shareRuta} className="qnav" role="button" tabIndex={0}
+          style={{...flx({justifyContent:'center',gap:7}),marginTop:10,padding:'11px',borderRadius:10,cursor:'pointer',background:`linear-gradient(180deg, ${tint(col2,16)} 0%, var(--panel2) 100%)`,border:`1px solid ${tint(col2,30)}`}}>
+          <span style={{fontSize:15}}>📸</span>
+          <span style={{fontSize:11.5,fontWeight:800,color:'var(--txt)'}}>Compartir imagen</span>
+          <span style={{fontSize:8.5,color:'var(--dim)'}}>· Telegram, WhatsApp…</span>
         </div>
         {R.ex&&R.ex.length>0&&<div style={{fontSize:8.5,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Los 3 días más parecidos: {R.ex.map((e,k)=>(<span key={k}>{k?' · ':''}<b style={{color:e.ret>=0?'var(--up)':'var(--down)'}}>{e.date}</b> ({e.ret>=0?'+':''}{e.ret.toFixed(0)}% en 30d)</span>))}.</div>}
         <Fine>Distancia media a los análogos: {R.dist} (menor = más parecidos = ruta más fiable). Vector de estado normalizado (z-score) y ponderado por indicador; se excluyen los días a menos de 45 del actual (para no solaparse) y los que no tienen 30 días por delante. Es una foto de "cuando BTC estuvo así, esto pasó" — descriptivo, no una predicción garantizada.</Fine>
