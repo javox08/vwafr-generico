@@ -15,17 +15,20 @@ const jf = (u, ms = 4000) => { const c = new AbortController(); const t = setTim
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
-  const out = { t: Date.now(), v: 'fr-20260721a', ex: { Gate: {}, MEXC: {}, Binance: {}, Bybit: {}, OKX: {}, BingX: {}, Bitget: {},
+  const out = { t: Date.now(), v: 'fr-20260723a', ex: { Gate: {}, MEXC: {}, Binance: {}, Bybit: {}, OKX: {}, BingX: {}, Bitget: {},
     Kraken: {}, HTX: {}, CoinEx: {}, Bitfinex: {}, dYdX: {}, WhiteBIT: {}, Phemex: {}, Deribit: {}, Hyperliquid: {}, KuCoin: {} } };
   // ── KuCoin Futures (bulk): la función de Cloudflare NO llega (bloquean sus IPs y salía
   //    "error" en la tabla) → se sirve desde aquí. funding ya es por 8h; OI = lotes × mult × precio. ──
   try {
     const r = await jf('https://api-futures.kucoin.com/api/v1/contracts/active');
     const m = {}; for (const t of ((r && r.data) || [])) m[t.symbol] = t;
-    for (const c of COINS) { const t = m[(c === 'BTC' ? 'XBT' : c) + 'USDTM']; if (!t) continue;
-      const f = parseFloat(t.fundingFeeRate);
-      const oi = parseFloat(t.openInterest) * parseFloat(t.multiplier) * parseFloat(t.markPrice);
-      if (Number.isFinite(f)) out.ex.KuCoin[c] = { f: +(f * 100).toFixed(4), oi: Number.isFinite(oi) && oi > 0 ? +(oi / 1e9).toFixed(3) : 0 };
+    // OI en $ de cada contrato: lineal = lotes×mult×precio; inverse (coin-margined) = lotes×|mult| ($1/contrato)
+    const oiUsd = t => { if (!t) return 0; const oi = parseFloat(t.openInterest), mlt = parseFloat(t.multiplier), mk = parseFloat(t.markPrice);
+      if (!(oi > 0)) return 0; return t.isInverse ? oi * Math.abs(mlt) : oi * mlt * mk; };
+    for (const c of COINS) { const base = (c === 'BTC' ? 'XBT' : c), tU = m[base + 'USDTM']; if (!tU) continue;
+      const f = parseFloat(tU.fundingFeeRate);
+      const oi = oiUsd(tU) + oiUsd(m[base + 'USDCM']) + oiUsd(m[base + 'USDM']); // USDT + USDC + inverse coin-M
+      if (Number.isFinite(f)) out.ex.KuCoin[c] = { f: +(f * 100).toFixed(4), oi: oi > 0 ? +(oi / 1e9).toFixed(3) : 0 };
     }
   } catch (e) {}
   for (const c of COINS) {
@@ -155,11 +158,16 @@ module.exports = async (req, res) => {
       jf('https://api.hbdm.com/linear-swap-api/v1/swap_batch_funding_rate'),
       jf('https://api.hbdm.com/linear-swap-api/v1/swap_open_interest')
     ]);
+    // coin-margined (inverse) en llamada aparte: si el host limita, no afecta al USDT
+    const ojc = await jf('https://api.hbdm.com/swap-api/v1/swap_open_interest').catch(() => null);
     const fm = {}; for (const d of ((fj && fj.data) || [])) fm[d.contract_code] = parseFloat(d.funding_rate);
     const om = {}; for (const d of ((oj && oj.data) || [])) om[d.contract_code] = parseFloat(d.value != null ? d.value : NaN);
+    const cm = {}; for (const d of ((ojc && ojc.data) || [])) cm[d.contract_code] = parseFloat(d.volume); // contratos
+    const cval = { BTC: 100, ETH: 10 }; // tamaño de contrato coin-M en $
     for (const c of COINS) { const f = fm[c + '-USDT']; if (!Number.isFinite(f)) continue;
-      const oi = om[c + '-USDT'];
-      out.ex.HTX[c] = { f: +(f * 100).toFixed(4), oi: Number.isFinite(oi) && oi > 0 ? +(oi / 1e9).toFixed(3) : 0 };
+      let oi = Number.isFinite(om[c + '-USDT']) ? om[c + '-USDT'] : 0;            // USDT-margined (ya en $)
+      if (cval[c] && Number.isFinite(cm[c + '-USD'])) oi += cm[c + '-USD'] * cval[c]; // coin-margined (inverse)
+      out.ex.HTX[c] = { f: +(f * 100).toFixed(4), oi: oi > 0 ? +(oi / 1e9).toFixed(3) : 0 };
     }
   } catch (e) {}
   // ── CoinEx: funding bulk (sin market = todos) + OI del ticker. funding por 8h. ──

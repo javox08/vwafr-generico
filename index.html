@@ -1176,9 +1176,9 @@ function PosView({gFunding,cot}){
         </div>
         <div style={{display:'flex',gap:8}}>
           <Tile icn="🔄" lbl="Volumen 24h" usd={vol} btc={volBtc} src="Volumen negociado spot en las últimas 24h, todo el mercado · CoinGecko"/>
-          <Tile icn="🔓" lbl="Interés abierto" usd={oi$} btc={oiBtc} src={'Contratos de futuros abiertos ahora mismo · '+exN+' exchanges (relé)'}/>
+          <Tile icn="🔓" lbl="Interés abierto" usd={oi$} btc={oiBtc} src={'Todos los productos (USDT+USDC+coin-M) · '+exN+' exchanges (relé)'}/>
         </div>
-        <Fine>El volumen es el total negociado en 24h (no de una vela de 1h); el interés abierto es el valor de TODOS los contratos de futuros perpetuos abiertos ahora, sumando {exN} exchanges. Ambos son la foto del mercado ENTERO, convertidos a dólares y a BTC al precio actual.</Fine>
+        <Fine>El volumen es el total negociado en 24h (no de una vela de 1h); el interés abierto es el valor de TODOS los contratos de futuros abiertos ahora — <b style={{color:'var(--txt)'}}>todos los productos: perpetuos en USDT, en USDC y coin-margined (inverse, liquidados en la propia moneda)</b> — sumando {exN} exchanges. Ambos son la foto del mercado ENTERO, convertidos a dólares y a BTC al precio actual.</Fine>
       </div>);
     })()}
     {/* 🪙 TODAS LAS MONEDAS capturadas · Long/Short en $ (todos los exchanges) — arriba del todo */}
