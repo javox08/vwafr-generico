@@ -636,6 +636,44 @@ function verdict(v){
                   {t:'NEUTRAL',           s:'Mercado equilibrado, sin sesgo',   up:1};
 }
 
+// ── COMPARTIR: tarjeta PNG de alta calidad (canvas, sin librerías) reutilizable por
+//    varios paneles. La comparte con la hoja nativa (Telegram/WhatsApp) o la descarga. ──
+function shareCard(o){
+  const hexA=(h,a)=>{const n=parseInt(h.slice(1),16);return 'rgba('+((n>>16)&255)+','+((n>>8)&255)+','+(n&255)+','+a+')';};
+  const TX='#E4E8F1',DIM='#8A93A6',BG='#07090E'; const col=(o.bigColor&&o.bigColor.charAt(0)==='#')?o.bigColor:'#6E8BFF';
+  const rows=(o.rows||[]).filter(Boolean), S2=2, W=540, rowH=44;
+  const H=(o.gauge?248:216)+rows.length*rowH+58;
+  const cv=document.createElement('canvas'); cv.width=W*S2; cv.height=H*S2; const g=cv.getContext('2d'); g.scale(S2,S2);
+  const rr=(x,y,w,h,r)=>{g.beginPath();g.moveTo(x+r,y);g.arcTo(x+w,y,x+w,y+h,r);g.arcTo(x+w,y+h,x,y+h,r);g.arcTo(x,y+h,x,y,r);g.arcTo(x,y,x+w,y,r);g.closePath();};
+  g.fillStyle=BG; g.fillRect(0,0,W,H);
+  const gr=g.createLinearGradient(0,0,0,H*0.5); gr.addColorStop(0,hexA(col,0.16)); gr.addColorStop(1,'rgba(7,9,14,0)'); g.fillStyle=gr; g.fillRect(0,0,W,H);
+  g.textAlign='left'; g.fillStyle=TX; let ts=25; g.font='800 '+ts+'px system-ui,-apple-system,Segoe UI,Arial'; while(g.measureText(o.title).width>W-40&&ts>15){ts-=1;g.font='800 '+ts+'px system-ui,-apple-system,Segoe UI,Arial';} g.fillText(o.title, 30, 50);
+  if(o.subtitle){ g.fillStyle=DIM; g.font='500 13.5px system-ui,Arial'; g.fillText(o.subtitle, 30, 74); }
+  let bs=o.bigSize||56; g.font='800 '+bs+'px system-ui,Arial'; while(g.measureText(o.big).width>W-50&&bs>18){bs-=2;g.font='800 '+bs+'px system-ui,Arial';}
+  g.textAlign='center'; g.fillStyle=col; g.fillText(o.big, W/2, 150);
+  if(o.bigSub){ g.fillStyle=col; g.font='800 17px system-ui,Arial'; g.fillText(o.bigSub, W/2, 182); }
+  let y=o.gauge?214:196;
+  if(o.gauge){ const gx=30,gw=W-60; const lg=g.createLinearGradient(gx,0,gx+gw,0); const gd=o.gauge.grad||['#FF5470','#F3BA2F','#1FE0A0']; lg.addColorStop(0,gd[0]); lg.addColorStop(0.5,gd[1]); lg.addColorStop(1,gd[2]); g.fillStyle=lg; rr(gx,y,gw,10,5); g.fill();
+    const mx=gx+Math.max(0.02,Math.min(0.98,o.gauge.pct))*gw; g.fillStyle=col; g.beginPath(); g.arc(mx,y+5,9,0,7); g.fill(); g.strokeStyle=BG; g.lineWidth=3; g.stroke(); y+=34; }
+  for(const r of rows){ g.textAlign='left'; g.fillStyle=TX; g.font='600 16px system-ui,Arial'; g.fillText(r.l, 30, y+20);
+    g.textAlign='right'; g.fillStyle=(r.c&&r.c.charAt(0)==='#')?r.c:TX; g.font='800 16px system-ui,Arial'; g.fillText(r.v, W-30, y+20);
+    if(r.bar!=null){ g.fillStyle='#12151F'; rr(30,y+28,W-60,5,3); g.fill(); g.fillStyle=(r.c&&r.c.charAt(0)==='#')?r.c:col; rr(30,y+28,(W-60)*Math.max(0,Math.min(1,r.bar)),5,3); g.fill(); }
+    y+=rowH; }
+  g.textAlign='center'; g.fillStyle='#6A7386'; g.font='600 14px system-ui,Arial'; g.fillText('vwafr-generico.pages.dev · '+new Date().toLocaleDateString('es-ES'), W/2, H-24);
+  cv.toBlob(async(blob)=>{ if(!blob)return; const file=new File([blob],(o.filename||'vwafr')+'.png',{type:'image/png'});
+    try{ if(navigator.canShare&&navigator.canShare({files:[file]})){ await navigator.share({files:[file],title:o.title,text:o.shareText||o.title}); return; } }catch(_){ }
+    const url=URL.createObjectURL(blob),a2=document.createElement('a'); a2.href=url; a2.download=(o.filename||'vwafr')+'.png'; document.body.appendChild(a2); a2.click(); a2.remove(); setTimeout(()=>URL.revokeObjectURL(url),2000);
+  },'image/png');
+}
+function ShareBtn({onClick,color='#6E8BFF',full}){
+  const hexA=(h,a)=>{const n=parseInt(h.slice(1),16);return 'rgba('+((n>>16)&255)+','+((n>>8)&255)+','+(n&255)+','+a+')';};
+  return(<div onClick={e=>{e.stopPropagation&&e.stopPropagation();onClick();}} className="qnav" role="button" tabIndex={0}
+    style={{display:full?'flex':'inline-flex',alignItems:'center',justifyContent:'center',gap:6,padding:'9px 14px',borderRadius:9,cursor:'pointer',
+      background:`linear-gradient(180deg, ${hexA(color,0.16)} 0%, var(--panel2) 100%)`,border:`1px solid ${hexA(color,0.3)}`}}>
+    <span style={{fontSize:14}}>📸</span><span style={{fontSize:11,fontWeight:800,color:'var(--txt)'}}>Compartir imagen</span>
+  </div>);
+}
+
 // ── Hero reutilizable (global o por moneda) ──
 function Hero({vwafr,label,big}){
   const annual=vwafr*3*365;
@@ -1228,6 +1266,12 @@ function PosView({gFunding,cot}){
             </div>
             <div style={{fontSize:7.5,color:'var(--faint)',marginTop:5}}>Interés abierto total ≈ {fB(tot)} en {exCount} exchanges, repartido por el sesgo de cada cohorte. {(tPct*100).toFixed(0)}% del dinero del lado largo. Foto EN VIVO del total, sin ventana temporal.</div>
           </div>);})()}
+        {hasD&&tot>0&&<div style={{marginBottom:12,marginTop:-2}}><ShareBtn full color={tPct>=0.5?'#1FE0A0':'#FF5470'} onClick={()=>shareCard({
+          title:'⚖️ Long/Short · todo el mercado', subtitle:exCount+' exchanges · todos los productos (USDT+USDC+coin-M)',
+          big:tPct>=0.5?'▲ Mandan los largos':'▼ Mandan los cortos', bigColor:tPct>=0.5?'#1FE0A0':'#FF5470', bigSize:30, bigSub:(tPct*100).toFixed(0)+'% del dinero en largo',
+          gauge:{pct:tPct,grad:['#FF5470','#1A1E2B','#1FE0A0']},
+          rows:[{l:'$ Long',v:fB(totL),c:'#1FE0A0',bar:tPct},{l:'$ Short',v:fB(totS),c:'#FF5470',bar:1-tPct},{l:'Interés abierto total',v:fB(tot)}],
+          filename:'longshort-mercado', shareText:'Long/Short del mercado (BTC): '+(tPct*100).toFixed(0)+'% en largo'})}/></div>}
         {/* por moneda */}
         <div style={{fontSize:8,color:'var(--faint)',textTransform:'uppercase',letterSpacing:.6,fontWeight:700,marginBottom:6}}>Por moneda {hasD?'· ordenadas por tamaño (OI)':'· sesgo L/S'}</div>
         {vis.map((x,i)=>{const bull=x.cons>0.52,bear=x.cons<0.48,col=bull?'var(--up)':bear?'var(--down)':'#F3BA2F';
@@ -2246,6 +2290,12 @@ function CycleBTC(){
               </div>
               <div style={{...flx({justifyContent:'space-between'}),marginTop:2,fontSize:7.5,color:'var(--faint)'}} className="mono"><span>{x.lo}</span><span>{x.hi}</span></div>
             </div>);})}
+          <div style={{marginTop:12}}><ShareBtn full color={verd.c.charAt(0)==='#'?verd.c:'#FF5470'} onClick={()=>shareCard({
+            title:'🌡️ Termómetro de fondo de mercado', subtitle:ind.length+' indicadores · '+nBottom+' en zona de suelo',
+            big:prob+'%', bigColor:verd.c.charAt(0)==='#'?verd.c:'#FF5470', bigSize:56, bigSub:verd.e+' '+verd.t,
+            gauge:{pct:prob/100,grad:['#FF5470','#F3BA2F','#1FE0A0']},
+            rows:ind.slice(0,8).map(x=>({l:x.t,v:x.v,c:x.s>=0.6?'#1FE0A0':x.s>=0.4?'#F3BA2F':x.s>=0.2?'#FF9F45':'#FF5470',bar:x.s})),
+            filename:'termometro-fondo', shareText:'Termómetro de fondo BTC: '+prob+'% ('+verd.t+')'})}/></div>
           <Fine>Cada indicador puntúa 0-100% cuán cerca del FONDO histórico está su valor actual; la probabilidad global es la <b>media ponderada por fiabilidad</b> (backtest de 15 años: precio/MA200sem pesa más por ser el más predictivo; el RSI semanal se quitó por tener correlación invertida con los fondos reales). On-chain de bitcoin-data.com + métricas de precio (Mayer, caída desde ATH, medias de 200 días y 200 semanas). Se actualiza solo. Orientativo, no es consejo financiero.</Fine>
         </div>);
       })()}</Lazy>
@@ -7757,8 +7807,16 @@ function App(){
       <div style={{...flx({justifyContent:'center',gap:6}),marginTop:-4,marginBottom:fundOpen?12:14}}>
         <span className="mono" style={{fontSize:10.5,color:'var(--faint)'}}>ponderado por OI {fmtUsd(g.oi)}{g.vol?` · vol 24h ${fmtUsd(g.vol)}`:''} · {coins.length} monedas</span>
       </div>
-      <div onClick={()=>setFundOpen(o=>!o)} style={{textAlign:'center',marginTop:-6,marginBottom:14,cursor:'pointer'}}>
-        <span className="mono" style={{fontSize:10,color:'var(--accent)',fontWeight:700}}>{fundOpen?'▲ ocultar historial':'▼ ver historial + gráfico BTC'}</span>
+      <div style={{...flx({justifyContent:'center',gap:8}),marginTop:-2,marginBottom:12}}>
+        <div onClick={()=>setFundOpen(o=>!o)} style={{cursor:'pointer'}}>
+          <span className="mono" style={{fontSize:10,color:'var(--accent)',fontWeight:700}}>{fundOpen?'▲ ocultar historial':'▼ ver historial + gráfico BTC'}</span>
+        </div>
+        <ShareBtn color={verdict(g.vwafr).up?'#1FE0A0':'#FF5470'} onClick={()=>{const S=verdict(g.vwafr);shareCard({
+          title:'🔥 Funding · BTC (VWAFR)', subtitle:'Media ponderada por OI · top 10 · '+coins.length+' monedas',
+          big:S.t, bigColor:S.up?'#1FE0A0':'#FF5470', bigSize:34, bigSub:'VWAFR '+fmt(g.vwafr)+' · 8h',
+          gauge:{pct:Math.min(Math.max(0.5+(g.vwafr/0.02)*0.5,0.02),0.98),grad:['#FF5470','#1A1E2B','#1FE0A0']},
+          rows:[{l:'Anualizado',v:fmt(g.vwafr*3*365,2),c:S.up?'#1FE0A0':'#FF5470'},{l:'Interés abierto',v:fmtUsd(g.oi)},g.vol?{l:'Volumen 24h',v:fmtUsd(g.vol)}:null],
+          filename:'funding-btc', shareText:'Funding BTC: '+S.t+' (VWAFR '+fmt(g.vwafr)+')'});}}/>
       </div>
       {fundOpen&&<FundingHistory g={g}/>}
 
