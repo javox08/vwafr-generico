@@ -46,8 +46,8 @@
         // OI (en $B) por moneda y exchange, sintético pero plausible (BTC el mayor)
         var oiBase={BTC:12,ETH:6,SOL:2.5,XRP:1.8,BNB:1.2,DOGE:1.5,ADA:0.9,AVAX:0.7,LINK:0.6,LTC:0.5};
         var mkEx=function(mult){var o={};for(var cc in oiBase)o[cc]={f:+((Math.random()*0.02)-0.005).toFixed(4),oi:+(oiBase[cc]*mult*(0.6+Math.random()*0.6)).toFixed(3)};return o;};
-        var exNames=['Gate','MEXC','Binance','Bybit','Bitget','Kraken','HTX','CoinEx','Bitfinex','dYdX','WhiteBIT','Phemex','Deribit','Hyperliquid'];
-        var exObj={};exNames.forEach(function(n,i){exObj[n]=mkEx([0.18,0.4,1,0.62,0.18,0.01,0.17,0.006,0.05,0.002,0.13,0.011,0.065,0.06][i]||0.05);});
+        var exNames=['Gate','MEXC','Binance','Bybit','OKX','BingX','Bitget','Kraken','HTX','CoinEx','Bitfinex','dYdX','WhiteBIT','Phemex','Deribit','Hyperliquid'];
+        var exObj={};exNames.forEach(function(n,i){exObj[n]=mkEx([0.18,0.4,1,0.62,0.85,0.3,0.18,0.01,0.17,0.006,0.05,0.002,0.13,0.011,0.065,0.06][i]||0.05);});
         return J({t:Date.now(),ex:exObj});}
       if(u.indexOf('/api/funding')>=0){var mk2=function(base){var ex={},names=['Binance','OKX','Bybit','Bitget','Gate','MEXC','HTX','Kraken'];names.forEach(function(n,i){ex[n]={funding:+(base+(i-3)*0.004).toFixed(4),oi:+(1+Math.random()*10).toFixed(2),ok:true};});return ex;};
         return J({updated:Date.now(),coins:['BTC','ETH','SOL','XRP','BNB','DOGE','ADA','AVAX','LINK','LTC'],data:{BTC:mk2(0.008),ETH:mk2(0.006),SOL:mk2(0.012),XRP:mk2(0.004),BNB:mk2(0.005),DOGE:mk2(0.01),ADA:mk2(0.004),AVAX:mk2(0.007),LINK:mk2(0.006),LTC:mk2(0.005)}});}
