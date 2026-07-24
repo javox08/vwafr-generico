@@ -609,6 +609,8 @@ const inp=(c='var(--txt)')=>({background:'#080A10',border:'1px solid var(--line)
   boxSizing:'border-box',fontVariantNumeric:'tabular-nums'});
 const flx=(ex={})=>({display:'flex',alignItems:'center',...ex});
 const fmt=(v,d=4)=>{const n=Number.isFinite(v)?v:0;return(n>=0?'+':'')+n.toFixed(d)+'%';};
+// dólares redondeados (es-ES); '—' si no hay valor. Único helper para toda la app.
+const money=v=>(v==null||!Number.isFinite(v))?'—':'$'+Math.round(v).toLocaleString('es-ES');
 
 const BITUNIX='https://www.bitunix.com/register?inviteCode=ffcczq';
 // ── BACKTEST DE LOS VEREDICTOS VELO (libtest/velo_stats.cjs): tras cada veredicto
@@ -1113,7 +1115,6 @@ function OCMetric({name,val,sig,pct,labels}){
 // nadie tiene las posiciones reales por cuenta). Aquí solo hay datos que publica cada
 // fuente oficial: ratios de Binance/OKX/Bybit, taker, COT de la CFTC y OI de Binance.
 function PosView({gFunding,cot}){
-  const money=v=>(v==null||!Number.isFinite(v))?'—':'$'+Math.round(v).toLocaleString('es-ES');
   const [d,setD]=useState(null);
   useEffect(()=>{let a=true;
     const load=async()=>{try{const j=await fetchLS();
@@ -1705,7 +1706,6 @@ function CycleBTC(){
   },[]);
 
   const D=86400000, now=new Date(), nowMs=now.getTime();
-  const money=v=>(v==null||!Number.isFinite(v))?'—':'$'+v.toLocaleString('es-ES',{maximumFractionDigits:0});
   // Halvings reales + estimados. El ciclo avanza SOLO al pasar cada halving.
   const HALVINGS=[Date.UTC(2012,10,28),Date.UTC(2016,6,9),Date.UTC(2020,4,11),Date.UTC(2024,3,20),
     Date.UTC(2028,3,18),Date.UTC(2032,3,16),Date.UTC(2036,3,14),Date.UTC(2040,3,12),Date.UTC(2044,3,10),Date.UTC(2048,3,8)];
@@ -4552,7 +4552,6 @@ function QuantView({gFunding,nav}){
   // ventana: 5 días hacia atrás (para ver el resultado ya publicado) + los próximos
   const evNext=ECON.map(e=>({d:new Date(e[0]+'T13:00:00Z').getTime(),t:e[1],n:e[2]})).filter(e=>e.d>now-5*D).sort((a,b)=>a.d-b.d).slice(0,6);
   const macroWindow=evNext.length&&Math.abs(evNext[0].d-now)<2*D;
-  const money=v=>(v==null||!Number.isFinite(v))?'—':'$'+Math.round(v).toLocaleString('es-ES');
 
   if(!c) return (
     <div style={{textAlign:'center',color:'var(--faint)',fontSize:13,padding:'40px 0'}}>
@@ -4646,7 +4645,7 @@ function QuantView({gFunding,nav}){
         const X=i=>P2+i/30*(W-2*P2), Y=v=>Hs-P2-(v-mn)/rg*(Hs-2*P2);
         const line=a=>'M '+a.map((v,i)=>X(i).toFixed(1)+' '+Y(v).toFixed(1)).join(' L ');
         const bandArea='M '+hi.map((v,i)=>X(i).toFixed(1)+' '+Y(v).toFixed(1)).join(' L ')+' L '+med.map((_,i)=>X(30-i).toFixed(1)+' '+Y(lo[30-i]).toFixed(1)).join(' L ')+' Z';
-        const money=v=>'$'+Math.round(v).toLocaleString('es-ES'), pctOf=v=>(v/p-1)*100;
+        const pctOf=v=>(v/p-1)*100;
         const concord=(confAvg==null)?null:((confAvg>=50)===(pUp>=50));
         return(
         <div style={panel({marginBottom:14,padding:16,background:`radial-gradient(130% 95% at 50% 0%, ${tint(col,11)} 0%, var(--panel) 62%)`,borderColor:`${tint(col,30)}`})}>
@@ -5870,7 +5869,6 @@ function EconCalendar(){
   const D=86400000, now=Date.now();
   const evNext=ECON.map(e=>({d:new Date(e[0]+'T13:00:00Z').getTime(),t:e[1],n:e[2]})).filter(e=>e.d>now-5*D).sort((a,b)=>a.d-b.d).slice(0,6);
   const shutdown=shutdownState();
-  const money=v=>(v==null||!Number.isFinite(v))?'—':'$'+Math.round(v).toLocaleString('es-ES');
   return(<React.Fragment>
       {/* CALENDARIO ECONÓMICO */}
       <div style={panel({marginBottom:14,padding:16})}>
@@ -6353,7 +6351,6 @@ function FundingHistory({g}){
     const d='M '+arr.map((v,i)=>xs(i).toFixed(1)+' '+ys(v).toFixed(1)).join(' L ');
     return{d,area:d+` L ${W} ${H} L 0 ${H} Z`,mn,mx,last:arr[arr.length-1]};};
   const bs=spark(btc), fs=spark(hist.map(h=>h.f));
-  const money=v=>'$'+Math.round(v).toLocaleString('es-ES');
   return(
     <div style={panel({marginBottom:14,padding:16,borderColor:'rgba(110,139,255,.3)'})}>
       <div style={{...flx({justifyContent:'space-between'}),marginBottom:10}}>
@@ -6476,7 +6473,6 @@ function BotsView({gFunding}){
       <div style={{fontSize:11,marginTop:10}}>Backtesteando los bots sobre ~6 años de BTC…</div>
     </div>);
   const {ev,top,yr}=c;
-  const money=v=>(v==null||!Number.isFinite(v))?'—':'$'+Math.round(v).toLocaleString('es-ES');
   const fmtMult=m=>m>=1000?Math.round(m).toLocaleString('es-ES')+'×':m>=10?m.toFixed(0)+'×':m.toFixed(1)+'×';
   const fmtRoe=r=>Math.abs(r)>=1000?(r>=0?'+':'')+Math.round(r).toLocaleString('es-ES')+'%':(r>=0?'+':'')+r.toFixed(0)+'%';
   const dsrCol=d=>d>=0.95?'var(--up)':d>=0.9?'#F3BA2F':'var(--down)';
@@ -7193,7 +7189,6 @@ function TotalView({gFunding}){
     <div style={{fontSize:10,marginTop:6}}>~8 años de precio · on-chain · minería · sentimiento · derivados</div></div></div>);
   const dir=st.lean>=55?1:st.lean<=45?-1:0, col=dir>0?'var(--up)':dir<0?'var(--down)':'#F3BA2F';
   const SCHOOLS=['Tendencia','Reversión','Valoración','Ciclo','On-chain','Sentimiento','Derivados','Macro'];
-  const money=v2=>'$'+Math.round(v2).toLocaleString('es-ES');
   // ── COMPARTIR: dibuja una tarjeta PNG de alta calidad de la ruta (sin librerías) y la
   //    comparte con la hoja nativa (Telegram, WhatsApp…) vía Web Share; si no, la descarga. ──
   const shareRuta=()=>{
