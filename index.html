@@ -96,21 +96,28 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
   <style>
     :root{
-      --bg:#07090E;
-      --panel:#0D1018;
-      --panel2:#11141D;
-      --line:#1A1E2B;
-      --line2:#232838;
-      --txt:#E4E8F1;
-      --dim:#5A6378;
-      --faint:#333A4D;
+      --bg:#080A11;
+      --panel:#10141C;
+      --panel2:#161B26;
+      --line:#1E2432;
+      --line2:#2B3242;
+      --txt:#EAEDF3;
+      --dim:#6C7688;
+      --faint:#3A4256;
       --up:#1FE0A0;
       --upDim:#15A074;
-      --down:#FF5470;
+      --down:#F6465D;
       --downDim:#C73E54;
       --accent:#6E8BFF;
     }
     *{margin:0;padding:0;box-sizing:border-box}
+    /* barra de scroll fina y sobria (detalle de producto pro) + selección de marca */
+    *{scrollbar-width:thin;scrollbar-color:#2B3242 transparent}
+    ::-webkit-scrollbar{width:10px;height:10px}
+    ::-webkit-scrollbar-track{background:transparent}
+    ::-webkit-scrollbar-thumb{background:#2B3242;border-radius:6px;border:2px solid var(--bg)}
+    ::-webkit-scrollbar-thumb:hover{background:#3A4356}
+    ::selection{background:rgba(110,139,255,.28);color:#fff}
     html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
     /* clip recorta el desbordamiento horizontal SIN crear contenedor de scroll
        (hidden rompía position:sticky de la nav); hidden queda de respaldo antiguo */
@@ -601,9 +608,9 @@ const fmtUsd=v=>{if(!(v>0))return '';
   return '$'+Math.round(m*1000)+'K';};
 const eyebrow={fontSize:10,letterSpacing:3,color:'var(--dim)',textTransform:'uppercase',fontWeight:600};
 // paneles con degradado sutil + sombra suave (mismo lenguaje visual que el panel de redes)
-const panel=(ex={})=>({background:'linear-gradient(168deg,#11141F 0%,#0B0E16 100%)',
-  border:'1px solid var(--line)',borderRadius:16,
-  boxShadow:'0 14px 34px -24px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.045)',...ex});
+const panel=(ex={})=>({background:'linear-gradient(168deg,#141926 0%,#0C0F18 100%)',
+  border:'1px solid var(--line)',borderRadius:14,
+  boxShadow:'0 16px 38px -26px rgba(0,0,0,.75), inset 0 1px 0 rgba(255,255,255,.05)',...ex});
 const inp=(c='var(--txt)')=>({background:'#080A10',border:'1px solid var(--line)',borderRadius:7,
   color:c,fontFamily:"'JetBrains Mono',monospace",fontSize:12.5,padding:'6px 8px',width:'100%',
   boxSizing:'border-box',fontVariantNumeric:'tabular-nums'});
