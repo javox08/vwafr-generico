@@ -951,10 +951,10 @@ function Calc({coin,data,source,sel}){
                   </div>
                 )}
               </div>
-              <input type="number" step="0.0001" value={Number.isFinite(r.funding)?r.funding:0}
+              <input type="number" step="0.0001" value={Number.isFinite(r.funding)?r.funding:0} aria-label={'Funding de '+r.id+' en %'}
                 disabled={fLocked} onChange={ev=>setField(r.id,'funding',ev.target.value)}
                 style={{...inp(fc),fontSize:11,padding:'6px 5px',opacity:fLocked?.65:1,cursor:fLocked?'default':'text'}}/>
-              <input type="number" step="0.01" min="0" value={(Number.isFinite(r.oi)?r.oi:0).toFixed(2)}
+              <input type="number" step="0.01" min="0" value={(Number.isFinite(r.oi)?r.oi:0).toFixed(2)} aria-label={'Interés abierto de '+r.id+' en miles de millones'}
                 disabled={oiLocked} onChange={ev=>setField(r.id,'oi',ev.target.value)}
                 style={{...inp('var(--dim)'),fontSize:11,padding:'6px 5px',opacity:oiLocked?.65:1}}/>
               <div className="mono" style={{fontSize:11.5,color:'var(--accent)',textAlign:'right'}}>
@@ -997,11 +997,11 @@ function Calc({coin,data,source,sel}){
           <div style={{marginTop:12,padding:'12px',borderRadius:10,background:'#080A10',border:'1px solid var(--line2)'}}>
             <div style={{...eyebrow,marginBottom:9}}>Nuevo exchange manual</div>
             <div style={{display:'grid',gridTemplateColumns:'1fr 76px 64px',gap:7,marginBottom:9}}>
-              <input placeholder="Nombre" value={nf.name} onChange={e=>setNf({...nf,name:e.target.value})}
+              <input placeholder="Nombre" aria-label="Nombre del exchange" value={nf.name} onChange={e=>setNf({...nf,name:e.target.value})}
                 style={{...inp(),fontFamily:"'Sora',sans-serif"}}/>
-              <input type="number" step="0.0001" placeholder="Funding%" value={nf.funding}
+              <input type="number" step="0.0001" placeholder="Funding%" aria-label="Funding en %" value={nf.funding}
                 onChange={e=>setNf({...nf,funding:e.target.value})} style={inp('var(--up)')}/>
-              <input type="number" step="0.01" min="0" placeholder="OI $B" value={nf.oi}
+              <input type="number" step="0.01" min="0" placeholder="OI $B" aria-label="Interés abierto en miles de millones" value={nf.oi}
                 onChange={e=>setNf({...nf,oi:e.target.value})} style={inp('var(--dim)')}/>
             </div>
             <div style={{...flx({gap:7})}}>
@@ -5490,7 +5490,7 @@ function QuantView({gFunding,nav}){
           </div>
           <div style={{...flx({gap:8})}}>
             <span className="mono" style={{fontSize:13,color:'var(--faint)'}}>$</span>
-            <input value={tgt} onChange={e=>setTgt(e.target.value)} inputMode="decimal" placeholder={Math.round(c.price*1.1).toLocaleString('es-ES')}
+            <input value={tgt} onChange={e=>setTgt(e.target.value)} inputMode="decimal" aria-label="Precio objetivo en dólares" placeholder={Math.round(c.price*1.1).toLocaleString('es-ES')}
               style={{flex:1,background:'#0A0D14',border:'1px solid var(--line2)',borderRadius:9,color:'var(--txt)',
                 fontSize:15,fontWeight:700,padding:'10px 12px',fontFamily:'JetBrains Mono,monospace',outline:'none',minWidth:0}}/>
           </div>
@@ -8097,14 +8097,14 @@ function App(){
         </div>
         <div style={{fontSize:9.5,color:'var(--faint)',lineHeight:1.55,marginBottom:11}}>Manda mensajes automáticos sobre BTC (probabilidades, objetivos, operación de los bots…) a <b style={{color:'var(--txt)'}}>los grupos/chats que tú digas</b>, ~1 cada hora con horario variado. Funciona con la web/app abierta.</div>
         <div style={{display:'grid',gap:8}}>
-          <input value={tgTok} onChange={e=>setTgTok(e.target.value.trim())} placeholder="Token del bot (de @BotFather)" autoComplete="off"
+          <input value={tgTok} onChange={e=>setTgTok(e.target.value.trim())} placeholder="Token del bot (de @BotFather)" aria-label="Token del bot de Telegram" autoComplete="off"
             style={{background:'#0A0D14',border:'1px solid var(--line2)',borderRadius:9,color:'var(--txt)',fontSize:11,padding:'10px 12px',fontFamily:'JetBrains Mono,monospace',outline:'none',width:'100%',boxSizing:'border-box'}}/>
           <div>
             <div style={{...flx({justifyContent:'space-between'}),marginBottom:4}}>
               <span style={{fontSize:8.5,color:'var(--faint)',fontWeight:600}}>Destinos (un grupo/chat por línea):</span>
               <span onClick={tgDetect} className="mono" style={{fontSize:8.5,color:'var(--accent)',cursor:'pointer',fontWeight:700}}>🔍 detectar grupos</span>
             </div>
-            <textarea value={tgChats} onChange={e=>setTgChats(e.target.value)} rows={3} placeholder={'-1001234567890  Mi grupo\n987654321  Yo mismo'} autoComplete="off"
+            <textarea value={tgChats} onChange={e=>setTgChats(e.target.value)} rows={3} placeholder={'-1001234567890  Mi grupo\n987654321  Yo mismo'} aria-label="Grupos o chats de destino, uno por línea" autoComplete="off"
               style={{background:'#0A0D14',border:'1px solid var(--line2)',borderRadius:9,color:'var(--txt)',fontSize:11,padding:'10px 12px',fontFamily:'JetBrains Mono,monospace',outline:'none',width:'100%',boxSizing:'border-box',resize:'vertical'}}/>
           </div>
         </div>
