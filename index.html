@@ -659,13 +659,18 @@ function _shareBlob(cv,filename,title,text){
 //    varios paneles. La comparte con la hoja nativa (Telegram/WhatsApp) o la descarga. ──
 // Marco común de las tarjetas (fondo con halo, chip+título, número héroe con glow y
 // píldora) y pie de marca — compartidos por shareCard y la ruta para no duplicarlos.
-function _cardFrame(g,o){
-  const hexA=_hexA, TX='#EDF1F8',DIM='#9AA3B5',BG='#06070B',HAIR='rgba(255,255,255,0.06)',ACC='#6E8BFF';
-  const {W,H,col,padX}=o;
-  g.fillStyle=BG; g.fillRect(0,0,W,H);
+// fondo de la tarjeta (a lienzo completo, sin trasladar) — se dibuja aparte para poder
+// CENTRAR verticalmente el contenido y que las tarjetas sean retrato, no cuadradas.
+function _cardBg(g,W,H,col){
+  const hexA=_hexA;
+  g.fillStyle='#06070B'; g.fillRect(0,0,W,H);
   const rgd=g.createRadialGradient(W/2,-30,30,W/2,-30,H*0.95); rgd.addColorStop(0,hexA(col,0.22)); rgd.addColorStop(0.45,hexA(col,0.06)); rgd.addColorStop(1,'rgba(6,7,11,0)'); g.fillStyle=rgd; g.fillRect(0,0,W,H);
   const vg=g.createLinearGradient(0,H-170,0,H); vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,0,0.4)'); g.fillStyle=vg; g.fillRect(0,H-170,W,170);
   g.strokeStyle=hexA(col,0.35); g.lineWidth=2; g.beginPath(); g.moveTo(0,1); g.lineTo(W,1); g.stroke();
+}
+function _cardFrame(g,o){
+  const hexA=_hexA, TX='#EDF1F8',DIM='#9AA3B5',HAIR='rgba(255,255,255,0.06)',ACC='#6E8BFF';
+  const {W,col,padX}=o;
   const em=o.title.match(/^(\S+)\s+([\s\S]*)$/)||[]; const icon=em[1]||'', ttl=em[2]||o.title, chip=36,cx=padX,cy=30;
   _rrect(g,cx,cy,chip,chip,11); const cgd=g.createLinearGradient(cx,cy,cx+chip,cy+chip); cgd.addColorStop(0,hexA(col,0.34)); cgd.addColorStop(1,hexA(ACC,0.24)); g.fillStyle=cgd; g.fill(); g.strokeStyle=hexA(col,0.55); g.lineWidth=1; g.stroke();
   g.textAlign='center'; g.textBaseline='middle'; g.font='400 20px system-ui,Arial'; g.fillText(icon,cx+chip/2,cy+chip/2+1);
@@ -691,11 +696,14 @@ function _cardFooter(g,W,H,padX){
 function shareCard(o){
   const TX='#EDF1F8',HAIR='rgba(255,255,255,0.06)';
   const col=(o.bigColor&&o.bigColor.charAt(0)==='#')?o.bigColor:'#6E8BFF';
-  const rows=(o.rows||[]).filter(Boolean), S2=3, W=560, padX=34, rowH=48;
-  const rowsY=(o.gauge?300:246), H=rowsY+rows.length*rowH+66;
+  const rows=(o.rows||[]).filter(Boolean), S2=3, W=560, padX=34, rowH=48, footH=66;
+  const rowsY=(o.gauge?300:246), contentB=rowsY+rows.length*rowH;
+  // altura mínima RETRATO (4:5) → nunca cuadrada; el contenido se centra verticalmente
+  const H=Math.max(contentB+footH, Math.round(W*1.15)), off=Math.round((H-footH-contentB)/2);
   const cv=document.createElement('canvas'); cv.width=W*S2; cv.height=H*S2; const g=cv.getContext('2d'); g.scale(S2,S2);
   const rr=(x,y,w,h,r)=>_rrect(g,x,y,w,h,r), hexA=_hexA;
-  _cardFrame(g,{W,H,col,padX,title:o.title,subtitle:o.subtitle,big:o.big,bigSize:o.bigSize,bigSub:o.bigSub});
+  _cardBg(g,W,H,col); g.save(); g.translate(0,off);
+  _cardFrame(g,{W,col,padX,title:o.title,subtitle:o.subtitle,big:o.big,bigSize:o.bigSize,bigSub:o.bigSub});
   if(o.gauge){ const gx=padX,gw=W-2*padX,gy=256; const gd=o.gauge.grad||['#FF5470','#F3BA2F','#1FE0A0'];
     rr(gx,gy,gw,10,5); g.fillStyle='rgba(255,255,255,0.06)'; g.fill();
     const lg=g.createLinearGradient(gx,0,gx+gw,0); lg.addColorStop(0,gd[0]); lg.addColorStop(0.5,gd[1]); lg.addColorStop(1,gd[2]); rr(gx,gy,gw,10,5); g.fillStyle=lg; g.fill();
@@ -707,6 +715,7 @@ function shareCard(o){
     g.textAlign='right'; g.fillStyle=rc; g.font='800 17px system-ui,Arial'; g.fillText(r.v, W-padX, y+18);
     if(r.bar!=null){ const bw=W-2*padX; rr(padX,y+28,bw,6,3); g.fillStyle=hexA(rc,0.16); g.fill(); rr(padX,y+28,Math.max(6,bw*Math.max(0,Math.min(1,r.bar))),6,3); g.fillStyle=rc; g.fill(); }
     y+=rowH; }
+  g.restore();
   _cardFooter(g,W,H,padX);
   _shareBlob(cv, o.filename||'vwafr', o.title, o.shareText||o.title);
 }
@@ -7202,11 +7211,14 @@ function TotalView({gFunding}){
     const R=st.route; if(!R)return;
     const hexA=_hexA, UP='#1FE0A0',DN='#FF5470',NE='#F3BA2F',DIM='#9AA3B5',FAINT='#5A6377',HAIR='rgba(255,255,255,0.06)';
     const up=R.up,dir=up>=55?1:up<=45?-1:0,col=dir>0?UP:dir<0?DN:NE;
-    const S2=3, W=560, padX=34, H=712, cv=document.createElement('canvas'); cv.width=W*S2; cv.height=H*S2;
+    const S2=3, W=560, padX=34, footH=66, contentB=592;
+    const H=Math.max(contentB+footH, Math.round(W*1.15)), off=Math.round((H-footH-contentB)/2);
+    const cv=document.createElement('canvas'); cv.width=W*S2; cv.height=H*S2;
     const g=cv.getContext('2d'); g.scale(S2,S2);
     const rr=(x,y,w,h,r)=>_rrect(g,x,y,w,h,r);
-    // marco común (fondo, chip+título, % héroe con glow, píldora) — la ruta le añade su abanico
-    _cardFrame(g,{W,H,col,padX,title:'🧭 Ruta precisa · BTC',subtitle:'Por analogía histórica · '+R.K+' días análogos',
+    // fondo a lienzo completo + contenido centrado (retrato) + marco común (chip, % héroe, píldora)
+    _cardBg(g,W,H,col); g.save(); g.translate(0,off);
+    _cardFrame(g,{W,col,padX,title:'🧭 Ruta precisa · BTC',subtitle:'Por analogía histórica · '+R.K+' días análogos',
       big:up.toFixed(0)+'%',bigSize:88,heroY:190,bigSub:'de esas veces BTC subió a 30 días',subY:210});
     // gráfico de abanico en panel redondeado
     const bx=padX,by=268,bw=W-2*padX,bh=214; rr(bx,by,bw,bh,16); g.fillStyle='#04050A'; g.fill(); g.strokeStyle=HAIR; g.lineWidth=1; g.stroke();
@@ -7224,6 +7236,7 @@ function TotalView({gFunding}){
       g.fillStyle=DIM; g.font='700 13px system-ui,Arial'; g.fillText((pc>=0?'+':'')+pc.toFixed(1)+'%', x+tw/2, ty+79);};
     tile(bx,'EN 7 DÍAS',R.med[7]*p,(R.med[7]-1)*100);
     tile(bx+(bw-14)/2+14,'EN 30 DÍAS',R.med[30]*p,(R.med[30]-1)*100);
+    g.restore();
     _cardFooter(g,W,H,padX);
     _shareBlob(cv, 'ruta-btc', 'Ruta BTC', 'Ruta precisa de BTC ('+up.toFixed(0)+'% sube a 30d)');
   };
