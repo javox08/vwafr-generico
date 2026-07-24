@@ -1,0 +1,16 @@
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Frame-Options: SAMEORIGIN
+  Cross-Origin-Opener-Policy: same-origin
+  Permissions-Policy: geolocation=(), microphone=(), camera=(), payment=(), usb=()
+
+# Iconos/imágenes versionados: cacheables un año (no cambian)
+/icon-192.png
+  Cache-Control: public, max-age=31536000, immutable
+/icon-512.png
+  Cache-Control: public, max-age=31536000, immutable
+/icon-maskable-512.png
+  Cache-Control: public, max-age=31536000, immutable
+/og.png
+  Cache-Control: public, max-age=31536000, immutable
