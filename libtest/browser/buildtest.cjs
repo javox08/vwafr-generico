@@ -5,6 +5,10 @@ s=s.replace(/const \[view,setView\]=useState\('[a-z]+'\);?[^\n]*/, "const [view,
 s=s.replace('https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js','./libs/react.production.min.js');
 s=s.replace('https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js','./libs/react-dom.production.min.js');
 s=s.replace('https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js','./libs/babel.min.js');
+// En producción los <script> llevan integrity+crossorigin (SRI). Aquí se sirven copias
+// LOCALES por file://, donde crossorigin dispara CORS y el navegador los bloquea → se
+// quitan solo en el build de test (no afecta a index.html).
+s=s.replace(/\s+integrity="sha384-[^"]*"/g,'').replace(/(<script[^>]*\.\/libs\/[^>]*?)\s+crossorigin="anonymous"/g,'$1');
 const mock='<script>'+fs.readFileSync(SP+'/quantmock.js','utf8')+'</scr'+'ipt>'+
   '<script>window.addEventListener("load",function(){setTimeout(function(){var d=document.createElement("div");d.id="ERRSINK";d.textContent="ERRCOUNT:"+window.__errs.length+"|"+window.__errs.slice(0,4).join(" || ");document.body.appendChild(d);},16000);});</scr'+'ipt>';
 s=s.replace('<head>','<head>\n'+mock);
