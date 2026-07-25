@@ -7426,8 +7426,12 @@ function TotalView({gFunding}){
         </div>
         <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:10,lineHeight:1.5}}>Describe el estado de HOY con estos indicadores (Mayer, momentum, ciclo, RSI{R.onchain?', MVRV, NUPL, Miedo/Codicia':''}…) y busca los <b style={{color:'var(--txt)'}}>{R.K} días del pasado más parecidos</b>. La ruta es el camino REAL que siguió el precio esas veces — mediana y bandas.</div>
         <div style={{textAlign:'center',padding:'2px 0 8px'}}>
-          <div className="mono" style={{fontSize:34,fontWeight:800,color:col2,lineHeight:1}}>{R.up.toFixed(0)}%</div>
-          <div style={{fontSize:11.5,fontWeight:800,color:col2,marginTop:4}}>de esas veces BTC subió a 30 días</div>
+          {/* igual que en la captura: se enseña SIEMPRE el lado mayoritario (si sube el 20%,
+              lo relevante es que baja el 80%). Solo cambia cómo se muestra, no el cálculo. */}
+          {(()=>{const Dm=_dom(R.up,'subió','bajó');return(<React.Fragment>
+            <div className="mono" style={{fontSize:34,fontWeight:800,color:col2,lineHeight:1}}>{Dm.pct.toFixed(0)}%</div>
+            <div style={{fontSize:11.5,fontWeight:800,color:col2,marginTop:4}}>de esas veces BTC {Dm.word} a 30 días</div>
+          </React.Fragment>);})()}
         </div>
         {(()=>{const eLean=st.lean,eNeutral=Math.abs(eLean-50)<5,agree=(R.up-50)*(eLean-50)>=0,gap=Math.abs(R.up-eLean);
           if(eNeutral)return(
