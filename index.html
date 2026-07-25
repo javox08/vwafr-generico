@@ -467,6 +467,9 @@ function ExLogo({name,color,size=16}){
 
 // Redes del creador (menú estilo Linktree en el pie; cada una con su color de marca y
 // su LOGO real —favicon oficial del dominio— con respaldo al emoji si no carga)
+// Kit de marca (logos descargables) en el panel de Redes. OCULTO por defecto.
+// Para volver a mostrarlo: poner true. Los archivos siguen en /marca, no se ha borrado nada.
+const KIT_MARCA=false;
 const REDES=[
   // f0 = última cifra conocida (respaldo); el relé /api/social la actualiza EN VIVO al abrir el menú
   {id:'tiktok',n:'TikTok',s:'@javox_008',u:'https://www.tiktok.com/@javox_008',d:'tiktok.com',e:'🎵',c:'#FE2C55',glow:'0 0 7px #25F4EECC, 0 0 14px #FE2C55BB',f0:'526 seguidores'},
@@ -8423,7 +8426,8 @@ function App(){
                 <span className="arr">↗</span>
               </a>);})}
             <div onClick={shareRedes} className="rd-share">{shareCopied?'✓ enlace copiado':'📤 Comparte este panel'}</div>
-            {/* ═══ INICIO KIT DE MARCA (temporal · para quitarlo: borra hasta FIN y la carpeta /marca) ═══ */}
+            {/* ═══ INICIO KIT DE MARCA (oculto con KIT_MARCA=false · los archivos siguen en /marca) ═══ */}
+            {KIT_MARCA&&(
             <div style={{marginTop:12,paddingTop:12,borderTop:'1px solid var(--line2)'}}>
               <div style={{fontSize:9,fontWeight:800,letterSpacing:1,textTransform:'uppercase',color:'var(--accent)',marginBottom:3}}>⬇️ Kit de marca</div>
               <div style={{fontSize:8.5,color:'var(--faint)',marginBottom:10,lineHeight:1.5}}>Descarga los logos. En el móvil, si no se descarga, mantén pulsado el enlace y elige «Descargar enlace».</div>
@@ -8463,6 +8467,7 @@ function App(){
                   </div>
                 </div>))}
             </div>
+            )}
             {/* ═══ FIN KIT DE MARCA ═══ */}
             <div style={{textAlign:'center',fontSize:8,color:'var(--faint)',marginTop:8}}>los enlaces se abren en una pestaña nueva</div>
           </div>
