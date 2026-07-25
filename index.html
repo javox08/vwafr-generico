@@ -209,7 +209,6 @@
     @keyframes rdCard{from{opacity:0;transform:translateY(30px) scale(.96)}to{opacity:1;transform:none}}
     @keyframes rdItem{from{opacity:0;transform:translateY(16px) scale(.95)}to{opacity:1;transform:none}}
     @keyframes rdAva{0%,100%{transform:translateY(0) rotate(-2deg)}50%{transform:translateY(-6px) rotate(2deg)}}
-    @keyframes rdRing{to{transform:rotate(360deg)}}
     .rd-back{position:fixed;inset:0;z-index:90;background:rgba(4,6,10,.82);backdrop-filter:blur(9px);
       -webkit-backdrop-filter:blur(9px);display:flex;align-items:center;justify-content:center;
       padding:16px;animation:rdBack .25s ease both}
@@ -273,13 +272,17 @@
       background:rgba(255,255,255,.035);border:1px solid var(--line2)}
     .rd-stat .v{font-family:'JetBrains Mono',monospace;font-size:14.5px;font-weight:800;color:var(--txt)}
     .rd-stat .l{font-size:7.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.5px;margin-top:2px}
+    /* Sin aro propio: el logo ya trae el suyo y dos aros se pisaban. Queda un halo
+       suave que respira, para que no se vea muerto pero sin competir con la marca. */
     .rd-ring{position:relative;width:96px;height:96px;margin:-48px auto 11px;z-index:2;
-      filter:drop-shadow(0 0 16px rgba(145,70,255,.5))}
-    .rd-ring::before{content:'';position:absolute;inset:-4px;border-radius:50%;
-      background:conic-gradient(from 0deg,#43E660,#9146FF,#E7ECF5,#43E660);
-      animation:rdRing 5s linear infinite}
+      animation:rdHalo 3.4s ease-in-out infinite}
+    @keyframes rdHalo{
+      0%,100%{filter:drop-shadow(0 0 12px rgba(57,255,20,.28)) drop-shadow(0 0 22px rgba(145,70,255,.20))}
+      50%    {filter:drop-shadow(0 0 20px rgba(57,255,20,.44)) drop-shadow(0 0 34px rgba(145,70,255,.32))}}
+    @media (prefers-reduced-motion:reduce){.rd-ring{animation:none;
+      filter:drop-shadow(0 0 14px rgba(57,255,20,.3))}}
     .rd-ava{position:absolute;inset:0;border-radius:50%;display:flex;align-items:center;justify-content:center;
-      font-size:27px;font-weight:800;color:#fff;background:#141926;border:3px solid #0A0D14;
+      font-size:27px;font-weight:800;color:#fff;background:#0A0D14;
       overflow:hidden;will-change:transform} /* el movimiento lo dirige JS con objetivos al azar */
     .rd-name{font-size:19px;font-weight:800;letter-spacing:-.3;
       background:linear-gradient(92deg,#43E660 0%,#BFF7CB 35%,#C9B3FF 65%,#9146FF 100%);
