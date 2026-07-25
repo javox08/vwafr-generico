@@ -7247,8 +7247,11 @@ function totalModels(cl,ts0,aux){
   // MEDIDO (backtest hecho) y con señal viva. Si no, la vista no enseña ningún %: un
   // número a medio cargar (ej. 51%) parece un veredicto y no lo es.
   const nMed=MODELS.filter(m=>m.hit!=null).length, nSig=ALL.filter(m=>m.sNow!==0).length;
-  const ready=nMed>=8&&nSig>=3&&ens!=null;
-  return {models:ALL,v,lean,nUp,nDn,n0,ens,route,volNow,expo,var95,var99,kelly,pl,price:px,
+  const ready=nMed>=6&&nSig>=1;   // ens es opcional: su caja ya se oculta sola si no existe
+  // motivo por el que NO hay ruta (para poder decirlo en pantalla en vez de desaparecer)
+  const routeWhy=route?null:(N<430?'hacen falta ~430 días de precio y hay '+N
+    :'no se han encontrado suficientes días históricos parecidos al de hoy');
+  return {models:ALL,v,lean,nUp,nDn,n0,ens,route,routeWhy,volNow,expo,var95,var99,kelly,pl,price:px,
     years:+(N/365).toFixed(1),ready,nMed};
 }
 function TotalView({gFunding}){
@@ -7418,6 +7421,12 @@ function TotalView({gFunding}){
         🎯 <b style={{color:'var(--txt)'}}>El CONJUNTO, backtesteado</b>: cuando ≥2 escuelas netas coinciden (pasa el {st.ens.cover}% de los días), la dirección acierta el <b style={{color:st.ens.hit>st.ens.base?'var(--up)':'#F3BA2F'}}>{st.ens.hit.toFixed(0)}%</b> a 30 días (n={st.ens.n} · vs {st.ens.base.toFixed(0)}% de acertar diciendo siempre "sube"). {st.ens.hit>st.ens.base+2?'Ventaja real sobre la base.':'Ventaja modesta: úsalo como contexto, no como oráculo.'}</div>}
     </div>
     {/* 🧭 RUTA PRECISA por analogía histórica (KNN sobre los indicadores día a día) */}
+    {!st.route&&st.routeWhy&&<div style={panel({marginBottom:14,padding:14})}>
+      <div style={{...flx({justifyContent:'space-between'}),marginBottom:6}}>
+        <span style={eyebrow}>🧭 Ruta precisa · por analogía histórica</span>
+      </div>
+      <div style={{fontSize:10,color:'var(--dim)',lineHeight:1.6}}>No se ha podido calcular la ruta ahora mismo: {st.routeWhy}. Se reintenta solo cada 5 minutos.</div>
+    </div>}
     {st.route&&(()=>{const R=st.route, p=R.price, b30=R.med[30]*p, pc=(R.med[30]-1)*100;
       const dir2=R.up>=55?1:R.up<=45?-1:0, col2=dir2>0?'var(--up)':dir2<0?'var(--down)':'#F3BA2F';
       const W=300,Hs=76,P2=4;

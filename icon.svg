@@ -1,34 +1,42 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="VWAFR">
+  <title>VWAFR · análisis cripto</title>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#0E1320"/>
-      <stop offset="1" stop-color="#07090E"/>
+      <stop offset="0" stop-color="#141A2B"/>
+      <stop offset="1" stop-color="#080A11"/>
     </linearGradient>
-    <radialGradient id="glow" cx="0.5" cy="0.32" r="0.7">
-      <stop offset="0" stop-color="#6E8BFF" stop-opacity="0.30"/>
-      <stop offset="1" stop-color="#6E8BFF" stop-opacity="0"/>
-    </radialGradient>
-    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
-      <feGaussianBlur stdDeviation="6"/>
-    </filter>
+    <linearGradient id="needle" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#8AA0FF"/>
+      <stop offset="1" stop-color="#E6EAF5"/>
+    </linearGradient>
   </defs>
-  <rect width="512" height="512" fill="url(#bg)"/>
-  <rect width="512" height="512" fill="url(#glow)"/>
-  <!-- línea de tendencia -->
-  <path d="M96 360 L188 300 L284 232 L416 132" fill="none" stroke="#6E8BFF" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" opacity="0.55" filter="url(#soft)"/>
-  <path d="M96 360 L188 300 L284 232 L416 132" fill="none" stroke="#8AA0FF" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
-  <!-- velas alcistas -->
-  <g stroke="#1FE0A0" stroke-width="10" stroke-linecap="round">
-    <line x1="148" y1="300" x2="148" y2="392"/>
-    <line x1="244" y1="232" x2="244" y2="340"/>
-    <line x1="356" y1="150" x2="356" y2="276"/>
+
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <rect x="1.5" y="1.5" width="509" height="509" rx="110.5" fill="none" stroke="#FFFFFF" stroke-opacity="0.10" stroke-width="3"/>
+
+  <!-- Dial: instrumento de medida (no una promesa de subida) -->
+  <g fill="none" stroke-width="30" stroke-linecap="round">
+    <!-- pista -->
+    <path d="M116 330 A140 140 0 0 1 396 330" stroke="#FFFFFF" stroke-opacity="0.07"/>
+    <!-- tercio bajista / neutral / alcista, en tono contenido -->
+    <path d="M116 330 A140 140 0 0 1 172 220" stroke="#FF5470" stroke-opacity="0.60"/>
+    <path d="M198 190 A140 140 0 0 1 314 190" stroke="#8A93A6" stroke-opacity="0.45"/>
+    <path d="M340 220 A140 140 0 0 1 396 330" stroke="#1FE0A0" stroke-opacity="0.60"/>
   </g>
-  <g fill="#1FE0A0">
-    <rect x="128" y="320" width="40" height="56" rx="9"/>
-    <rect x="224" y="252" width="40" height="68" rx="9"/>
-    <rect x="336" y="172" width="40" height="76" rx="9"/>
+
+  <!-- aguja: apunta a la lectura actual, no siempre arriba -->
+  <path d="M256 330 L318 214" stroke="url(#needle)" stroke-width="24" stroke-linecap="round"/>
+  <circle cx="256" cy="330" r="34" fill="#080A11"/>
+  <circle cx="256" cy="330" r="34" fill="none" stroke="#6E8BFF" stroke-width="10"/>
+  <circle cx="256" cy="330" r="9" fill="#E6EAF5"/>
+
+  <!-- marcas de escala -->
+  <g stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="8" stroke-linecap="round">
+    <line x1="256" y1="164" x2="256" y2="188"/>
+    <line x1="140" y1="288" x2="163" y2="279"/>
+    <line x1="372" y1="288" x2="349" y2="279"/>
   </g>
-  <!-- punto vivo en el último máximo -->
-  <circle cx="416" cy="132" r="15" fill="#1FE0A0"/>
-  <circle cx="416" cy="132" r="26" fill="none" stroke="#1FE0A0" stroke-width="4" opacity="0.4"/>
+
+  <!-- base: línea de referencia (el "50 = neutral" del producto) -->
+  <rect x="176" y="386" width="160" height="14" rx="7" fill="#FFFFFF" fill-opacity="0.14"/>
 </svg>
