@@ -1648,6 +1648,90 @@ function PosView({gFunding,cot}){
   </div>);
 }
 
+// ── RUTA DE CICLO (estilo TradingView): velas REALES del ciclo actual sobre las fases
+//    Bull / Bear / Neutro. La mitad derecha queda SIEMPRE vacía (lo que falta de ciclo):
+//    el eje se escala a 2x las semanas transcurridas, así las velas nunca pasan del 50%.
+//    Las velas se van creando solas conforme avanza el tiempo (la última, en curso).
+function CycleRouteChart({hist,halvingMs,weeks,price,money}){
+  const W=340,H=196,padL=8,padR=8,padT=20,padB=20;
+  const plotW=W-padL-padR, plotH=H-padT-padB;
+  // fases del ciclo en SEMANAS desde el halving (mismo modelo que el resto del apartado)
+  const PH=[{a:0,b:40,t:'NEUTRO',n:'Neutro',c:'#8AA0FF'},{a:40,b:77,t:'BULL',n:'Bull market',c:'#1FE0A0'},
+            {a:77,b:135,t:'BEAR',n:'Bear market',c:'#FF5470'},{a:135,b:208,t:'NEUTRO',n:'Neutro',c:'#8AA0FF'}];
+  const wk=Math.max(0,weeks||0);
+  const xMaxW=Math.max(wk*2,60);                 // ← garantiza ≥50% de gráfico vacío a la derecha
+  const X=w=>padL+Math.max(0,Math.min(1,w/xMaxW))*plotW;
+  // velas: 2 semanas por vela al principio, 4 después (para que no se aplasten)
+  const per=wk<52?2:4;
+  const cl=(hist&&Array.isArray(hist.cl))?hist.cl:null, ts0=hist&&hist.ts0;
+  let cds=[],lo=Infinity,hi=-Infinity;
+  if(cl&&cl.length>30&&Number.isFinite(ts0)){
+    const i0=Math.round((halvingMs-ts0)/864e5);   // índice del día del halving
+    for(let b=0;b*per<=wk;b++){
+      const s0=i0+b*per*7, s1=Math.min(cl.length-1,s0+per*7-1);
+      if(s0<0||s0>=cl.length||s1<=s0)continue;
+      let o=null,c=null,h=-Infinity,l=Infinity,n=0;
+      for(let k=s0;k<=s1;k++){const v=cl[k]; if(!(v>0))continue;
+        if(o==null)o=v; c=v; if(v>h)h=v; if(v<l)l=v; n++;}
+      if(o==null||n<2)continue;
+      cds.push({w:b*per,o,c,h,l,up:c>=o,live:(b+1)*per>wk});
+      if(l<lo)lo=l; if(h>hi)hi=h;
+    }
+  }
+  if(price>0){if(price<lo)lo=price;if(price>hi)hi=price;}
+  // Justo después de un halving aún no hay velas: se dibujan igualmente las fases y el
+  // precio con un rango razonable, para que el gráfico salga bien SIEMPRE.
+  if((!isFinite(lo)||!isFinite(hi)||hi<=lo)&&price>0){lo=price*0.8;hi=price*1.25;}
+  const ok=isFinite(lo)&&isFinite(hi)&&hi>lo;
+  // escala logarítmica (lo natural para el precio de BTC en un ciclo entero)
+  const lg=v=>Math.log(Math.max(v,1e-9));
+  const y0=lg(lo*0.92),y1=lg(hi*1.08);
+  const Y=v=>padT+(1-(lg(v)-y0)/((y1-y0)||1))*plotH;
+  const bw=Math.max(2,Math.min(9,(X(per)-X(0))*0.62));
+  const nowX=X(wk);
+  return(
+  <div style={panel({marginBottom:14,padding:'14px 12px 12px'})}>
+    <div style={{...flx({justifyContent:'space-between'}),marginBottom:8,padding:'0 2px'}}>
+      <span style={eyebrow}>📈 Ruta del ciclo · en vivo</span>
+      <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>semana {wk} · vela {per===2?'quincenal':'mensual'}</span>
+    </div>
+    <div style={{...flx({gap:10}),marginBottom:8,padding:'0 2px',flexWrap:'wrap'}}>
+      {[['Bull market','#1FE0A0'],['Bear market','#FF5470'],['Neutro','#8AA0FF']].map(([n,c])=>(
+        <span key={n} style={{...flx({gap:4}),fontSize:8.5,color:'var(--dim)'}}>
+          <span style={{width:8,height:8,borderRadius:2,background:c,opacity:.75,flexShrink:0}}/>{n}</span>))}
+    </div>
+    {!ok?(
+      <div style={{height:H*0.55,display:'flex',alignItems:'center',justifyContent:'center',color:'var(--faint)',fontSize:11}}>
+        <span style={{animation:'spin 1s linear infinite',marginRight:8}}>◌</span> cargando histórico del ciclo…
+      </div>
+    ):(
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{display:'block',overflow:'visible'}}>
+      {/* bandas de fase: bull / bear / neutro */}
+      {PH.map((f,k)=>{const x0=X(f.a),x1=X(f.b); if(x1<=x0)return null;
+        const wide=(x1-x0)>f.t.length*5.2;   // solo se pinta si CABE de verdad
+        return(<g key={k}>
+          <rect x={x0} y={padT} width={Math.max(0,x1-x0)} height={plotH} fill={f.c} opacity={f.t==='NEUTRO'?0.05:0.09}/>
+          <line x1={x0} y1={padT} x2={x0} y2={padT+plotH} stroke={f.c} strokeOpacity=".35" strokeWidth="1"/>
+          {wide&&<text x={(x0+x1)/2} y={padT+10} textAnchor="middle" fill={f.c} fillOpacity=".85"
+            style={{fontSize:7,fontWeight:800,letterSpacing:.6}}>{f.t}</text>}
+        </g>);})}
+      {/* velas reales (la última, en curso, va hueca) */}
+      {cds.map((c,k)=>{const cx=X(c.w)+bw/2, col=c.up?'#1FE0A0':'#FF5470';
+        const yo=Y(c.o),yc=Y(c.c),yt=Math.min(yo,yc),hb=Math.max(1.2,Math.abs(yc-yo));
+        return(<g key={k}>
+          <line x1={cx} y1={Y(c.h)} x2={cx} y2={Y(c.l)} stroke={col} strokeWidth="1" strokeOpacity=".75"/>
+          <rect x={cx-bw/2} y={yt} width={bw} height={hb} fill={c.live?'none':col} stroke={col} strokeWidth={c.live?1.2:0} rx="1"/>
+        </g>);})}
+      {/* precio actual + separador "ahora": a la derecha, futuro sin velas */}
+      {price>0&&<line x1={padL} y1={Y(price)} x2={W-padR} y2={Y(price)} stroke="#E4E8F1" strokeOpacity=".28" strokeWidth="1" strokeDasharray="3 3"/>}
+      <line x1={nowX} y1={padT} x2={nowX} y2={padT+plotH} stroke="#E4E8F1" strokeOpacity=".5" strokeWidth="1"/>
+      <text x={Math.min(nowX+4,W-30)} y={padT+plotH+11} fill="var(--dim)" style={{fontSize:7.5,fontWeight:700}}>AHORA</text>
+      <text x={padL} y={padT+plotH+11} fill="var(--faint)" style={{fontSize:7.5}}>halving</text>
+      {price>0&&<text x={W-padR} y={Y(price)-3} textAnchor="end" fill="var(--txt)" style={{fontSize:8,fontWeight:800}}>{money(price)}</text>}
+    </svg>)}
+    <Fine>Velas REALES del ciclo actual (agrupadas cada {per} semanas desde el halving) sobre las fases del modelo por semanas: <b style={{color:'#1FE0A0'}}>Bull</b> (40-77), <b style={{color:'#FF5470'}}>Bear</b> (77-135) y <b style={{color:'#8AA0FF'}}>Neutro</b> (resto). El eje se escala al doble de las semanas transcurridas, así <b>la mitad derecha siempre queda libre</b>: es el ciclo que falta, todavía sin velas. La última vela va hueca porque aún se está formando. Máximos y mínimos se calculan con cierres diarios (no intradía). Escala logarítmica. Las fases son un patrón histórico, no una garantía.</Fine>
+  </div>);
+}
 function CycleBTC(){
   const [oc,setOc]=useState(null);
   useEffect(()=>{
@@ -1835,6 +1919,9 @@ function CycleBTC(){
           <div style={{...eyebrow,fontSize:9}}>halving · precio · máximo histórico</div>
         </div>
       </div>
+
+      {/* Ruta del ciclo en vivo (velas reales + fases) — arriba del todo */}
+      <CycleRouteChart hist={hist} halvingMs={HALVINGS[hidx]} weeks={weeks} price={price} money={money}/>
 
       {/* Precio — hero con degradado según la fase (+ barrido de luz como el resto) */}
       <div className="rise hero-shine" style={panel({position:'relative',overflow:'hidden',marginBottom:14,padding:'24px 20px 20px',
