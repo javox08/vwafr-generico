@@ -489,8 +489,45 @@ const REDES=[
   {id:'li',n:'LinkedIn',s:'Javier de la Torre',u:'https://www.linkedin.com/in/javier-thierry-de-la-torre-valdes-88887b2a3',d:'linkedin.com',e:'💼',c:'#0A66C2',f0:'perfil profesional'},
   {id:'mail',n:'Email',s:'javi27angel13@gmail.com',u:'mailto:javi27angel13@gmail.com',d:'gmail.com',e:'✉️',c:'#EA4335',f0:'contacto directo'},
 ];
-function RedAvatar(){ // logo de JAVOX dibujado EN la web (SVG animado, sin archivo que cargar)
+// Marca JAVOX dibujada en la web (SVG animado). idp = prefijo de IDs: si se pintan dos
+// instancias a la vez (avatar + ampliada) los degradados no pueden compartir id.
+function JavoxMark({idp='jx',cls,style,innerRef,onClick,extra}){
+  const D='M360 342 H676 M612 342 V590 A152 152 0 0 1 308 590';
+  return(
+  <svg ref={innerRef} className={cls} style={style} onClick={onClick} viewBox="0 0 1024 1024"
+    role="img" aria-label="JAVOX" {...(extra||{})}>
+    <defs>
+      <radialGradient id={idp+'bg'} cx="0.5" cy="0.34" r="0.8">
+        <stop offset="0" stopColor="#1A1338"/><stop offset="0.6" stopColor="#0C0918"/><stop offset="1" stopColor="#06050C"/>
+      </radialGradient>
+      <linearGradient id={idp+'neon'} x1="0.1" y1="1" x2="0.9" y2="0">
+        <stop offset="0" stopColor="#B57BFF"/><stop offset="0.42" stopColor="#7BE86B"/><stop offset="1" stopColor="#39FF14"/>
+      </linearGradient>
+      <linearGradient id={idp+'ring'} x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stopColor="#39FF14"/><stop offset="0.5" stopColor="#B57BFF"/><stop offset="1" stopColor="#39FF14"/>
+      </linearGradient>
+      <filter id={idp+'gl'} x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="18"/></filter>
+    </defs>
+    <circle cx="512" cy="512" r="512" fill={`url(#${idp}bg)`}/>
+    <g className="jx-spin"><circle cx="512" cy="512" r="454" fill="none" stroke={`url(#${idp}ring)`} strokeWidth="14" opacity="0.88"/></g>
+    <circle className="jx-glow" cx="512" cy="512" r="454" fill="none" stroke="#39FF14" strokeWidth="22" filter={`url(#${idp}gl)`}/>
+    <g className="jx-glow" filter={`url(#${idp}gl)`}>
+      <path d={D} fill="none" stroke={`url(#${idp}neon)`} strokeWidth="106" strokeLinecap="round" strokeLinejoin="round"/>
+    </g>
+    <path d={D} fill="none" stroke={`url(#${idp}neon)`} strokeWidth="100" strokeLinecap="round" strokeLinejoin="round"/>
+    <g opacity="0.68">
+      <rect className="jx-v"       x="726" y="582" width="26" height="110" rx="10" fill="#39FF14"/>
+      <rect className="jx-v jx-v2" x="774" y="524" width="26" height="168" rx="10" fill="#39FF14"/>
+      <rect className="jx-v jx-v3" x="822" y="460" width="26" height="232" rx="10" fill="#B57BFF"/>
+    </g>
+  </svg>);
+}
+function RedAvatar(){ // avatar: la marca animada, ampliable al tocarla
   const rf=React.useRef(null);
+  const [zoom,setZoom]=useState(false);
+  useEffect(()=>{if(!zoom)return;
+    const esc=e=>{if(e.key==='Escape')setZoom(false);};
+    addEventListener('keydown',esc);return()=>removeEventListener('keydown',esc);},[zoom]);
   // Movimiento ALEATORIO orgánico (no un vaivén predecible): cada 0,9–2,3s el avatar
   // deriva suavemente hacia un objetivo al azar (desplazamiento, giro y escala).
   useEffect(()=>{
@@ -506,34 +543,27 @@ function RedAvatar(){ // logo de JAVOX dibujado EN la web (SVG animado, sin arch
         tm=setTimeout(step,dur+Math.random()*400);
       }else tm=setTimeout(step,400);};
     step();return()=>{alive=false;clearTimeout(tm);};},[]);
-  const D='M360 342 H676 M612 342 V590 A152 152 0 0 1 308 590'; // trazo de la J
-  return(
-  <svg ref={rf} className="rd-ava" viewBox="0 0 1024 1024" role="img" aria-label="JAVOX">
-    <defs>
-      <radialGradient id="jxbg" cx="0.5" cy="0.34" r="0.8">
-        <stop offset="0" stopColor="#1A1338"/><stop offset="0.6" stopColor="#0C0918"/><stop offset="1" stopColor="#06050C"/>
-      </radialGradient>
-      <linearGradient id="jxneon" x1="0.1" y1="1" x2="0.9" y2="0">
-        <stop offset="0" stopColor="#B57BFF"/><stop offset="0.42" stopColor="#7BE86B"/><stop offset="1" stopColor="#39FF14"/>
-      </linearGradient>
-      <linearGradient id="jxring" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stopColor="#39FF14"/><stop offset="0.5" stopColor="#B57BFF"/><stop offset="1" stopColor="#39FF14"/>
-      </linearGradient>
-      <filter id="jxgl" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="18"/></filter>
-    </defs>
-    <circle cx="512" cy="512" r="512" fill="url(#jxbg)"/>
-    <g className="jx-spin"><circle cx="512" cy="512" r="454" fill="none" stroke="url(#jxring)" strokeWidth="14" opacity="0.88"/></g>
-    <circle className="jx-glow" cx="512" cy="512" r="454" fill="none" stroke="#39FF14" strokeWidth="22" filter="url(#jxgl)"/>
-    <g className="jx-glow" filter="url(#jxgl)">
-      <path d={D} fill="none" stroke="url(#jxneon)" strokeWidth="106" strokeLinecap="round" strokeLinejoin="round"/>
-    </g>
-    <path d={D} fill="none" stroke="url(#jxneon)" strokeWidth="100" strokeLinecap="round" strokeLinejoin="round"/>
-    <g opacity="0.68">
-      <rect className="jx-v"        x="726" y="582" width="26" height="110" rx="10" fill="#39FF14"/>
-      <rect className="jx-v jx-v2"  x="774" y="524" width="26" height="168" rx="10" fill="#39FF14"/>
-      <rect className="jx-v jx-v3"  x="822" y="460" width="26" height="232" rx="10" fill="#B57BFF"/>
-    </g>
-  </svg>);
+  return(<React.Fragment>
+    <JavoxMark idp="ava" cls="rd-ava" innerRef={rf} onClick={()=>setZoom(true)}
+      style={{cursor:'zoom-in'}}
+      extra={{role:'button',tabIndex:0,'aria-label':'Ver el logo en grande'}}/>
+    {/* Portal a <body>: .rd-ring lleva un filter, y un filter en un ancestro convierte
+        position:fixed en absolute → el overlay se quedaba metido dentro del avatar. */}
+    {zoom&&ReactDOM.createPortal((
+      <div onClick={()=>setZoom(false)} role="dialog" aria-modal="true" aria-label="Logo de JAVOX"
+        style={{position:'fixed',inset:0,zIndex:400,background:'rgba(3,5,9,.93)',
+          display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:18,
+          padding:20,animation:'rdBack .18s ease both',cursor:'zoom-out'}}>
+        {/* contenedor cuadrado: un <svg> como hijo flex se colapsaba a 0 de alto */}
+        <div style={{width:'min(78vw,70vh)',aspectRatio:'1',flexShrink:0,borderRadius:'50%',
+          filter:'drop-shadow(0 0 46px rgba(57,255,20,.34)) drop-shadow(0 0 80px rgba(145,70,255,.26))'}}>
+          <JavoxMark idp="big" style={{width:'100%',height:'100%',display:'block'}}/>
+        </div>
+        <div style={{fontSize:11,color:'var(--dim)',fontWeight:600}}>toca para cerrar</div>
+        <span onClick={()=>setZoom(false)} role="button" tabIndex={0} aria-label="Cerrar"
+          style={{position:'absolute',top:14,right:18,fontSize:26,color:'var(--faint)',cursor:'pointer',lineHeight:1,padding:'2px 8px'}}>✕</span>
+      </div>),document.body)}
+  </React.Fragment>);
 }
 // Logos OFICIALES de cada red dibujados EN la web (formas de Simple Icons, SVG inline):
 // idénticos en cualquier dispositivo, sin depender de favicons externos ni de la red
