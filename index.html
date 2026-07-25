@@ -8426,9 +8426,9 @@ function App(){
             {/* ═══ INICIO KIT DE MARCA (temporal · para quitarlo: borra hasta FIN y la carpeta /marca) ═══ */}
             <div style={{marginTop:12,paddingTop:12,borderTop:'1px solid var(--line2)'}}>
               <div style={{fontSize:9,fontWeight:800,letterSpacing:1,textTransform:'uppercase',color:'var(--accent)',marginBottom:3}}>⬇️ Kit de marca</div>
-              <div style={{fontSize:8.5,color:'var(--faint)',marginBottom:9,lineHeight:1.5}}>Descarga los logos. En el móvil, si no se descarga, mantén pulsado el enlace y elige «Descargar enlace».</div>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6}}>
-                {[['marca/javox-avatar-1024.png','Avatar','1024 · PNG'],
+              <div style={{fontSize:8.5,color:'var(--faint)',marginBottom:10,lineHeight:1.5}}>Descarga los logos. En el móvil, si no se descarga, mantén pulsado el enlace y elige «Descargar enlace».</div>
+              {[['JAVOX','#39FF14',[
+                  ['marca/javox-avatar-1024.png','Avatar','1024 · PNG'],
                   ['marca/javox-avatar.svg','Vectorial','SVG · maestro'],
                   ['marca/javox-avatar-1024-transparente.png','Avatar sin fondo','1024 · PNG'],
                   ['marca/javox-horizontal.png','Horizontal','1600 · PNG'],
@@ -8439,13 +8439,29 @@ function App(){
                   ['marca/banner-youtube-2560x1440.png','Banner YouTube','2560×1440'],
                   ['marca/banner-twitch-1200x480.png','Banner Twitch','1200×480'],
                   ['marca/banner-x-1500x500.png','Cabecera X','1500×500'],
-                  ['marca/banner-facebook-1640x664.png','Portada Facebook','1640×664']].map(([h,n,m])=>(
-                  <a key={h} href={h} download style={{display:'flex',flexDirection:'column',gap:1,padding:'8px 10px',borderRadius:9,
-                    background:'var(--panel2)',border:'1px solid var(--line2)',textDecoration:'none'}}>
-                    <span style={{fontSize:10,fontWeight:700,color:'var(--txt)'}}>{n}</span>
-                    <span className="mono" style={{fontSize:7.5,color:'var(--faint)'}}>{m}</span>
-                  </a>))}
-              </div>
+                  ['marca/banner-facebook-1640x664.png','Portada Facebook','1640×664']]],
+                ['NotiExpress','#FF5A4A',[
+                  ['marca/notiexpress/notiexpress-avatar-1024.png','Avatar','1024 · PNG'],
+                  ['marca/notiexpress/notiexpress-avatar.svg','Vectorial','SVG · maestro'],
+                  ['marca/notiexpress/notiexpress-avatar-1024-transparente.png','Avatar sin fondo','1024 · PNG'],
+                  ['marca/notiexpress/notiexpress-horizontal.png','Horizontal','1600 · PNG'],
+                  ['marca/notiexpress/notiexpress-horizontal-transparente.png','Horizontal s/fondo','1600 · PNG'],
+                  ['marca/notiexpress/notiexpress-facebook-1640x664.png','Portada Facebook','1640×664']]]
+              ].map(([marca,col,files])=>(
+                <div key={marca} style={{marginBottom:10}}>
+                  <div style={{...flx({gap:6}),marginBottom:6}}>
+                    <span style={{width:7,height:7,borderRadius:2,background:col,flexShrink:0}}/>
+                    <span style={{fontSize:9,fontWeight:800,letterSpacing:.8,color:'var(--txt)'}}>{marca}</span>
+                  </div>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6}}>
+                    {files.map(([h,n,m])=>(
+                      <a key={h} href={h} download style={{display:'flex',flexDirection:'column',gap:1,padding:'8px 10px',borderRadius:9,
+                        background:'var(--panel2)',border:'1px solid var(--line2)',textDecoration:'none'}}>
+                        <span style={{fontSize:10,fontWeight:700,color:'var(--txt)'}}>{n}</span>
+                        <span className="mono" style={{fontSize:7.5,color:'var(--faint)'}}>{m}</span>
+                      </a>))}
+                  </div>
+                </div>))}
             </div>
             {/* ═══ FIN KIT DE MARCA ═══ */}
             <div style={{textAlign:'center',fontSize:8,color:'var(--faint)',marginTop:8}}>los enlaces se abren en una pestaña nueva</div>

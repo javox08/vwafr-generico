@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="NotiExpress">
+  <title>NotiExpress</title>
+  <defs>
+    <radialGradient id="nbg" cx="0.5" cy="0.32" r="0.85">
+      <stop offset="0" stop-color="#16294A"/>
+      <stop offset="0.58" stop-color="#0B1730"/>
+      <stop offset="1" stop-color="#060B16"/>
+    </radialGradient>
+    <linearGradient id="nring" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FF3B30"/>
+      <stop offset="0.55" stop-color="#FF6B54"/>
+      <stop offset="1" stop-color="#FF3B30"/>
+    </linearGradient>
+    <filter id="ngl" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="16"/>
+    </filter>
+  </defs>
+
+  <circle cx="512" cy="512" r="512" fill="url(#nbg)"/>
+
+  <!-- aro rojo de última hora -->
+  <circle cx="512" cy="512" r="452" fill="none" stroke="url(#nring)" stroke-width="15" opacity="0.92"/>
+  <circle cx="512" cy="512" r="452" fill="none" stroke="#FF3B30" stroke-width="24" opacity="0.16" filter="url(#ngl)"/>
+
+  <!-- Estela de velocidad ("Express"): del color de la N y desvaneciéndose, porque es SU
+       rastro. En rojo quedaba a 2,6:1 de contraste (por debajo del mínimo) y además
+       competía con el aro, que ya es rojo. -->
+  <g stroke="#FFFFFF" stroke-linecap="round" stroke-width="30">
+    <line x1="248" y1="424" x2="404" y2="424" opacity="0.42"/>
+    <line x1="200" y1="512" x2="404" y2="512" opacity="0.72"/>
+    <line x1="266" y1="600" x2="404" y2="600" opacity="0.42"/>
+  </g>
+
+  <!-- N: trazo grueso, blanco puro, máxima legibilidad -->
+  <path d="M470 664 V360 L724 664 V360"
+        fill="none" stroke="#FFFFFF" stroke-width="92"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
