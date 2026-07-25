@@ -7197,37 +7197,27 @@ function totalModels(cl,ts0,aux){
   //    La ruta es el camino REAL que siguió el precio esas veces (mediana + bandas). ──
   let route=null;{
     const cr=x=>Math.max(-0.6,Math.min(0.6,x));
-    // Vector de estado del día j. null = dato NO disponible. NUNCA se inventa un valor:
-    // rellenar los huecos con la media fabricaba un estado falso y cambiaba qué días se
-    // consideran "parecidos" según hubiera cargado o no el on-chain → la ruta saltaba de
-    // alcista a bajista sin que cambiara nada real. Ahora solo se compara con datos reales.
     const featAt=j=>{
       if(j<200||ma200[j]==null||ma50[j]==null||vol30[j]==null||rsi14[j]==null)return null;
-      const g=a=>{const v=a?a[j]:null;return Number.isFinite(v)?v:null;};
+      const mv=S.mvrv?S.mvrv[j]:null, nu=S.nupl?S.nupl[j]:null, fg=S.fng?S.fng[j]:null;
       return [Math.log(cl[j]/ma200[j]),Math.log(cl[j]/ma50[j]),cr(cl[j]/cl[j-90]-1),cr(cl[j]/cl[j-30]-1),
-        rsi14[j]/100,vol30[j],(weeksAt(j)%208)/208, g(S.mvrv), g(S.nupl), g(S.fng)];
+        rsi14[j]/100,vol30[j],(weeksAt(j)%208)/208, mv, nu, fg];
     };
-    const NAMES=['Mayer','MA50','momentum 90d','momentum 30d','RSI 14','volatilidad','ciclo','MVRV','NUPL','Miedo/Codicia'];
-    const W=[1.1,0.8,1.0,0.7,0.7,0.8,1.0,0.9,0.9,0.7]; // pesos por indicador
     const F=[],idxs=[];
     for(let j=200;j<N;j++){const fv=featAt(j);if(fv){F.push(fv);idxs.push(j);}}
     if(F.length>200){
-      const nf=W.length, mean=new Array(nf).fill(0), std=new Array(nf).fill(1);
-      for(let c=0;c<nf;c++){const col=[];for(const r of F)if(r[c]!=null&&isFinite(r[c]))col.push(r[c]);
+      const nf=F[0].length, mean=new Array(nf).fill(0), std=new Array(nf).fill(1);
+      for(let c=0;c<nf;c++){const col=F.map(r=>r[c]).filter(x=>x!=null&&isFinite(x));
         const m=col.length?col.reduce((a,x)=>a+x,0)/col.length:0;
         const sd=col.length?Math.sqrt(col.reduce((a,x)=>a+(x-m)*(x-m),0)/col.length):1;
         mean[c]=m;std[c]=sd||1;}
-      // z-score CONSERVANDO los huecos como null (no se rellenan)
-      for(const r of F)for(let c=0;c<nf;c++)r[c]=(r[c]!=null&&isFinite(r[c]))?(r[c]-mean[c])/std[c]:null;
+      for(const r of F)for(let c=0;c<nf;c++){let x=r[c];if(x==null||!isFinite(x))x=mean[c];r[c]=(x-mean[c])/std[c];}
+      const W=[1.1,0.8,1.0,0.7,0.7,0.8,1.0,0.9,0.9,0.7]; // pesos por indicador
       const today=F[F.length-1];
-      const use=[];for(let c=0;c<nf;c++)if(today[c]!=null)use.push(c); // solo lo que HOY es real
-      const wTot=use.reduce((a,c)=>a+W[c],0)||1;
       const cand=[];
       for(let p=0;p<idxs.length;p++){const jj=idxs[p];if(jj+30>=N||Math.abs(jj-i)<=45)continue;
-        let dd=0,wu=0;
-        for(const c of use){const b=F[p][c];if(b==null)continue;const x=b-today[c];dd+=W[c]*x*x;wu+=W[c];}
-        if(wu<wTot*0.6)continue;                  // sin cobertura suficiente, fuera (no se inventa)
-        cand.push({jj,d:Math.sqrt(dd*wTot/wu)});} // escalado por cobertura real → comparable
+        let dd=0;for(let c=0;c<nf;c++){const x=F[p][c]-today[c];dd+=W[c]*x*x;}
+        cand.push({jj,d:Math.sqrt(dd)});}
       cand.sort((a,b)=>a.d-b.d);
       const K=Math.min(45,cand.length), nb=cand.slice(0,K);
       if(K>=15){
@@ -7238,8 +7228,7 @@ function totalModels(cl,ts0,aux){
         const up=nb.filter(x=>cl[x.jj+30]>cl[x.jj]).length/K*100;
         // ejemplos: los 3 análogos más cercanos, con su fecha
         const ex=nb.slice(0,3).map(x=>({date:new Date(ts0+x.jj*864e5).toISOString().slice(0,10),ret:(cl[x.jj+30]/cl[x.jj]-1)*100}));
-        route={med,p25,p75,p10,p90,up,K,dist:+(nb.reduce((a,x)=>a+x.d,0)/K).toFixed(2),price:px,ex,
-          feats:use.map(c=>NAMES[c]),onchain:use.some(c=>c>=7)};
+        route={med,p25,p75,p10,p90,up,K,dist:+(nb.reduce((a,x)=>a+x.d,0)/K).toFixed(2),price:px,ex,onchain:!!(S.mvrv||S.nupl||S.fng)};
       }
     }
   }
@@ -7327,15 +7316,8 @@ function TotalView({gFunding}){
           const arr=new Array(cl.length).fill(null);let cnt=0;
           for(let z=0;z<cl.length;z++){const v2=m.get(new Date(ts0+z*864e5).toISOString().slice(0,10));if(v2!=null&&Number.isFinite(v2)){arr[z]=v2;cnt++;}}
           if(cnt>=500)aux.series[key]=arr;}}
-      // Arrastrar el ÚLTIMO VALOR REAL sobre los huecos (findes/festivos en el DXY; retraso
-      // de publicación en el on-chain, que suele ir 1-2 días por detrás). Nunca se inventa
-      // un valor: es el último dato observado, y se limita a 7 días para no arrastrar
-      // datos rancios. Sin esto, HOY se quedaba sin MVRV/NUPL/F&G y la ruta los descartaba.
-      for(const key in aux.series){const a2=aux.series[key];let last=null,age=0;
-        for(let z=0;z<a2.length;z++){
-          if(a2[z]!=null){last=a2[z];age=0;}
-          else if(last!=null&&age<7){a2[z]=last;age++;}
-          else last=null;}}
+      // DXY solo cotiza en días hábiles → rellenar findes/festivos con el último valor
+      if(aux.series.dxy){const a2=aux.series.dxy;let last=null;for(let z=0;z<a2.length;z++){if(a2[z]!=null)last=a2[z];else if(last!=null)a2[z]=last;}}
       const r=totalModels(cl,ts0,aux);
       if(a&&r)setSt(r); if(a&&!r)setErr(true);
     }catch(_){if(a&&!st)setErr(true);}};
@@ -7442,18 +7424,10 @@ function TotalView({gFunding}){
           <span style={eyebrow}>🧭 Ruta precisa · por analogía histórica</span>
           <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>{R.K} días análogos</span>
         </div>
-        <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:10,lineHeight:1.5}}>Describe el estado de HOY con <b style={{color:'var(--txt)'}}>{(R.feats||[]).length} indicadores</b> ({(R.feats||[]).join(' · ')}) y busca los <b style={{color:'var(--txt)'}}>{R.K} días del pasado más parecidos</b>. La ruta es el camino REAL que siguió el precio esas veces — mediana y bandas.</div>
+        <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:10,lineHeight:1.5}}>Describe el estado de HOY con estos indicadores (Mayer, momentum, ciclo, RSI{R.onchain?', MVRV, NUPL, Miedo/Codicia':''}…) y busca los <b style={{color:'var(--txt)'}}>{R.K} días del pasado más parecidos</b>. La ruta es el camino REAL que siguió el precio esas veces — mediana y bandas.</div>
         <div style={{textAlign:'center',padding:'2px 0 8px'}}>
-          {(()=>{const Dm=_dom(R.up,'subió','bajó'), nUpA=Math.round(R.up*R.K/100), nDnA=R.K-nUpA, fuerte=Dm.pct>=56;
-            // La ruta SIEMPRE se enseña (dirección + %). Si el reparto está muy ajustado no
-            // se oculta: se etiqueta como señal débil, que es lo honesto sin esconder el dato.
-            return(<React.Fragment>
-              <div className="mono" style={{fontSize:34,fontWeight:800,color:col2,lineHeight:1}}>{Dm.pct.toFixed(0)}%</div>
-              <div style={{fontSize:11.5,fontWeight:800,color:col2,marginTop:4}}>de esas veces BTC {Dm.word} a 30 días</div>
-              <div style={{fontSize:9,color:'var(--faint)',marginTop:3}}>{nUpA} subieron · {nDnA} bajaron (de {R.K})</div>
-              {!fuerte&&<div style={{display:'inline-block',marginTop:7,padding:'4px 10px',borderRadius:20,background:'rgba(243,186,47,.12)',border:'1px solid rgba(243,186,47,.30)',fontSize:9,fontWeight:700,color:'#F3BA2F'}}>
-                señal débil · reparto muy ajustado, fíate del rango</div>}
-            </React.Fragment>);})()}
+          <div className="mono" style={{fontSize:34,fontWeight:800,color:col2,lineHeight:1}}>{R.up.toFixed(0)}%</div>
+          <div style={{fontSize:11.5,fontWeight:800,color:col2,marginTop:4}}>de esas veces BTC subió a 30 días</div>
         </div>
         {(()=>{const eLean=st.lean,eNeutral=Math.abs(eLean-50)<5,agree=(R.up-50)*(eLean-50)>=0,gap=Math.abs(R.up-eLean);
           if(eNeutral)return(
