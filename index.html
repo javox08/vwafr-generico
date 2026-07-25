@@ -497,7 +497,7 @@ function RedAvatar(){ // logo real de JAVOX (guardado en el repo) → 🚀 si no
       }else tm=setTimeout(step,400);};
     step();return()=>{alive=false;clearTimeout(tm);};},[]);
   if(err)return <div ref={rf} className="rd-ava" style={{fontSize:27}}>🚀</div>;
-  return <img ref={rf} className="rd-ava" src="javox.jpg" alt="JAVOX27" onError={()=>setErr(true)}
+  return <img ref={rf} className="rd-ava" src="javox-logo.png" alt="JAVOX" onError={()=>setErr(true)}
     style={{objectFit:'cover',width:'100%',height:'100%'}}/>;
 }
 // Logos OFICIALES de cada red dibujados EN la web (formas de Simple Icons, SVG inline):
