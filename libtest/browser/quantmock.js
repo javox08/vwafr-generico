@@ -7,7 +7,7 @@
   function klines(url){
     var u=new URL(url),limit=+(u.searchParams.get('limit')||500),iv=u.searchParams.get('interval')||'1d';
     var ms={'15m':9e5,'1h':36e5,'4h':144e5,'1d':864e5,'1w':6048e5}[iv]||864e5;
-    var end=Date.now(),px=60000,rows=[];
+    var end=+(u.searchParams.get('endTime')||Date.now()),px=60000,rows=[]; // respeta endTime (paginación real)
     for(var i=limit-1;i>=0;i--){var t=end-i*ms;
       var r=(Math.random()-0.493)*0.02,o=px,c=px*(1+r);px=c;
       var h=Math.max(o,c)*(1+Math.random()*0.006),l=Math.min(o,c)*(1-Math.random()*0.006);

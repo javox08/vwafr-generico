@@ -7110,27 +7110,37 @@ function totalModels(cl,ts0,aux){
   //    La ruta es el camino REAL que siguió el precio esas veces (mediana + bandas). ──
   let route=null;{
     const cr=x=>Math.max(-0.6,Math.min(0.6,x));
+    // Vector de estado del día j. null = dato NO disponible. NUNCA se inventa un valor:
+    // rellenar los huecos con la media fabricaba un estado falso y cambiaba qué días se
+    // consideran "parecidos" según hubiera cargado o no el on-chain → la ruta saltaba de
+    // alcista a bajista sin que cambiara nada real. Ahora solo se compara con datos reales.
     const featAt=j=>{
       if(j<200||ma200[j]==null||ma50[j]==null||vol30[j]==null||rsi14[j]==null)return null;
-      const mv=S.mvrv?S.mvrv[j]:null, nu=S.nupl?S.nupl[j]:null, fg=S.fng?S.fng[j]:null;
+      const g=a=>{const v=a?a[j]:null;return Number.isFinite(v)?v:null;};
       return [Math.log(cl[j]/ma200[j]),Math.log(cl[j]/ma50[j]),cr(cl[j]/cl[j-90]-1),cr(cl[j]/cl[j-30]-1),
-        rsi14[j]/100,vol30[j],(weeksAt(j)%208)/208, mv, nu, fg];
+        rsi14[j]/100,vol30[j],(weeksAt(j)%208)/208, g(S.mvrv), g(S.nupl), g(S.fng)];
     };
+    const NAMES=['Mayer','MA50','momentum 90d','momentum 30d','RSI 14','volatilidad','ciclo','MVRV','NUPL','Miedo/Codicia'];
+    const W=[1.1,0.8,1.0,0.7,0.7,0.8,1.0,0.9,0.9,0.7]; // pesos por indicador
     const F=[],idxs=[];
     for(let j=200;j<N;j++){const fv=featAt(j);if(fv){F.push(fv);idxs.push(j);}}
     if(F.length>200){
-      const nf=F[0].length, mean=new Array(nf).fill(0), std=new Array(nf).fill(1);
-      for(let c=0;c<nf;c++){const col=F.map(r=>r[c]).filter(x=>x!=null&&isFinite(x));
+      const nf=W.length, mean=new Array(nf).fill(0), std=new Array(nf).fill(1);
+      for(let c=0;c<nf;c++){const col=[];for(const r of F)if(r[c]!=null&&isFinite(r[c]))col.push(r[c]);
         const m=col.length?col.reduce((a,x)=>a+x,0)/col.length:0;
         const sd=col.length?Math.sqrt(col.reduce((a,x)=>a+(x-m)*(x-m),0)/col.length):1;
         mean[c]=m;std[c]=sd||1;}
-      for(const r of F)for(let c=0;c<nf;c++){let x=r[c];if(x==null||!isFinite(x))x=mean[c];r[c]=(x-mean[c])/std[c];}
-      const W=[1.1,0.8,1.0,0.7,0.7,0.8,1.0,0.9,0.9,0.7]; // pesos por indicador
+      // z-score CONSERVANDO los huecos como null (no se rellenan)
+      for(const r of F)for(let c=0;c<nf;c++)r[c]=(r[c]!=null&&isFinite(r[c]))?(r[c]-mean[c])/std[c]:null;
       const today=F[F.length-1];
+      const use=[];for(let c=0;c<nf;c++)if(today[c]!=null)use.push(c); // solo lo que HOY es real
+      const wTot=use.reduce((a,c)=>a+W[c],0)||1;
       const cand=[];
       for(let p=0;p<idxs.length;p++){const jj=idxs[p];if(jj+30>=N||Math.abs(jj-i)<=45)continue;
-        let dd=0;for(let c=0;c<nf;c++){const x=F[p][c]-today[c];dd+=W[c]*x*x;}
-        cand.push({jj,d:Math.sqrt(dd)});}
+        let dd=0,wu=0;
+        for(const c of use){const b=F[p][c];if(b==null)continue;const x=b-today[c];dd+=W[c]*x*x;wu+=W[c];}
+        if(wu<wTot*0.6)continue;                  // sin cobertura suficiente, fuera (no se inventa)
+        cand.push({jj,d:Math.sqrt(dd*wTot/wu)});} // escalado por cobertura real → comparable
       cand.sort((a,b)=>a.d-b.d);
       const K=Math.min(45,cand.length), nb=cand.slice(0,K);
       if(K>=15){
@@ -7141,7 +7151,8 @@ function totalModels(cl,ts0,aux){
         const up=nb.filter(x=>cl[x.jj+30]>cl[x.jj]).length/K*100;
         // ejemplos: los 3 análogos más cercanos, con su fecha
         const ex=nb.slice(0,3).map(x=>({date:new Date(ts0+x.jj*864e5).toISOString().slice(0,10),ret:(cl[x.jj+30]/cl[x.jj]-1)*100}));
-        route={med,p25,p75,p10,p90,up,K,dist:+(nb.reduce((a,x)=>a+x.d,0)/K).toFixed(2),price:px,ex,onchain:!!(S.mvrv||S.nupl||S.fng)};
+        route={med,p25,p75,p10,p90,up,K,dist:+(nb.reduce((a,x)=>a+x.d,0)/K).toFixed(2),price:px,ex,
+          feats:use.map(c=>NAMES[c]),onchain:use.some(c=>c>=7)};
       }
     }
   }
@@ -7180,12 +7191,18 @@ function TotalView({gFunding}){
       // HISTÓRICOS con fecha (todos GRATIS · presupuesto API: 0 $): F&G completo +
       // MVRV/NUPL/SOPR (~4 años) → los modelos on-chain/sentimiento se backtestean.
       // Se cargan UNA vez (bitcoin-data limita: secuencial con pausa) y se cachean.
-      if(!histRef.current){
-        const H={};
-        try{const j=await jget('https://api.alternative.me/fng/?limit=0',12000);
+      // Se reintenta lo que FALTE (hasta 3 veces): si una serie fallaba, antes se cacheaba
+      // el fallo para toda la sesión y la ruta se calculaba sin ese indicador — distinta a
+      // la de otra sesión donde sí cargó. Ahora solo se cachea lo que llega de verdad.
+      {
+        const H=histRef.current||{_t:0};
+        const falta=!H.fng||!H.mvrv||!H.nupl||!H.sopr||!H.dxy;
+        if(falta&&H._t<3){ H._t++;
+        if(!H.fng)try{const j=await jget('https://api.alternative.me/fng/?limit=0',12000);
           const m=new Map();for(const r2 of (j.data||[])){const ts=+r2.timestamp;if(Number.isFinite(ts))m.set(new Date(ts*1000).toISOString().slice(0,10),parseFloat(r2.value));}
           if(m.size>500)H.fng=m;}catch(_){}
         for(const [key,ep,fld] of [['mvrv','mvrv','mvrv'],['nupl','nupl','nupl'],['sopr','sopr','sopr']]){
+          if(H[key])continue;
           try{const j=await jget('https://bitcoin-data.com/v1/'+ep,10000);
             if(Array.isArray(j)&&j.length>500){const m=new Map();
               for(const r2 of j){const v2=parseFloat(r2[fld]);if(r2.d&&Number.isFinite(v2))m.set(r2.d,v2);}
@@ -7194,7 +7211,7 @@ function TotalView({gFunding}){
         }
         // MACRO: índice del dólar (DXY, proxy ICE de 6 divisas) desde Frankfurter (gratis,
         // histórico desde 1999). Un solo fetch del rango completo; el modelo lo backtestea.
-        try{const s0=new Date(ts0).toISOString().slice(0,10), s1=new Date().toISOString().slice(0,10);
+        if(!H.dxy)try{const s0=new Date(ts0).toISOString().slice(0,10), s1=new Date().toISOString().slice(0,10);
           const j=await jget('https://api.frankfurter.dev/v1/'+s0+'..'+s1+'?from=USD&to=EUR,JPY,GBP,CAD,SEK,CHF',12000);
           if(j&&j.rates){const m=new Map();
             for(const dt in j.rates){const r2=j.rates[dt];
@@ -7203,16 +7220,26 @@ function TotalView({gFunding}){
                 const dxy=50.14348112*Math.pow(EU,-0.576)*Math.pow(r2.JPY,0.136)*Math.pow(GB,-0.119)*Math.pow(r2.CAD,0.091)*Math.pow(r2.SEK,0.042)*Math.pow(r2.CHF,0.036);
                 if(Number.isFinite(dxy))m.set(dt,dxy);}}
             if(m.size>500)H.dxy=m;}}catch(_){}
+        }
         histRef.current=H;
       }
       // alinear cada histórico por FECHA con las velas diarias
       aux.series={};
       {const H=histRef.current;
-        for(const key in H){const m=H[key],arr=new Array(cl.length).fill(null);let cnt=0;
+        for(const key in H){const m=H[key];
+          if(!(m instanceof Map))continue;   // _t (contador de reintentos) no es una serie
+          const arr=new Array(cl.length).fill(null);let cnt=0;
           for(let z=0;z<cl.length;z++){const v2=m.get(new Date(ts0+z*864e5).toISOString().slice(0,10));if(v2!=null&&Number.isFinite(v2)){arr[z]=v2;cnt++;}}
           if(cnt>=500)aux.series[key]=arr;}}
-      // DXY solo cotiza en días hábiles → rellenar findes/festivos con el último valor
-      if(aux.series.dxy){const a2=aux.series.dxy;let last=null;for(let z=0;z<a2.length;z++){if(a2[z]!=null)last=a2[z];else if(last!=null)a2[z]=last;}}
+      // Arrastrar el ÚLTIMO VALOR REAL sobre los huecos (findes/festivos en el DXY; retraso
+      // de publicación en el on-chain, que suele ir 1-2 días por detrás). Nunca se inventa
+      // un valor: es el último dato observado, y se limita a 7 días para no arrastrar
+      // datos rancios. Sin esto, HOY se quedaba sin MVRV/NUPL/F&G y la ruta los descartaba.
+      for(const key in aux.series){const a2=aux.series[key];let last=null,age=0;
+        for(let z=0;z<a2.length;z++){
+          if(a2[z]!=null){last=a2[z];age=0;}
+          else if(last!=null&&age<7){a2[z]=last;age++;}
+          else last=null;}}
       const r=totalModels(cl,ts0,aux);
       if(a&&r)setSt(r); if(a&&!r)setErr(true);
     }catch(_){if(a&&!st)setErr(true);}};
@@ -7305,7 +7332,7 @@ function TotalView({gFunding}){
           <span style={eyebrow}>🧭 Ruta precisa · por analogía histórica</span>
           <span className="mono" style={{fontSize:8.5,color:'var(--faint)'}}>{R.K} días análogos</span>
         </div>
-        <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:10,lineHeight:1.5}}>Describe el estado de HOY con estos indicadores (Mayer, momentum, ciclo, RSI{R.onchain?', MVRV, NUPL, Miedo/Codicia':''}…) y busca los <b style={{color:'var(--txt)'}}>{R.K} días del pasado más parecidos</b>. La ruta es el camino REAL que siguió el precio esas veces — mediana y bandas.</div>
+        <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:10,lineHeight:1.5}}>Describe el estado de HOY con <b style={{color:'var(--txt)'}}>{(R.feats||[]).length} indicadores</b> ({(R.feats||[]).join(' · ')}) y busca los <b style={{color:'var(--txt)'}}>{R.K} días del pasado más parecidos</b>. La ruta es el camino REAL que siguió el precio esas veces — mediana y bandas.</div>
         <div style={{textAlign:'center',padding:'2px 0 8px'}}>
           <div className="mono" style={{fontSize:34,fontWeight:800,color:col2,lineHeight:1}}>{_dom(R.up,'','').pct.toFixed(0)}%</div>
           <div style={{fontSize:11.5,fontWeight:800,color:col2,marginTop:4}}>de esas veces BTC {_dom(R.up,'subió','bajó').word} a 30 días</div>
