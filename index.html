@@ -489,6 +489,60 @@ const REDES=[
   {id:'li',n:'LinkedIn',s:'Javier de la Torre',u:'https://www.linkedin.com/in/javier-thierry-de-la-torre-valdes-88887b2a3',d:'linkedin.com',e:'💼',c:'#0A66C2',f0:'perfil profesional'},
   {id:'mail',n:'Email',s:'javi27angel13@gmail.com',u:'mailto:javi27angel13@gmail.com',d:'gmail.com',e:'✉️',c:'#EA4335',f0:'contacto directo'},
 ];
+// Logo de la cabecera: el MISMO dial de icon.svg pero dibujado en la web, para poder
+// animar la aguja. Se mueve a objetivos AL AZAR por todo el arco (bajista <-> alcista),
+// nunca un vaiven predecible. Como <img> no se podia animar.
+function VwafrDial({size=40}){
+  const nd=React.useRef(null);
+  useEffect(()=>{
+    try{if(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches)return;}catch(_){}
+    let vivo=true,tm;
+    const paso=()=>{ if(!vivo)return;
+      const el=nd.current;
+      if(el){ // -80..+34 grados = de la zona bajista a la alcista, sin salirse del arco
+        const g=-80+Math.random()*114, dur=700+Math.random()*900;
+        el.style.transition='transform '+dur+'ms cubic-bezier(.34,.9,.3,1)';
+        el.style.transform='rotate('+g.toFixed(1)+'deg)';
+        tm=setTimeout(paso,dur+500+Math.random()*1400);
+      } else tm=setTimeout(paso,400);
+    };
+    tm=setTimeout(paso,300);
+    return()=>{vivo=false;clearTimeout(tm);};
+  },[]);
+  return(
+  <svg width={size} height={size} viewBox="0 0 512 512" aria-label="VWAFR · Cripto Quant" role="img"
+    style={{width:size,height:size,borderRadius:11,flexShrink:0,border:'1px solid var(--line2)',
+      background:'#0A0D14',boxShadow:'0 0 16px rgba(110,139,255,.22)'}}>
+    <defs>
+      <linearGradient id="vdBg" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stopColor="#141A2B"/><stop offset="1" stopColor="#080A11"/>
+      </linearGradient>
+      <linearGradient id="vdNd" x1="0" y1="1" x2="1" y2="0">
+        <stop offset="0" stopColor="#8AA0FF"/><stop offset="1" stopColor="#E6EAF5"/>
+      </linearGradient>
+    </defs>
+    <rect width="512" height="512" rx="112" fill="url(#vdBg)"/>
+    <g fill="none" strokeWidth="30" strokeLinecap="round">
+      <path d="M116 330 A140 140 0 0 1 396 330" stroke="#FFFFFF" strokeOpacity="0.07"/>
+      <path d="M116 330 A140 140 0 0 1 172 220" stroke="#FF5470" strokeOpacity="0.60"/>
+      <path d="M198 190 A140 140 0 0 1 314 190" stroke="#8A93A6" strokeOpacity="0.45"/>
+      <path d="M340 220 A140 140 0 0 1 396 330" stroke="#1FE0A0" strokeOpacity="0.60"/>
+    </g>
+    <g stroke="#FFFFFF" strokeOpacity="0.35" strokeWidth="8" strokeLinecap="round">
+      <line x1="256" y1="164" x2="256" y2="188"/>
+      <line x1="140" y1="288" x2="163" y2="279"/>
+      <line x1="372" y1="288" x2="349" y2="279"/>
+    </g>
+    {/* la aguja: gira alrededor de su eje (256,330) */}
+    <g ref={nd} style={{transformOrigin:'256px 330px'}}>
+      <path d="M256 330 L318 214" stroke="url(#vdNd)" strokeWidth="24" strokeLinecap="round"/>
+    </g>
+    <circle cx="256" cy="330" r="34" fill="#080A11"/>
+    <circle cx="256" cy="330" r="34" fill="none" stroke="#6E8BFF" strokeWidth="10"/>
+    <circle cx="256" cy="330" r="9" fill="#E6EAF5"/>
+    <rect x="176" y="386" width="160" height="14" rx="7" fill="#FFFFFF" fillOpacity="0.14"/>
+  </svg>);
+}
 // Marca JAVOX dibujada en la web (SVG animado). idp = prefijo de IDs: si se pintan dos
 // instancias a la vez (avatar + ampliada) los degradados no pueden compartir id.
 function JavoxMark({idp='jx',cls,style,innerRef,onClick,extra}){
@@ -8024,9 +8078,7 @@ function App(){
       {/* TOPBAR (logo del sitio + título de la vista) */}
       <div className="span-all" style={{...flx({justifyContent:'space-between'}),padding:'4px 2px 12px'}}>
         <div style={{...flx({gap:11})}}>
-          <img src="icon.svg" alt="VWAFR · Cripto Quant" width={40} height={40}
-            style={{width:40,height:40,borderRadius:11,flexShrink:0,border:'1px solid var(--line2)',
-              background:'#0A0D14',boxShadow:'0 0 16px rgba(110,139,255,.22)'}}/>
+          <VwafrDial size={40}/>
           <div>
             <div style={{...flx({gap:7}),marginBottom:5}}>
               <div style={{width:7,height:7,borderRadius:2,background:'var(--accent)',
