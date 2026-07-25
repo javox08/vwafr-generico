@@ -272,15 +272,20 @@
       background:rgba(255,255,255,.035);border:1px solid var(--line2)}
     .rd-stat .v{font-family:'JetBrains Mono',monospace;font-size:14.5px;font-weight:800;color:var(--txt)}
     .rd-stat .l{font-size:7.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.5px;margin-top:2px}
-    /* Sin aro propio: el logo ya trae el suyo y dos aros se pisaban. Queda un halo
-       suave que respira, para que no se vea muerto pero sin competir con la marca. */
+    /* El logo se dibuja EN la web como SVG animado (2 KB en vez de un GIF de 2,9 MB):
+       nítido a cualquier tamaño y con el aro girando, el brillo latiendo y las velas
+       subiendo. El halo exterior queda FIJO para no duplicar el latido. */
     .rd-ring{position:relative;width:96px;height:96px;margin:-48px auto 11px;z-index:2;
-      animation:rdHalo 3.4s ease-in-out infinite}
-    @keyframes rdHalo{
-      0%,100%{filter:drop-shadow(0 0 12px rgba(57,255,20,.28)) drop-shadow(0 0 22px rgba(145,70,255,.20))}
-      50%    {filter:drop-shadow(0 0 20px rgba(57,255,20,.44)) drop-shadow(0 0 34px rgba(145,70,255,.32))}}
-    @media (prefers-reduced-motion:reduce){.rd-ring{animation:none;
-      filter:drop-shadow(0 0 14px rgba(57,255,20,.3))}}
+      filter:drop-shadow(0 0 16px rgba(57,255,20,.32)) drop-shadow(0 0 28px rgba(145,70,255,.24))}
+    @keyframes jxSpin{to{transform:rotate(360deg)}}
+    @keyframes jxGlow{0%,100%{opacity:.32}50%{opacity:.54}}
+    @keyframes jxTick{0%,100%{transform:scaleY(.55)}50%{transform:scaleY(1)}}
+    .jx-spin{transform-origin:512px 512px;animation:jxSpin 6s linear infinite}
+    .jx-glow{animation:jxGlow 2s ease-in-out infinite}
+    .jx-v{transform-box:fill-box;transform-origin:bottom;animation:jxTick 2s ease-in-out infinite}
+    .jx-v2{animation-delay:-.6s} .jx-v3{animation-delay:-1.2s}
+    @media (prefers-reduced-motion:reduce){
+      .jx-spin,.jx-glow,.jx-v{animation:none} .jx-glow{opacity:.42}}
     .rd-ava{position:absolute;inset:0;border-radius:50%;display:flex;align-items:center;justify-content:center;
       font-size:27px;font-weight:800;color:#fff;background:#0A0D14;
       overflow:hidden;will-change:transform} /* el movimiento lo dirige JS con objetivos al azar */
@@ -484,8 +489,7 @@ const REDES=[
   {id:'li',n:'LinkedIn',s:'Javier de la Torre',u:'https://www.linkedin.com/in/javier-thierry-de-la-torre-valdes-88887b2a3',d:'linkedin.com',e:'💼',c:'#0A66C2',f0:'perfil profesional'},
   {id:'mail',n:'Email',s:'javi27angel13@gmail.com',u:'mailto:javi27angel13@gmail.com',d:'gmail.com',e:'✉️',c:'#EA4335',f0:'contacto directo'},
 ];
-function RedAvatar(){ // logo real de JAVOX (guardado en el repo) → 🚀 si no carga
-  const [err,setErr]=useState(false);
+function RedAvatar(){ // logo de JAVOX dibujado EN la web (SVG animado, sin archivo que cargar)
   const rf=React.useRef(null);
   // Movimiento ALEATORIO orgánico (no un vaivén predecible): cada 0,9–2,3s el avatar
   // deriva suavemente hacia un objetivo al azar (desplazamiento, giro y escala).
@@ -502,9 +506,34 @@ function RedAvatar(){ // logo real de JAVOX (guardado en el repo) → 🚀 si no
         tm=setTimeout(step,dur+Math.random()*400);
       }else tm=setTimeout(step,400);};
     step();return()=>{alive=false;clearTimeout(tm);};},[]);
-  if(err)return <div ref={rf} className="rd-ava" style={{fontSize:27}}>🚀</div>;
-  return <img ref={rf} className="rd-ava" src="javox-logo.png" alt="JAVOX" onError={()=>setErr(true)}
-    style={{objectFit:'cover',width:'100%',height:'100%'}}/>;
+  const D='M360 342 H676 M612 342 V590 A152 152 0 0 1 308 590'; // trazo de la J
+  return(
+  <svg ref={rf} className="rd-ava" viewBox="0 0 1024 1024" role="img" aria-label="JAVOX">
+    <defs>
+      <radialGradient id="jxbg" cx="0.5" cy="0.34" r="0.8">
+        <stop offset="0" stopColor="#1A1338"/><stop offset="0.6" stopColor="#0C0918"/><stop offset="1" stopColor="#06050C"/>
+      </radialGradient>
+      <linearGradient id="jxneon" x1="0.1" y1="1" x2="0.9" y2="0">
+        <stop offset="0" stopColor="#B57BFF"/><stop offset="0.42" stopColor="#7BE86B"/><stop offset="1" stopColor="#39FF14"/>
+      </linearGradient>
+      <linearGradient id="jxring" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stopColor="#39FF14"/><stop offset="0.5" stopColor="#B57BFF"/><stop offset="1" stopColor="#39FF14"/>
+      </linearGradient>
+      <filter id="jxgl" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="18"/></filter>
+    </defs>
+    <circle cx="512" cy="512" r="512" fill="url(#jxbg)"/>
+    <g className="jx-spin"><circle cx="512" cy="512" r="454" fill="none" stroke="url(#jxring)" strokeWidth="14" opacity="0.88"/></g>
+    <circle className="jx-glow" cx="512" cy="512" r="454" fill="none" stroke="#39FF14" strokeWidth="22" filter="url(#jxgl)"/>
+    <g className="jx-glow" filter="url(#jxgl)">
+      <path d={D} fill="none" stroke="url(#jxneon)" strokeWidth="106" strokeLinecap="round" strokeLinejoin="round"/>
+    </g>
+    <path d={D} fill="none" stroke="url(#jxneon)" strokeWidth="100" strokeLinecap="round" strokeLinejoin="round"/>
+    <g opacity="0.68">
+      <rect className="jx-v"        x="726" y="582" width="26" height="110" rx="10" fill="#39FF14"/>
+      <rect className="jx-v jx-v2"  x="774" y="524" width="26" height="168" rx="10" fill="#39FF14"/>
+      <rect className="jx-v jx-v3"  x="822" y="460" width="26" height="232" rx="10" fill="#B57BFF"/>
+    </g>
+  </svg>);
 }
 // Logos OFICIALES de cada red dibujados EN la web (formas de Simple Icons, SVG inline):
 // idénticos en cualquier dispositivo, sin depender de favicons externos ni de la red
