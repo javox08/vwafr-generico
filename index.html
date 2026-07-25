@@ -7435,8 +7435,16 @@ function TotalView({gFunding}){
         </div>
         <div style={{fontSize:9.5,color:'var(--faint)',marginBottom:10,lineHeight:1.5}}>Describe el estado de HOY con <b style={{color:'var(--txt)'}}>{(R.feats||[]).length} indicadores</b> ({(R.feats||[]).join(' · ')}) y busca los <b style={{color:'var(--txt)'}}>{R.K} días del pasado más parecidos</b>. La ruta es el camino REAL que siguió el precio esas veces — mediana y bandas.</div>
         <div style={{textAlign:'center',padding:'2px 0 8px'}}>
-          <div className="mono" style={{fontSize:34,fontWeight:800,color:col2,lineHeight:1}}>{_dom(R.up,'','').pct.toFixed(0)}%</div>
-          <div style={{fontSize:11.5,fontWeight:800,color:col2,marginTop:4}}>de esas veces BTC {_dom(R.up,'subió','bajó').word} a 30 días</div>
+          {(()=>{const Dm=_dom(R.up,'subió','bajó'), nUpA=Math.round(R.up*R.K/100), nDnA=R.K-nUpA, claro=Dm.pct>=56;
+            if(!claro)return(<React.Fragment>
+              <div style={{fontSize:15,fontWeight:800,color:'#F3BA2F',lineHeight:1.2}}>◆ Sin señal clara</div>
+              <div style={{fontSize:10.5,color:'var(--dim)',marginTop:5,lineHeight:1.5}}>De los {R.K} días parecidos, <b style={{color:'var(--up)'}}>{nUpA} subieron</b> y <b style={{color:'var(--down)'}}>{nDnA} bajaron</b> a 30 días ({Dm.pct.toFixed(0)}/{(100-Dm.pct).toFixed(0)}): prácticamente una moneda al aire. Usa el <b style={{color:'var(--txt)'}}>rango</b> de abajo, no la dirección.</div>
+            </React.Fragment>);
+            return(<React.Fragment>
+              <div className="mono" style={{fontSize:34,fontWeight:800,color:col2,lineHeight:1}}>{Dm.pct.toFixed(0)}%</div>
+              <div style={{fontSize:11.5,fontWeight:800,color:col2,marginTop:4}}>de esas veces BTC {Dm.word} a 30 días</div>
+              <div style={{fontSize:9,color:'var(--faint)',marginTop:3}}>{nUpA} subieron · {nDnA} bajaron (de {R.K})</div>
+            </React.Fragment>);})()}
         </div>
         {(()=>{const eLean=st.lean,eNeutral=Math.abs(eLean-50)<5,agree=(R.up-50)*(eLean-50)>=0,gap=Math.abs(R.up-eLean);
           if(eNeutral)return(
@@ -7470,7 +7478,7 @@ function TotalView({gFunding}){
           </div>
         </div>
         <div style={{marginTop:10}}><ShareBtn full color={dir2>0?'#1FE0A0':dir2<0?'#FF5470':'#F3BA2F'} onClick={shareRuta}/></div>
-        {R.ex&&R.ex.length>0&&<div style={{fontSize:8.5,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Los 3 días más parecidos: {R.ex.map((e,k)=>(<span key={k}>{k?' · ':''}<b style={{color:e.ret>=0?'var(--up)':'var(--down)'}}>{e.date}</b> ({e.ret>=0?'+':''}{e.ret.toFixed(0)}% en 30d)</span>))}.</div>}
+        {R.ex&&R.ex.length>0&&<div style={{fontSize:8.5,color:'var(--faint)',marginTop:9,lineHeight:1.5}}>Los 3 días <b style={{color:'var(--txt)'}}>más parecidos uno a uno</b> (son casos sueltos: pueden ir en contra del reparto global de arriba): {R.ex.map((e,k)=>(<span key={k}>{k?' · ':''}<b style={{color:e.ret>=0?'var(--up)':'var(--down)'}}>{e.date}</b> ({e.ret>=0?'+':''}{e.ret.toFixed(0)}% en 30d)</span>))}.</div>}
         <Fine>Distancia media a los análogos: {R.dist} (menor = más parecidos = ruta más fiable). Vector de estado normalizado (z-score) y ponderado por indicador; se excluyen los días a menos de 45 del actual (para no solaparse) y los que no tienen 30 días por delante. Es una foto de "cuando BTC estuvo así, esto pasó" — descriptivo, no una predicción garantizada.</Fine>
       </div>);
     })()}
